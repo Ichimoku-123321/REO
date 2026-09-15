@@ -47,8 +47,8 @@ test('DSS: Strict aisle constraint excludes wide equipment', () => {
   assert.ok(dmr);
   assert.equal(dmr.result.isEligible, false);
   assert.ok(
-    dmr.result.exclusionReasons.some((msg) => msg.includes('aisle width')),
-    'Should contain aisle width reason'
+    dmr.result.exclusionReasons.some((msg) => msg.includes('Ширина проезда')),
+    'Should contain Russian aisle width reason'
   );
 });
 

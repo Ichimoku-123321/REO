@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test tests/dss.test.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "tsc && node --test dist/tests/dss.test.js"
   },
   "dependencies": {
     "zod": "^3.23.8",
@@ -12,7 +12,6 @@
   },
   "devDependencies": {
     "typescript": "^5.5.4",
-    "@types/node": "^22.5.4",
-    "tsx": "^4.19.1"
+    "@types/node": "^22.5.4"
   }
 }

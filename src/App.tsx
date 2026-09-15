@@ -195,8 +195,15 @@ export default function App() {
           />
         )}
 
-        {/* Step 7: 2.5D Topology Viewport */}
-        <SimulationViewport facility={facility} />
+        {/* Step 7: 2.5D Topology Viewport & Fleet Simulation */}
+        <SimulationViewport
+          facility={facility}
+          selectedRobot={selectedRobot}
+          fleetSize={selectedRobotEconomics?.fleetSize ?? 0}
+          targetThroughputPerHour={
+            selectedRobotEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour
+          }
+        />
 
         {/* Formula Assumptions Modal */}
         <FormulaModal

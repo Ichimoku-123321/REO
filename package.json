@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "tsc && node --test dist/tests/dss.test.js dist/tests/topology.test.js"
+    "test": "tsc && node --test dist/tests/dss.test.js dist/tests/topology.test.js dist/tests/simulation.test.js"
   },
   "dependencies": {
     "@types/three": "^0.186.0",

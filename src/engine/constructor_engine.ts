@@ -1,6 +1,5 @@
 import type { FacilityRequirements } from '../types/facility.js';
 import type { FacilityTopology, FacilityZone, GraphEdge, GraphNode, NodeType } from '../types/topology.js';
-import { findShortestPath } from './simulation_engine.js';
 
 export type ConstructorTileType =
   | 'EMPTY_FLOOR'
@@ -217,16 +216,46 @@ export function checkGraphIsolation(topology: FacilityTopology): boolean {
 
   const startNode = inbound[0];
 
+  // Build adjacency list for single-pass BFS reachability check
+  const adj = new Map<string, string[]>();
+  for (const node of topology.nodes) {
+    adj.set(node.id, []);
+  }
+
+  for (const edge of topology.edges) {
+    adj.get(edge.source)?.push(edge.target);
+    if (edge.bidirectional) {
+      adj.get(edge.target)?.push(edge.source);
+    }
+  }
+
+  // Single-pass BFS traversal from start node to find all reachable nodes
+  const reachable = new Set<string>();
+  const queue: string[] = [startNode.id];
+  reachable.add(startNode.id);
+
+  let head = 0;
+  while (head < queue.length) {
+    const currId = queue[head++];
+    const neighbors = adj.get(currId);
+    if (neighbors) {
+      for (const neighborId of neighbors) {
+        if (!reachable.has(neighborId)) {
+          reachable.add(neighborId);
+          queue.push(neighborId);
+        }
+      }
+    }
+  }
+
   // Verify at least one path to every outbound dock
   for (const outDock of outbound) {
-    const path = findShortestPath(topology, startNode.id, outDock.id);
-    if (path.length === 0) return true; // Isolated!
+    if (!reachable.has(outDock.id)) return true; // Isolated!
   }
 
   // Verify at least one path to chargers if present
   for (const charger of chargers) {
-    const path = findShortestPath(topology, startNode.id, charger.id);
-    if (path.length === 0) return true; // Isolated!
+    if (!reachable.has(charger.id)) return true; // Isolated!
   }
 
   return false;

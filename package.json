@@ -6,16 +6,19 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "tsc && node --test dist/tests/dss.test.js dist/tests/topology.test.js dist/tests/simulation.test.js dist/tests/spectral.test.js dist/tests/constructor.test.js"
+    "test": "tsc && node --test dist/tests/dss.test.js dist/tests/topology.test.js dist/tests/simulation.test.js dist/tests/spectral.test.js dist/tests/constructor.test.js dist/tests/export_import.test.js"
   },
   "dependencies": {
     "@types/three": "^0.186.0",
     "clsx": "^2.1.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.475.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.0.1",
     "three": "^0.186.0",
+    "xlsx": "^0.18.5",
     "zod": "^3.23.8"
   },
   "devDependencies": {

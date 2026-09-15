@@ -3,6 +3,8 @@ import { SEED_ROBOTS } from './data/robots.seed.js';
 import { FACILITY_PRESETS } from './data/presets.js';
 import { evaluateEligibility } from './engine/dss.js';
 import { calculateEconomics, DEFAULT_WHAT_IF_PARAMS } from './engine/economics.js';
+import { generateFacilityTopology } from './engine/topology_generator.js';
+import { analyzeTopologyBottlenecks } from './engine/spectral_analyzer.js';
 import type { FacilityRequirements } from './types/facility.js';
 import type { WhatIfParams } from './engine/economics.js';
 import { FacilityForm } from './components/FacilityForm.js';
@@ -13,6 +15,7 @@ import { ScenarioMatrix } from './components/ScenarioMatrix.js';
 import { WhatIfPanel } from './components/WhatIfPanel.js';
 import { FormulaModal } from './components/FormulaModal.js';
 import { SimulationViewport } from './components/SimulationViewport.js';
+import { ExportToolbar } from './components/ExportToolbar.js';
 import {
   Cpu,
   CheckCircle2,
@@ -77,6 +80,11 @@ export default function App() {
     return calculateEconomics(facility, selectedRobot, whatIf);
   }, [facility, selectedRobot, whatIf]);
 
+  const spectralResult = useMemo(() => {
+    const topology = generateFacilityTopology(facility);
+    return analyzeTopologyBottlenecks(topology);
+  }, [facility]);
+
   const lowestCapex = useMemo(() => {
     if (eligibleRobots.length === 0) return 0;
     return Math.min(...eligibleRobots.map((r) => r.robot.capexCostRub));
@@ -112,6 +120,17 @@ export default function App() {
               </p>
             </div>
           </div>
+
+          {/* Export & Import Header Controls */}
+          <ExportToolbar
+            facility={facility}
+            selectedRobot={selectedRobot}
+            fleetSize={selectedRobotEconomics?.fleetSize ?? 0}
+            economicEvaluation={selectedRobotEconomics}
+            spectralResult={spectralResult}
+            whatIf={whatIf}
+            onFacilityImport={handleFacilityChange}
+          />
         </div>
       </header>
 
@@ -183,6 +202,9 @@ export default function App() {
           <ScenarioMatrix
             evaluation={selectedRobotEconomics}
             robot={selectedRobot}
+            facility={facility}
+            whatIf={whatIf}
+            spectralResult={spectralResult}
           />
         )}
 

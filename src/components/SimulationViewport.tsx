@@ -3,11 +3,21 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { FacilityRequirements } from '../types/facility.js';
 import type { Robot } from '../types/robot.js';
-import { generateFacilityTopology } from '../engine/topology_generator.js';
+import { generateFacilityTopology, calculateFacilityDimensions } from '../engine/topology_generator.js';
 import type { FacilityTopology, NodeType } from '../types/topology.js';
 import { SimulationEngine, type SimulationTelemetry, type AgentFSMState } from '../engine/simulation_engine.js';
+import { analyzeTopologyBottlenecks, type SpectralAnalysisResult } from '../engine/spectral_analyzer.js';
+import {
+  createInitialConstructorGrid,
+  rebuildTopologyFromGrid,
+  checkGraphIsolation,
+  getTileKey,
+  type ConstructorGrid,
+  type ConstructorTileType,
+} from '../engine/constructor_engine.js';
 import { SimulationControls } from './SimulationControls.js';
-import { Layers, MapPin, Navigation, Maximize2, AlertCircle } from 'lucide-react';
+import { ConstructorToolbar } from './ConstructorToolbar.js';
+import { Layers, MapPin, Navigation, Maximize2, AlertCircle, Wrench, Building2, AlertTriangle } from 'lucide-react';
 
 interface SimulationViewportProps {
   facility: FacilityRequirements;
@@ -37,14 +47,50 @@ export function SimulationViewport({
 }: SimulationViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  // Viewport mode: Automatic vs Interactive Constructor
+  const [isConstructorMode, setIsConstructorMode] = useState<boolean>(false);
+  const [selectedTileType, setSelectedTileType] = useState<ConstructorTileType>('RACK');
+  const [showBottleneckHeatmap, setShowBottleneckHeatmap] = useState<boolean>(false);
+
   // Playback & Simulation state
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [speedMultiplier, setSpeedMultiplier] = useState<number>(2);
   const [telemetry, setTelemetry] = useState<SimulationTelemetry>(DEFAULT_TELEMETRY);
 
-  const topology: FacilityTopology = useMemo(() => {
-    return generateFacilityTopology(facility);
+  // Facility dimensions
+  const facilityDims = useMemo(() => {
+    return calculateFacilityDimensions(facility);
   }, [facility]);
+
+  // Constructor Grid State
+  const [grid, setGrid] = useState<ConstructorGrid>(() => {
+    const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
+    return createInitialConstructorGrid(facilityDims.widthM, facilityDims.lengthM, cellSize);
+  });
+
+  // Reset Grid when facility dimensions change
+  useEffect(() => {
+    const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
+    setGrid(createInitialConstructorGrid(facilityDims.widthM, facilityDims.lengthM, cellSize));
+  }, [facilityDims, facility.totalAreaSqm]);
+
+  // Derived active topology
+  const topology: FacilityTopology = useMemo(() => {
+    if (isConstructorMode) {
+      return rebuildTopologyFromGrid(grid, facilityDims.widthM, facilityDims.lengthM);
+    }
+    return generateFacilityTopology(facility);
+  }, [isConstructorMode, grid, facilityDims, facility]);
+
+  // Check graph isolation warning
+  const isIsolatedZone = useMemo(() => {
+    return checkGraphIsolation(topology);
+  }, [topology]);
+
+  // Spectral Analysis result
+  const spectralAnalysis: SpectralAnalysisResult = useMemo(() => {
+    return analyzeTopologyBottlenecks(topology);
+  }, [topology]);
 
   const totalPathLengthM = useMemo(() => {
     return Math.round(
@@ -71,6 +117,11 @@ export function SimulationViewport({
       setTelemetry(engineRef.current.getTelemetry(targetThroughputPerHour));
     }
   }, [targetThroughputPerHour]);
+
+  const handleResetGrid = useCallback(() => {
+    const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
+    setGrid(createInitialConstructorGrid(facilityDims.widthM, facilityDims.lengthM, cellSize));
+  }, [facilityDims, facility.totalAreaSqm]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -129,6 +180,10 @@ export function SimulationViewport({
     controls.maxPolarAngle = Math.PI / 3.2;
     controls.update();
 
+    // Raycaster for Grid Tile Interaction
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
     // 5. Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
     scene.add(ambientLight);
@@ -162,84 +217,138 @@ export function SimulationViewport({
     // Floor Grid Helper
     const gridHelper = new THREE.GridHelper(
       Math.max(topology.widthM, topology.lengthM),
-      Math.max(10, Math.floor(Math.max(topology.widthM, topology.lengthM) / 5)),
+      Math.max(10, Math.floor(Math.max(topology.widthM, topology.lengthM) / (isConstructorMode ? grid.cellSizeM : 5))),
       0x475569,
       0x334155
     );
     gridHelper.position.set(centerX, 0, centerZ);
     scene.add(gridHelper);
 
-    // 7. Functional Zones Floor Patches & Extrusions
-    topology.zones.forEach((zone) => {
-      const zoneGeo = new THREE.PlaneGeometry(zone.width, zone.height);
-      const zoneMat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(zone.color),
-        transparent: true,
-        opacity: 0.35,
-        roughness: 0.5,
-      });
-      const zoneMesh = new THREE.Mesh(zoneGeo, zoneMat);
-      zoneMesh.rotation.x = -Math.PI / 2;
-      zoneMesh.position.set(
-        zone.x + zone.width / 2,
-        0.01,
-        zone.y + zone.height / 2
-      );
-      zoneMesh.receiveShadow = true;
-      scene.add(zoneMesh);
+    // Constructor Interactive Tile Rendering
+    if (isConstructorMode) {
+      grid.tiles.forEach((type, key) => {
+        const [gxStr, gyStr] = key.split('_');
+        const gx = parseInt(gxStr, 10);
+        const gy = parseInt(gyStr, 10);
+        const tileX = (gx + 0.5) * grid.cellSizeM;
+        const tileY = (gy + 0.5) * grid.cellSizeM;
 
-      // Border outline for Zone
-      const borderEdgesGeo = new THREE.EdgesGeometry(zoneGeo);
-      const borderMat = new THREE.LineBasicMaterial({
-        color: new THREE.Color(zone.color),
-        linewidth: 2,
-      });
-      const borderLine = new THREE.LineSegments(borderEdgesGeo, borderMat);
-      borderLine.rotation.x = -Math.PI / 2;
-      borderLine.position.set(
-        zone.x + zone.width / 2,
-        0.02,
-        zone.y + zone.height / 2
-      );
-      scene.add(borderLine);
-
-      // Extruded Storage Rack Blocks
-      if (zone.type === 'STORAGE_AISLE') {
-        const rackHeight = Math.min(4, facility.ceilingHeightM * 0.6);
-        const rackGroup = new THREE.Group();
-
-        const rackRows = 4;
-        const rowHeight = (zone.height - 2) / rackRows;
-        for (let r = 0; r < rackRows; r++) {
-          const rackGeo = new THREE.BoxGeometry(
-            zone.width - 2,
-            rackHeight,
-            rowHeight * 0.6
-          );
-          const rackMat = new THREE.MeshStandardMaterial({
-            color: 0x334155,
-            roughness: 0.4,
-            metalness: 0.3,
-          });
+        if (type === 'RACK') {
+          const rackGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.85, 2.2, grid.cellSizeM * 0.85);
+          const rackMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4, metalness: 0.3 });
           const rackMesh = new THREE.Mesh(rackGeo, rackMat);
-          rackMesh.position.set(
-            zone.x + zone.width / 2,
-            rackHeight / 2,
-            zone.y + 1 + r * rowHeight + rowHeight * 0.3
-          );
+          rackMesh.position.set(tileX, 1.1, tileY);
           rackMesh.castShadow = true;
           rackMesh.receiveShadow = true;
-          rackGroup.add(rackMesh);
+          scene.add(rackMesh);
 
           const rackEdges = new THREE.EdgesGeometry(rackGeo);
           const rackLineMat = new THREE.LineBasicMaterial({ color: 0x64748b });
           const rackLine = new THREE.LineSegments(rackEdges, rackLineMat);
           rackLine.position.copy(rackMesh.position);
-          rackGroup.add(rackLine);
+          scene.add(rackLine);
+        } else if (type === 'OBSTACLE') {
+          const obsGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 3.0, grid.cellSizeM * 0.9);
+          const obsMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3, metalness: 0.1 });
+          const obsMesh = new THREE.Mesh(obsGeo, obsMat);
+          obsMesh.position.set(tileX, 1.5, tileY);
+          obsMesh.castShadow = true;
+          scene.add(obsMesh);
+        } else if (type === 'CHARGER') {
+          const cGeo = new THREE.CylinderGeometry(grid.cellSizeM * 0.35, grid.cellSizeM * 0.35, 0.4, 16);
+          const cMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 0.3 });
+          const cMesh = new THREE.Mesh(cGeo, cMat);
+          cMesh.position.set(tileX, 0.2, tileY);
+          scene.add(cMesh);
+        } else if (type === 'DOCK_INBOUND') {
+          const dGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 0.1, grid.cellSizeM * 0.9);
+          const dMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.6 });
+          const dMesh = new THREE.Mesh(dGeo, dMat);
+          dMesh.position.set(tileX, 0.02, tileY);
+          scene.add(dMesh);
+        } else if (type === 'DOCK_OUTBOUND') {
+          const dGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 0.1, grid.cellSizeM * 0.9);
+          const dMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, transparent: true, opacity: 0.6 });
+          const dMesh = new THREE.Mesh(dGeo, dMat);
+          dMesh.position.set(tileX, 0.02, tileY);
+          scene.add(dMesh);
         }
-        scene.add(rackGroup);
-      }
-    });
+      });
+    }
+
+    // 7. Automatic Mode Functional Zones Floor Patches & Extrusions
+    if (!isConstructorMode) {
+      topology.zones.forEach((zone) => {
+        const zoneGeo = new THREE.PlaneGeometry(zone.width, zone.height);
+        const zoneMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(zone.color),
+          transparent: true,
+          opacity: 0.35,
+          roughness: 0.5,
+        });
+        const zoneMesh = new THREE.Mesh(zoneGeo, zoneMat);
+        zoneMesh.rotation.x = -Math.PI / 2;
+        zoneMesh.position.set(
+          zone.x + zone.width / 2,
+          0.01,
+          zone.y + zone.height / 2
+        );
+        zoneMesh.receiveShadow = true;
+        scene.add(zoneMesh);
+
+        // Border outline for Zone
+        const borderEdgesGeo = new THREE.EdgesGeometry(zoneGeo);
+        const borderMat = new THREE.LineBasicMaterial({
+          color: new THREE.Color(zone.color),
+          linewidth: 2,
+        });
+        const borderLine = new THREE.LineSegments(borderEdgesGeo, borderMat);
+        borderLine.rotation.x = -Math.PI / 2;
+        borderLine.position.set(
+          zone.x + zone.width / 2,
+          0.02,
+          zone.y + zone.height / 2
+        );
+        scene.add(borderLine);
+
+        // Extruded Storage Rack Blocks
+        if (zone.type === 'STORAGE_AISLE') {
+          const rackHeight = Math.min(4, facility.ceilingHeightM * 0.6);
+          const rackGroup = new THREE.Group();
+
+          const rackRows = 4;
+          const rowHeight = (zone.height - 2) / rackRows;
+          for (let r = 0; r < rackRows; r++) {
+            const rackGeo = new THREE.BoxGeometry(
+              zone.width - 2,
+              rackHeight,
+              rowHeight * 0.6
+            );
+            const rackMat = new THREE.MeshStandardMaterial({
+              color: 0x334155,
+              roughness: 0.4,
+              metalness: 0.3,
+            });
+            const rackMesh = new THREE.Mesh(rackGeo, rackMat);
+            rackMesh.position.set(
+              zone.x + zone.width / 2,
+              rackHeight / 2,
+              zone.y + 1 + r * rowHeight + rowHeight * 0.3
+            );
+            rackMesh.castShadow = true;
+            rackMesh.receiveShadow = true;
+            rackGroup.add(rackMesh);
+
+            const rackEdges = new THREE.EdgesGeometry(rackGeo);
+            const rackLineMat = new THREE.LineBasicMaterial({ color: 0x64748b });
+            const rackLine = new THREE.LineSegments(rackEdges, rackLineMat);
+            rackLine.position.copy(rackMesh.position);
+            rackGroup.add(rackLine);
+          }
+          scene.add(rackGroup);
+        }
+      });
+    }
 
     // 8. Transit Waypoint Paths (Graph Edges Overlay)
     const nodeMap = new Map(topology.nodes.map((n) => [n.id, n]));
@@ -314,6 +423,38 @@ export function SimulationViewport({
         scene.add(capMesh);
       }
     });
+
+    // Visual Bottleneck Heatmap Overlay
+    if (showBottleneckHeatmap) {
+      const criticalSet = new Set(spectralAnalysis.criticalNodeIds);
+      topology.nodes.forEach((node) => {
+        if (criticalSet.has(node.id)) {
+          const ringGeo = new THREE.RingGeometry(1.0, 1.8, 32);
+          const ringMat = new THREE.MeshBasicMaterial({
+            color: 0xef4444, // Glowing Red
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.85,
+          });
+          const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+          ringMesh.rotation.x = -Math.PI / 2;
+          ringMesh.position.set(node.x, 0.15, node.y);
+          scene.add(ringMesh);
+
+          const innerRingGeo = new THREE.RingGeometry(1.8, 2.3, 32);
+          const innerRingMat = new THREE.MeshBasicMaterial({
+            color: 0xf59e0b, // Amber
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.5,
+          });
+          const innerRingMesh = new THREE.Mesh(innerRingGeo, innerRingMat);
+          innerRingMesh.rotation.x = -Math.PI / 2;
+          innerRingMesh.position.set(node.x, 0.14, node.y);
+          scene.add(innerRingMesh);
+        }
+      });
+    }
 
     // 10. Dynamic Robot Fleet Meshes Map
     interface AgentMeshGroup {
@@ -398,6 +539,36 @@ export function SimulationViewport({
       return { group, chassisMesh, haloMesh, cargoMesh, haloMat };
     };
 
+    // Constructor Click Handler
+    const handleCanvasPointerDown = (event: MouseEvent) => {
+      if (!isConstructorMode) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObject(floorMesh);
+
+      if (intersects.length > 0) {
+        const point = intersects[0].point;
+        const gx = Math.floor(point.x / grid.cellSizeM);
+        const gy = Math.floor(point.z / grid.cellSizeM);
+
+        if (gx >= 0 && gx < grid.cols && gy >= 0 && gy < grid.rows) {
+          const key = getTileKey(gx, gy);
+          setGrid((prev) => {
+            const updated = new Map(prev.tiles);
+            updated.set(key, selectedTileType);
+            return { ...prev, tiles: updated };
+          });
+        }
+      }
+    };
+
+    const domElem = renderer.domElement;
+    domElem.addEventListener('pointerdown', handleCanvasPointerDown);
+
     // 11. Animation Loop
     const clock = new THREE.Clock();
     let animationFrameId: number;
@@ -467,11 +638,23 @@ export function SimulationViewport({
 
     return () => {
       cancelAnimationFrame(animationFrameId);
+      domElem.removeEventListener('pointerdown', handleCanvasPointerDown);
       window.removeEventListener('resize', handleResize);
       controls.dispose();
       renderer.dispose();
     };
-  }, [topology, facility, isPlaying, speedMultiplier, targetThroughputPerHour]);
+  }, [
+    topology,
+    facility,
+    isPlaying,
+    speedMultiplier,
+    targetThroughputPerHour,
+    isConstructorMode,
+    grid,
+    selectedTileType,
+    showBottleneckHeatmap,
+    spectralAnalysis,
+  ]);
 
   const getFacilityTypeNameRu = (type: string) => {
     switch (type) {
@@ -494,30 +677,43 @@ export function SimulationViewport({
 
   return (
     <div className="bg-slate-800/90 border border-slate-700/80 rounded-xl overflow-hidden shadow-xl mb-8">
-      {/* Simulation HUD Controls Bar */}
-      <SimulationControls
-        isPlaying={isPlaying}
-        onTogglePlayPause={() => setIsPlaying((prev) => !prev)}
-        onReset={handleReset}
-        speedMultiplier={speedMultiplier}
-        onSpeedChange={setSpeedMultiplier}
-        telemetry={telemetry}
-        targetThroughputPerHour={targetThroughputPerHour}
-        fleetSize={fleetSize}
-        selectedRobotName={selectedRobotFullName}
-      />
-
-      {/* Header telemetry bar */}
-      <div className="bg-slate-900/90 border-b border-slate-700/80 px-6 py-3 flex flex-wrap items-center justify-between gap-4">
-        <div>
+      {/* Viewport Header with Mode Switcher */}
+      <div className="bg-slate-900/95 border-b border-slate-700/80 px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <Layers className="w-5 h-5 text-blue-400" />
             <h3 className="text-base font-bold text-slate-100">
-              2.5D Динамическая анимация симуляции парка
+              2.5D Интерактивная модель симуляции
             </h3>
-            <span className="text-xs bg-blue-500/20 text-blue-400 font-semibold px-2.5 py-0.5 rounded border border-blue-500/30">
-              {getFacilityTypeNameRu(facility.industry)}
-            </span>
+          </div>
+
+          {/* Mode Switcher Buttons */}
+          <div className="flex items-center bg-slate-800 border border-slate-700 rounded-lg p-1 ml-2">
+            <button
+              type="button"
+              onClick={() => setIsConstructorMode(false)}
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                !isConstructorMode
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>🏢 Автоматическая схема</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsConstructorMode(true)}
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                isConstructorMode
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Wrench className="w-3.5 h-3.5" />
+              <span>🛠️ Интерактивный конструктор (2.5D)</span>
+            </button>
           </div>
         </div>
 
@@ -552,8 +748,41 @@ export function SimulationViewport({
         </div>
       </div>
 
+      {/* Graph Isolation Warning Banner */}
+      {isIsolatedZone && (
+        <div className="bg-red-950/90 border-b border-red-800/80 px-6 py-2.5 flex items-center gap-3 text-red-200 text-xs font-bold animate-pulse">
+          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+          <span>Внимание: изолированная зона. Роботы не могут построить маршрут к доку или зарядной станции.</span>
+        </div>
+      )}
+
+      {/* Simulation HUD Controls Bar */}
+      <SimulationControls
+        isPlaying={isPlaying}
+        onTogglePlayPause={() => setIsPlaying((prev) => !prev)}
+        onReset={handleReset}
+        speedMultiplier={speedMultiplier}
+        onSpeedChange={setSpeedMultiplier}
+        telemetry={telemetry}
+        targetThroughputPerHour={targetThroughputPerHour}
+        fleetSize={fleetSize}
+        selectedRobotName={selectedRobotFullName}
+        spectralAnalysis={spectralAnalysis}
+      />
+
       {/* Three.js Canvas Container */}
       <div className="relative w-full h-[540px] bg-slate-950">
+        {/* Floating Constructor Toolbar */}
+        {isConstructorMode && (
+          <ConstructorToolbar
+            selectedTileType={selectedTileType}
+            onSelectTileType={setSelectedTileType}
+            showBottleneckHeatmap={showBottleneckHeatmap}
+            onToggleBottleneckHeatmap={() => setShowBottleneckHeatmap((prev) => !prev)}
+            onResetGrid={handleResetGrid}
+          />
+        )}
+
         <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
         {/* Empty Fleet Overlay Banner */}
@@ -574,7 +803,7 @@ export function SimulationViewport({
         )}
 
         {/* Legend Overlay */}
-        <div className="absolute bottom-4 left-4 bg-slate-900/90 border border-slate-700/80 rounded-lg p-3 backdrop-blur text-xs flex flex-wrap gap-4 text-slate-300 shadow-lg">
+        <div className="absolute bottom-4 left-4 bg-slate-900/90 border border-slate-700/80 rounded-lg p-3 backdrop-blur text-xs flex flex-wrap gap-4 text-slate-300 shadow-lg z-10">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-emerald-500/30" />
             <span>Активен / В пути</span>
@@ -594,8 +823,10 @@ export function SimulationViewport({
         </div>
 
         {/* Viewport Control Tip */}
-        <div className="absolute bottom-4 right-4 bg-slate-900/80 border border-slate-700/60 rounded-lg px-3 py-1.5 text-[11px] text-slate-400">
-          Зажмите ЛКМ для вращения • Колесо для зума • ПКМ для панорамирования
+        <div className="absolute bottom-4 right-4 bg-slate-900/80 border border-slate-700/60 rounded-lg px-3 py-1.5 text-[11px] text-slate-400 z-10">
+          {isConstructorMode
+            ? 'Кликните на поле для установки блока • Зажмите ЛКМ для вращения • Колесо для зума'
+            : 'Зажмите ЛКМ для вращения • Колесо для зума • ПКМ для панорамирования'}
         </div>
       </div>
     </div>

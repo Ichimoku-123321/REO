@@ -137,7 +137,8 @@ export class SimulationEngine {
   public elapsedSimSeconds: number = 0;
   public completedDeliveries: number = 0;
 
-  // Key node caches
+  // Key node caches and O(1) map
+  private nodeMap: Map<string, GraphNode> = new Map();
   private inboundNodes: GraphNode[] = [];
   private outboundNodes: GraphNode[] = [];
   private storageNodes: GraphNode[] = [];
@@ -154,6 +155,7 @@ export class SimulationEngine {
   }
 
   private classifyNodes(): void {
+    this.nodeMap = new Map<string, GraphNode>(this.topology.nodes.map((n) => [n.id, n]));
     this.inboundNodes = this.topology.nodes.filter((n) => n.type === 'INBOUND_DOCK');
     this.outboundNodes = this.topology.nodes.filter((n) => n.type === 'OUTBOUND_DOCK');
     this.storageNodes = this.topology.nodes.filter((n) => n.type === 'STORAGE_AISLE');
@@ -331,7 +333,7 @@ export class SimulationEngine {
           agent.edgeDistanceM = edgeLength;
 
           // Target node coordinates
-          const targetNode = this.topology.nodes.find((n) => n.id === agent.targetNodeId);
+          const targetNode = this.nodeMap.get(agent.targetNodeId);
           if (!targetNode) break;
 
           const dx = targetNode.x - agent.x;
@@ -458,7 +460,7 @@ export class SimulationEngine {
   }
 
   private findClosestNode(fromNodeId: string, candidates: GraphNode[]): GraphNode | null {
-    const fromNode = this.topology.nodes.find((n) => n.id === fromNodeId);
+    const fromNode = this.nodeMap.get(fromNodeId);
     if (!fromNode || candidates.length === 0) return null;
 
     let closest: GraphNode | null = null;
@@ -509,9 +511,8 @@ export class SimulationEngine {
     let congestionNodeLabel: string | null = null;
 
     if (congestionDetected && queuedAgents.length > 0) {
-      const node = this.topology.nodes.find(
-        (n) => n.id === (queuedAgents[0].targetNodeId || queuedAgents[0].currentNodeId)
-      );
+      const targetId = queuedAgents[0].targetNodeId || queuedAgents[0].currentNodeId;
+      const node = this.nodeMap.get(targetId);
       congestionNodeLabel = node?.label || node?.id || 'Узел трассы';
     }
 

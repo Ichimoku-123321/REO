@@ -1,17 +1,46 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { FacilityRequirements } from '../types/facility.js';
+import type { Robot } from '../types/robot.js';
 import { generateFacilityTopology } from '../engine/topology_generator.js';
 import type { FacilityTopology, NodeType } from '../types/topology.js';
-import { Layers, MapPin, Navigation, Maximize2 } from 'lucide-react';
+import { SimulationEngine, type SimulationTelemetry, type AgentFSMState } from '../engine/simulation_engine.js';
+import { SimulationControls } from './SimulationControls.js';
+import { Layers, MapPin, Navigation, Maximize2, AlertCircle } from 'lucide-react';
 
 interface SimulationViewportProps {
   facility: FacilityRequirements;
+  selectedRobot: Robot | null;
+  fleetSize: number;
+  targetThroughputPerHour: number;
 }
 
-export function SimulationViewport({ facility }: SimulationViewportProps) {
+const DEFAULT_TELEMETRY: SimulationTelemetry = {
+  elapsedSimSeconds: 0,
+  completedDeliveries: 0,
+  realizedThroughputPerHour: 0,
+  fleetUtilizationPercent: 0,
+  activeInTransitCount: 0,
+  chargingCount: 0,
+  queuedCount: 0,
+  congestionDetected: false,
+  congestionNodeLabel: null,
+  isCalibrating: true,
+};
+
+export function SimulationViewport({
+  facility,
+  selectedRobot,
+  fleetSize,
+  targetThroughputPerHour,
+}: SimulationViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Playback & Simulation state
+  const [isPlaying, setIsPlaying] = useState<boolean>(true);
+  const [speedMultiplier, setSpeedMultiplier] = useState<number>(2);
+  const [telemetry, setTelemetry] = useState<SimulationTelemetry>(DEFAULT_TELEMETRY);
 
   const topology: FacilityTopology = useMemo(() => {
     return generateFacilityTopology(facility);
@@ -22,6 +51,26 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
       topology.edges.reduce((sum, edge) => sum + edge.distanceM, 0)
     );
   }, [topology]);
+
+  // Simulation Engine Instance ref
+  const engineRef = useRef<SimulationEngine | null>(null);
+
+  // Initialize/Re-initialize Engine on topology, robot or fleetSize change
+  useEffect(() => {
+    if (selectedRobot && fleetSize > 0) {
+      engineRef.current = new SimulationEngine(topology, selectedRobot, fleetSize);
+    } else {
+      engineRef.current = null;
+    }
+    setTelemetry(DEFAULT_TELEMETRY);
+  }, [topology, selectedRobot, fleetSize]);
+
+  const handleReset = useCallback(() => {
+    if (engineRef.current) {
+      engineRef.current.initializeFleet();
+      setTelemetry(engineRef.current.getTelemetry(targetThroughputPerHour));
+    }
+  }, [targetThroughputPerHour]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -37,7 +86,7 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#0f172a'); // slate-900
 
-    // 2. Camera setup (Orthographic Camera for 2.5D)
+    // 2. Camera setup (Orthographic Camera for 2.5D isometric view)
     const aspect = width / height;
     const viewSize = Math.max(topology.widthM, topology.lengthM) * 1.15;
     const camera = new THREE.OrthographicCamera(
@@ -52,8 +101,6 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
     const centerX = topology.widthM / 2;
     const centerZ = topology.lengthM / 2;
 
-    // Position camera top-down with 20° isometric pitch
-    // 20 degrees off vertical -> Y pitch
     const cameraDistance = Math.max(topology.widthM, topology.lengthM) * 1.5;
     const pitchAngleRad = THREE.MathUtils.degToRad(25);
 
@@ -78,8 +125,8 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
     controls.enablePan = true;
     controls.enableZoom = true;
     controls.enableRotate = true;
-    controls.minPolarAngle = Math.PI / 8; // ~22.5 deg
-    controls.maxPolarAngle = Math.PI / 3.2; // ~56 deg
+    controls.minPolarAngle = Math.PI / 8;
+    controls.maxPolarAngle = Math.PI / 3.2;
     controls.update();
 
     // 5. Lighting
@@ -124,7 +171,6 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
 
     // 7. Functional Zones Floor Patches & Extrusions
     topology.zones.forEach((zone) => {
-      // Zone Floor Patch
       const zoneGeo = new THREE.PlaneGeometry(zone.width, zone.height);
       const zoneMat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(zone.color),
@@ -157,12 +203,11 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
       );
       scene.add(borderLine);
 
-      // If Storage Zone: generate 2.5D extruded rack boxes
+      // Extruded Storage Rack Blocks
       if (zone.type === 'STORAGE_AISLE') {
         const rackHeight = Math.min(4, facility.ceilingHeightM * 0.6);
         const rackGroup = new THREE.Group();
 
-        // Create discrete parallel rack blocks
         const rackRows = 4;
         const rowHeight = (zone.height - 2) / rackRows;
         for (let r = 0; r < rackRows; r++) {
@@ -186,11 +231,8 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
           rackMesh.receiveShadow = true;
           rackGroup.add(rackMesh);
 
-          // Rack wireframe outline
           const rackEdges = new THREE.EdgesGeometry(rackGeo);
-          const rackLineMat = new THREE.LineBasicMaterial({
-            color: 0x64748b,
-          });
+          const rackLineMat = new THREE.LineBasicMaterial({ color: 0x64748b });
           const rackLine = new THREE.LineSegments(rackEdges, rackLineMat);
           rackLine.position.copy(rackMesh.position);
           rackGroup.add(rackLine);
@@ -213,7 +255,7 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
       ];
       const edgeGeo = new THREE.BufferGeometry().setFromPoints(points);
       const edgeMat = new THREE.LineBasicMaterial({
-        color: 0x38bdf8, // sky blue
+        color: 0x38bdf8,
         transparent: true,
         opacity: 0.6,
         linewidth: 2,
@@ -222,20 +264,20 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
       scene.add(line);
     });
 
-    // 9. Node Markers (Docks, Charging Hubs, Waypoints)
+    // 9. Node Markers
     const getNodeColor = (type: NodeType): number => {
       switch (type) {
         case 'INBOUND_DOCK':
-          return 0x3b82f6; // blue
+          return 0x3b82f6;
         case 'OUTBOUND_DOCK':
-          return 0x0284c7; // sky blue
+          return 0x0284c7;
         case 'CHARGING_HUB':
-          return 0xf59e0b; // amber
+          return 0xf59e0b;
         case 'STORAGE_AISLE':
-          return 0x10b981; // emerald
+          return 0x10b981;
         case 'WAYPOINT':
         default:
-          return 0x94a3b8; // slate-400
+          return 0x94a3b8;
       }
     };
 
@@ -243,7 +285,6 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
       const color = getNodeColor(node.type);
 
       if (node.type === 'WAYPOINT') {
-        // Small waypoint dot
         const dotGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.1, 8);
         const dotMat = new THREE.MeshStandardMaterial({
           color,
@@ -253,7 +294,6 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
         dotMesh.position.set(node.x, 0.05, node.y);
         scene.add(dotMesh);
       } else {
-        // Prominent 3D marker cylinder/pin for key functional nodes
         const markerGeo = new THREE.CylinderGeometry(0.8, 1.2, 0.8, 16);
         const markerMat = new THREE.MeshStandardMaterial({
           color,
@@ -267,7 +307,6 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
         markerMesh.castShadow = true;
         scene.add(markerMesh);
 
-        // Top cap indicator
         const capGeo = new THREE.SphereGeometry(0.5, 12, 12);
         const capMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
         const capMesh = new THREE.Mesh(capGeo, capMat);
@@ -276,13 +315,137 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
       }
     });
 
-    // 10. Animation & Resize loop
+    // 10. Dynamic Robot Fleet Meshes Map
+    interface AgentMeshGroup {
+      group: THREE.Group;
+      chassisMesh: THREE.Mesh;
+      haloMesh: THREE.Mesh;
+      cargoMesh: THREE.Mesh;
+      haloMat: THREE.MeshBasicMaterial;
+    }
+
+    const agentMeshMap = new Map<string, AgentMeshGroup>();
+
+    const getHaloColor = (state: AgentFSMState, isQueued: boolean): number => {
+      if (isQueued) return 0xf59e0b; // Amber for queued
+      switch (state) {
+        case 'TRANSPORTING':
+        case 'MOVING_TO_PICKUP':
+          return 0x10b981; // Green
+        case 'LOADING':
+        case 'UNLOADING':
+          return 0xf59e0b; // Amber
+        case 'MOVING_TO_CHARGE':
+        case 'CHARGING':
+          return 0x06b6d4; // Cyan
+        case 'IDLE':
+        default:
+          return 0x64748b; // Slate
+      }
+    };
+
+    const createRobotMeshGroup = (): AgentMeshGroup => {
+      const group = new THREE.Group();
+
+      // Chassis: rounded box body
+      const chassisGeo = new THREE.BoxGeometry(1.2, 0.4, 1.2);
+      const chassisMat = new THREE.MeshStandardMaterial({
+        color: 0x2563eb, // blue-600 AMR chassis
+        roughness: 0.3,
+        metalness: 0.6,
+      });
+      const chassisMesh = new THREE.Mesh(chassisGeo, chassisMat);
+      chassisMesh.position.y = 0.2;
+      chassisMesh.castShadow = true;
+      chassisMesh.receiveShadow = true;
+      group.add(chassisMesh);
+
+      // Heading indicator nose / headlight
+      const noseGeo = new THREE.BoxGeometry(0.3, 0.2, 0.3);
+      const noseMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0 });
+      const noseMesh = new THREE.Mesh(noseGeo, noseMat);
+      noseMesh.position.set(0.5, 0.3, 0);
+      group.add(noseMesh);
+
+      // Halo / Status Ring under chassis
+      const haloGeo = new THREE.RingGeometry(0.8, 1.1, 24);
+      const haloMat = new THREE.MeshBasicMaterial({
+        color: 0x10b981,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.8,
+      });
+      const haloMesh = new THREE.Mesh(haloGeo, haloMat);
+      haloMesh.rotation.x = -Math.PI / 2;
+      haloMesh.position.y = 0.03;
+      group.add(haloMesh);
+
+      // Cargo Payload Crate
+      const cargoGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
+      const cargoMat = new THREE.MeshStandardMaterial({
+        color: 0x0284c7, // Sky blue cargo crate
+        roughness: 0.5,
+        metalness: 0.2,
+      });
+      const cargoMesh = new THREE.Mesh(cargoGeo, cargoMat);
+      cargoMesh.position.set(0, 0.7, 0);
+      cargoMesh.castShadow = true;
+      cargoMesh.visible = false;
+      group.add(cargoMesh);
+
+      scene.add(group);
+
+      return { group, chassisMesh, haloMesh, cargoMesh, haloMat };
+    };
+
+    // 11. Animation Loop
+    const clock = new THREE.Clock();
     let animationFrameId: number;
+    let telemetryTimer = 0;
+
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
+
+      const deltaReal = clock.getDelta();
+
+      if (isPlaying && engineRef.current) {
+        const dtSim = Math.min(0.1, deltaReal) * speedMultiplier;
+        engineRef.current.update(dtSim);
+
+        // Update / Sync agents to 3D Scene
+        const agents = engineRef.current.agents;
+
+        agents.forEach((agent) => {
+          let meshGroup = agentMeshMap.get(agent.id);
+          if (!meshGroup) {
+            meshGroup = createRobotMeshGroup();
+            agentMeshMap.set(agent.id, meshGroup);
+          }
+
+          // Update position
+          meshGroup.group.position.set(agent.x, 0, agent.y);
+          meshGroup.group.rotation.y = agent.headingRad;
+
+          // Update Halo color
+          const colorHex = getHaloColor(agent.state, agent.isQueued);
+          meshGroup.haloMat.color.setHex(colorHex);
+
+          // Update Cargo payload visibility
+          meshGroup.cargoMesh.visible = agent.cargoPayload;
+        });
+
+        // Telemetry update interval (~10Hz)
+        telemetryTimer += deltaReal;
+        if (telemetryTimer >= 0.1) {
+          telemetryTimer = 0;
+          setTelemetry(engineRef.current.getTelemetry(targetThroughputPerHour));
+        }
+      }
+
       controls.update();
       renderer.render(scene, camera);
     };
+
     animate();
 
     const handleResize = () => {
@@ -308,7 +471,7 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
       controls.dispose();
       renderer.dispose();
     };
-  }, [topology, facility]);
+  }, [topology, facility, isPlaying, speedMultiplier, targetThroughputPerHour]);
 
   const getFacilityTypeNameRu = (type: string) => {
     switch (type) {
@@ -324,23 +487,38 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
     }
   };
 
+  const isFleetEmpty = fleetSize === 0 || !selectedRobot;
+  const selectedRobotFullName = selectedRobot
+    ? `${selectedRobot.vendor} ${selectedRobot.model}`
+    : null;
+
   return (
     <div className="bg-slate-800/90 border border-slate-700/80 rounded-xl overflow-hidden shadow-xl mb-8">
+      {/* Simulation HUD Controls Bar */}
+      <SimulationControls
+        isPlaying={isPlaying}
+        onTogglePlayPause={() => setIsPlaying((prev) => !prev)}
+        onReset={handleReset}
+        speedMultiplier={speedMultiplier}
+        onSpeedChange={setSpeedMultiplier}
+        telemetry={telemetry}
+        targetThroughputPerHour={targetThroughputPerHour}
+        fleetSize={fleetSize}
+        selectedRobotName={selectedRobotFullName}
+      />
+
       {/* Header telemetry bar */}
-      <div className="bg-slate-900/90 border-b border-slate-700/80 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-slate-900/90 border-b border-slate-700/80 px-6 py-3 flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <Layers className="w-5 h-5 text-blue-400" />
-            <h3 className="text-lg font-bold text-slate-100">
-              2.5D Интерактивная топология объекта
+            <h3 className="text-base font-bold text-slate-100">
+              2.5D Динамическая анимация симуляции парка
             </h3>
             <span className="text-xs bg-blue-500/20 text-blue-400 font-semibold px-2.5 py-0.5 rounded border border-blue-500/30">
               {getFacilityTypeNameRu(facility.industry)}
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Процедурная генерация графа путей, функциональных зон и зарядной инфраструктуры
-          </p>
         </div>
 
         {/* Dimension & Graph Metrics Badges */}
@@ -351,8 +529,7 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
               Габариты:{' '}
               <strong className="text-white">
                 {topology.widthM} × {topology.lengthM} м
-              </strong>{' '}
-              ({facility.totalAreaSqm.toLocaleString('ru-RU')} м²)
+              </strong>
             </span>
           </div>
 
@@ -376,30 +553,43 @@ export function SimulationViewport({ facility }: SimulationViewportProps) {
       </div>
 
       {/* Three.js Canvas Container */}
-      <div className="relative w-full h-[520px] bg-slate-950">
+      <div className="relative w-full h-[540px] bg-slate-950">
         <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+
+        {/* Empty Fleet Overlay Banner */}
+        {isFleetEmpty && (
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6 text-center z-10">
+            <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-8 max-w-md shadow-2xl">
+              <div className="p-3 bg-amber-500/10 text-amber-400 rounded-full w-fit mx-auto mb-4 border border-amber-500/20">
+                <AlertCircle className="w-8 h-8" />
+              </div>
+              <h4 className="text-lg font-bold text-slate-100 mb-2">
+                Парк не сформирован
+              </h4>
+              <p className="text-sm text-slate-400">
+                Выберите подходящее роботизированное решение в каталоге выше для запуска циклической симуляции парка.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Legend Overlay */}
         <div className="absolute bottom-4 left-4 bg-slate-900/90 border border-slate-700/80 rounded-lg p-3 backdrop-blur text-xs flex flex-wrap gap-4 text-slate-300 shadow-lg">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-sm bg-blue-500" />
-            <span>Зона приемки (Inbound)</span>
+            <div className="w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-emerald-500/30" />
+            <span>Активен / В пути</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-sm bg-sky-600" />
-            <span>Зона отгрузки (Outbound)</span>
+            <div className="w-3 h-3 rounded-full bg-amber-500 ring-2 ring-amber-500/30" />
+            <span>Погрузка / Разгрузка / Ожидание</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-sm bg-slate-600" />
-            <span>Стеллажный комплекс</span>
+            <div className="w-3 h-3 rounded-full bg-cyan-500 ring-2 ring-cyan-500/30" />
+            <span>На зарядке</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-sm bg-amber-500" />
-            <span>Зарядный хаб</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-0.5 bg-sky-400" />
-            <span>Транзитные трассы</span>
+            <div className="w-3 h-2 rounded-sm bg-sky-500" />
+            <span>Груз (Паллета)</span>
           </div>
         </div>
 

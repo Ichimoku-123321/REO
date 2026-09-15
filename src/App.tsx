@@ -1,11 +1,17 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { SEED_ROBOTS } from './data/robots.seed.js';
 import { FACILITY_PRESETS } from './data/presets.js';
 import { evaluateEligibility } from './engine/dss.js';
+import { calculateEconomics, DEFAULT_WHAT_IF_PARAMS } from './engine/economics.js';
 import type { FacilityRequirements } from './types/facility.js';
+import type { WhatIfParams } from './engine/economics.js';
 import { FacilityForm } from './components/FacilityForm.js';
 import { RobotCard } from './components/RobotCard.js';
 import { ExcludedRobotsAccordion } from './components/ExcludedRobotsAccordion.js';
+import { RobotComparisonTable } from './components/RobotComparisonTable.js';
+import { ScenarioMatrix } from './components/ScenarioMatrix.js';
+import { WhatIfPanel } from './components/WhatIfPanel.js';
+import { FormulaModal } from './components/FormulaModal.js';
 import {
   Cpu,
   CheckCircle2,
@@ -20,6 +26,9 @@ export default function App() {
   const [facility, setFacility] = useState<FacilityRequirements>(
     FACILITY_PRESETS[0].requirements
   );
+  const [selectedRobotId, setSelectedRobotId] = useState<string>('');
+  const [whatIf, setWhatIf] = useState<WhatIfParams>(DEFAULT_WHAT_IF_PARAMS);
+  const [isFormulaModalOpen, setIsFormulaModalOpen] = useState<boolean>(false);
 
   const handlePresetSelect = (presetId: string) => {
     const preset = FACILITY_PRESETS.find((p) => p.id === presetId);
@@ -45,6 +54,27 @@ export default function App() {
   const ineligibleRobots = useMemo(() => {
     return evaluatedRobots.filter((r) => !r.result.isEligible);
   }, [evaluatedRobots]);
+
+  // Set default selected robot when eligibleRobots change
+  useEffect(() => {
+    if (eligibleRobots.length > 0) {
+      const isCurrentValid = eligibleRobots.some((r) => r.robot.id === selectedRobotId);
+      if (!isCurrentValid) {
+        setSelectedRobotId(eligibleRobots[0].robot.id);
+      }
+    } else {
+      setSelectedRobotId('');
+    }
+  }, [eligibleRobots, selectedRobotId]);
+
+  const selectedRobot = useMemo(() => {
+    return eligibleRobots.find((r) => r.robot.id === selectedRobotId)?.robot ?? null;
+  }, [eligibleRobots, selectedRobotId]);
+
+  const selectedRobotEconomics = useMemo(() => {
+    if (!selectedRobot) return null;
+    return calculateEconomics(facility, selectedRobot, whatIf);
+  }, [facility, selectedRobot, whatIf]);
 
   const lowestCapex = useMemo(() => {
     if (eligibleRobots.length === 0) return 0;
@@ -130,11 +160,45 @@ export default function App() {
               <Coins className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-xs font-medium text-slate-400">Мин. CAPEX парка</p>
+              <p className="text-xs font-medium text-slate-400">Мин. CAPEX единицы</p>
               <p className="text-lg font-bold text-slate-100">{formattedLowestCapex}</p>
             </div>
           </div>
         </div>
+
+        {/* Step 4: Unified Robot Comparison Table */}
+        {eligibleRobots.length > 0 && (
+          <RobotComparisonTable
+            robots={eligibleRobots.map((e) => e.robot)}
+            facility={facility}
+            whatIf={whatIf}
+            selectedRobotId={selectedRobotId}
+            onSelectRobot={setSelectedRobotId}
+          />
+        )}
+
+        {/* Step 5: 3-Scenario Financial Table */}
+        {selectedRobot && selectedRobotEconomics && (
+          <ScenarioMatrix
+            evaluation={selectedRobotEconomics}
+            robot={selectedRobot}
+          />
+        )}
+
+        {/* Step 6: Interactive What-If Control Panel */}
+        {eligibleRobots.length > 0 && (
+          <WhatIfPanel
+            whatIf={whatIf}
+            onChange={setWhatIf}
+            onOpenFormulaModal={() => setIsFormulaModalOpen(true)}
+          />
+        )}
+
+        {/* Formula Assumptions Modal */}
+        <FormulaModal
+          isOpen={isFormulaModalOpen}
+          onClose={() => setIsFormulaModalOpen(false)}
+        />
 
         {/* Recommended Solutions Section */}
         <section className="mb-8">

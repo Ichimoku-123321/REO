@@ -84,11 +84,17 @@ function generateWarehouseTopology(
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
   const zones: FacilityZone[] = [];
+  const nodeMap = new Map<string, GraphNode>();
+
+  const addNode = (node: GraphNode) => {
+    nodes.push(node);
+    nodeMap.set(node.id, node);
+  };
 
   let edgeIdSeq = 1;
   const addEdge = (sourceId: string, targetId: string) => {
-    const srcNode = nodes.find((n) => n.id === sourceId);
-    const tgtNode = nodes.find((n) => n.id === targetId);
+    const srcNode = nodeMap.get(sourceId);
+    const tgtNode = nodeMap.get(targetId);
     if (!srcNode || !tgtNode) return;
     const distanceM = dist(srcNode, tgtNode);
     edges.push({
@@ -155,7 +161,7 @@ function generateWarehouseTopology(
   for (let i = 0; i < numDocks; i++) {
     const id = `inbound_dock_${i + 1}`;
     const y = Math.round(5 + (i * (lengthM - 10)) / (numDocks - 1 || 1));
-    nodes.push({
+    addNode({
       id,
       type: 'INBOUND_DOCK',
       x: Math.round(dockWidth / 2 + 1),
@@ -171,7 +177,7 @@ function generateWarehouseTopology(
   for (let i = 0; i < numDocks; i++) {
     const id = `outbound_dock_${i + 1}`;
     const y = Math.round(5 + (i * (lengthM - 10)) / (numDocks - 1 || 1));
-    nodes.push({
+    addNode({
       id,
       type: 'OUTBOUND_DOCK',
       x: Math.round(widthM - dockWidth / 2 - 1),
@@ -188,7 +194,7 @@ function generateWarehouseTopology(
   for (let i = 0; i < numChargers; i++) {
     const id = `charging_${i + 1}`;
     const x = Math.round(widthM / 2 - 6 + i * 4);
-    nodes.push({
+    addNode({
       id,
       type: 'CHARGING_HUB',
       x,
@@ -222,12 +228,12 @@ function generateWarehouseTopology(
   yLevels.forEach((y, yIdx) => {
     // Left corridor waypoint
     const wpLeftId = `wp_left_${yIdx}`;
-    nodes.push({ id: wpLeftId, type: 'WAYPOINT', x: leftCorridorX, y, zLevel: 0 });
+    addNode({ id: wpLeftId, type: 'WAYPOINT', x: leftCorridorX, y, zLevel: 0 });
     leftCorridorNodes.push(wpLeftId);
 
     // Right corridor waypoint
     const wpRightId = `wp_right_${yIdx}`;
-    nodes.push({ id: wpRightId, type: 'WAYPOINT', x: rightCorridorX, y, zLevel: 0 });
+    addNode({ id: wpRightId, type: 'WAYPOINT', x: rightCorridorX, y, zLevel: 0 });
     rightCorridorNodes.push(wpRightId);
 
     // Connect left corridor waypoints vertically
@@ -239,12 +245,12 @@ function generateWarehouseTopology(
 
   // Connect Inbound docks to nearest left corridor waypoints
   inboundDockNodes.forEach((dockId) => {
-    const dockNode = nodes.find((n) => n.id === dockId)!;
+    const dockNode = nodeMap.get(dockId)!;
     // Find closest left corridor waypoint
     let closestWp = leftCorridorNodes[0];
     let minD = Infinity;
     leftCorridorNodes.forEach((wpId) => {
-      const wpNode = nodes.find((n) => n.id === wpId)!;
+      const wpNode = nodeMap.get(wpId)!;
       const d = dist(dockNode, wpNode);
       if (d < minD) {
         minD = d;
@@ -256,11 +262,11 @@ function generateWarehouseTopology(
 
   // Connect Outbound docks to nearest right corridor waypoints
   outboundDockNodes.forEach((dockId) => {
-    const dockNode = nodes.find((n) => n.id === dockId)!;
+    const dockNode = nodeMap.get(dockId)!;
     let closestWp = rightCorridorNodes[0];
     let minD = Infinity;
     rightCorridorNodes.forEach((wpId) => {
-      const wpNode = nodes.find((n) => n.id === wpId)!;
+      const wpNode = nodeMap.get(wpId)!;
       const d = dist(dockNode, wpNode);
       if (d < minD) {
         minD = d;
@@ -280,7 +286,7 @@ function generateWarehouseTopology(
     // Top, middle, bottom storage aisle nodes
     yLevels.forEach((y, yIdx) => {
       const aisleNodeId = `storage_aisle_${a + 1}_${yIdx}`;
-      nodes.push({
+      addNode({
         id: aisleNodeId,
         type: 'STORAGE_AISLE',
         x: aisleX,
@@ -309,7 +315,7 @@ function generateWarehouseTopology(
 
   // Charging hub connections to bottom corridor
   const bottomChargingWpId = `wp_charging_main`;
-  nodes.push({
+  addNode({
     id: bottomChargingWpId,
     type: 'WAYPOINT',
     x: Math.round(widthM / 2),
@@ -340,11 +346,19 @@ function generateAirportTopology(
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
   const zones: FacilityZone[] = [];
+  const nodeMap = new Map<string, GraphNode>();
+
+  const addNode = (...newNodes: GraphNode[]) => {
+    newNodes.forEach((node) => {
+      nodes.push(node);
+      nodeMap.set(node.id, node);
+    });
+  };
 
   let edgeIdSeq = 1;
   const addEdge = (sourceId: string, targetId: string) => {
-    const srcNode = nodes.find((n) => n.id === sourceId);
-    const tgtNode = nodes.find((n) => n.id === targetId);
+    const srcNode = nodeMap.get(sourceId);
+    const tgtNode = nodeMap.get(targetId);
     if (!srcNode || !tgtNode) return;
     const distanceM = dist(srcNode, tgtNode);
     edges.push({
@@ -405,7 +419,7 @@ function generateAirportTopology(
   // Inbound docks (Luggage Intake)
   const intakeNode1 = 'airport_intake_1';
   const intakeNode2 = 'airport_intake_2';
-  nodes.push(
+  addNode(
     { id: intakeNode1, type: 'INBOUND_DOCK', x: Math.round(widthM * 0.3), y: 5, zLevel: 0, label: 'Терминал A' },
     { id: intakeNode2, type: 'INBOUND_DOCK', x: Math.round(widthM * 0.7), y: 5, zLevel: 0, label: 'Терминал B' }
   );
@@ -413,14 +427,14 @@ function generateAirportTopology(
   // Outbound docks (Apron Docks)
   const apronNode1 = 'airport_apron_1';
   const apronNode2 = 'airport_apron_2';
-  nodes.push(
+  addNode(
     { id: apronNode1, type: 'OUTBOUND_DOCK', x: Math.round(widthM * 0.3), y: lengthM - 4, zLevel: 0, label: 'Стоянка Гейт 1' },
     { id: apronNode2, type: 'OUTBOUND_DOCK', x: Math.round(widthM * 0.7), y: lengthM - 4, zLevel: 0, label: 'Стоянка Гейт 2' }
   );
 
   // Charging hub
   const chargerNode1 = 'airport_charge_1';
-  nodes.push({ id: chargerNode1, type: 'CHARGING_HUB', x: 5, y: 15, zLevel: 0, label: 'Зарядная станция Перрон' });
+  addNode({ id: chargerNode1, type: 'CHARGING_HUB', x: 5, y: 15, zLevel: 0, label: 'Зарядная станция Перрон' });
 
   // Terminal Transit Corridor Waypoints
   const transitStepCount = Math.max(3, Math.floor(lengthM / 15));
@@ -429,7 +443,7 @@ function generateAirportTopology(
   for (let i = 0; i < transitStepCount; i++) {
     const wpId = `wp_airport_transit_${i}`;
     const y = Math.round(8 + (i * (lengthM - 16)) / (transitStepCount - 1 || 1));
-    nodes.push({
+    addNode({
       id: wpId,
       type: 'WAYPOINT',
       x: Math.round(widthM / 2),
@@ -471,11 +485,19 @@ function generateHospitalTopology(
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
   const zones: FacilityZone[] = [];
+  const nodeMap = new Map<string, GraphNode>();
+
+  const addNode = (...newNodes: GraphNode[]) => {
+    newNodes.forEach((node) => {
+      nodes.push(node);
+      nodeMap.set(node.id, node);
+    });
+  };
 
   let edgeIdSeq = 1;
   const addEdge = (sourceId: string, targetId: string) => {
-    const srcNode = nodes.find((n) => n.id === sourceId);
-    const tgtNode = nodes.find((n) => n.id === targetId);
+    const srcNode = nodeMap.get(sourceId);
+    const tgtNode = nodeMap.get(targetId);
     if (!srcNode || !tgtNode) return;
     const distanceM = dist(srcNode, tgtNode);
     edges.push({
@@ -538,7 +560,7 @@ function generateHospitalTopology(
   // Nodes
   // Central Depot (Inbound)
   const depotNode = 'hosp_depot_main';
-  nodes.push({
+  addNode({
     id: depotNode,
     type: 'INBOUND_DOCK',
     x: centerX,
@@ -550,7 +572,7 @@ function generateHospitalTopology(
   // Department Docks (Outbound Delivery Destinations)
   const wingLeftNode = 'hosp_wing_left';
   const wingRightNode = 'hosp_wing_right';
-  nodes.push(
+  addNode(
     {
       id: wingLeftNode,
       type: 'OUTBOUND_DOCK',
@@ -571,7 +593,7 @@ function generateHospitalTopology(
 
   // Charging Station Node
   const hospCharger = 'hosp_charger_1';
-  nodes.push({
+  addNode({
     id: hospCharger,
     type: 'CHARGING_HUB',
     x: centerX,
@@ -587,7 +609,7 @@ function generateHospitalTopology(
   const wpWest = 'wp_hosp_west';
   const wpEast = 'wp_hosp_east';
 
-  nodes.push(
+  addNode(
     { id: wpCenter, type: 'WAYPOINT', x: centerX, y: centerY - 5, zLevel: 0 },
     { id: wpNorth, type: 'WAYPOINT', x: centerX, y: 5, zLevel: 0 },
     { id: wpSouth, type: 'WAYPOINT', x: centerX, y: lengthM - 5, zLevel: 0 },

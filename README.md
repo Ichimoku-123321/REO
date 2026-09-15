@@ -601,15 +601,15 @@ export type RobotState \=&nbsp;
 
 ## **8\. ПОШАГОВЫЙ ПЛАН СБОРКИ (ENGINEERING CHECKLIST)**
 
-\[ \] ЭТАП 1: Инициализация и База (Часы 0 \- 3\)
+\[x\] ЭТАП 1: Инициализация и База (Часы 0 \- 3\)
 
 &nbsp;&nbsp;&nbsp;&nbsp;\[x\] 1.1. Развернуть репозиторий Next.js 15, Tailwind, lucide-react, zustand, zod.
 
-&nbsp;&nbsp;&nbsp;&nbsp;\[ \] 1.2. Создать файл типов \`src/types/robotics.ts\` (скопировать раздел 2 настоящего ТП).
+&nbsp;&nbsp;&nbsp;&nbsp;\[x\] 1.2. Создать файл типов \`src/types/robotics.ts\` (скопировать раздел 2 настоящего ТП).
 
-&nbsp;&nbsp;&nbsp;&nbsp;\[ \] 1.3. Создать файл пресетов \`src/data/presets.ts\` (Склад, Аэропорт, Больница).
+&nbsp;&nbsp;&nbsp;&nbsp;\[x\] 1.3. Создать файл пресетов \`src/data/presets.ts\` (Склад, Аэропорт, Больница).
 
-&nbsp;&nbsp;&nbsp;&nbsp;\[ \] 1.4. Наполнить каталог \`src/data/robots.ts\` (6 эталонных моделей).
+&nbsp;&nbsp;&nbsp;&nbsp;\[x\] 1.4. Наполнить каталог \`src/data/robots.ts\` (6 эталонных моделей).
 
 &nbsp;
 

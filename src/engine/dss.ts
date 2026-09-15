@@ -10,21 +10,21 @@ export function evaluateEligibility(
 
     // 1. Отраслевое соответствие
     if (!robot.supportedIndustries.includes(facility.industry)) {
-      reasons.push(`Robot does not support facility type: ${facility.industry}`);
+      reasons.push(`Решение не поддерживает выбранный тип объекта: ${facility.industry}`);
     }
 
     // 2. Габариты и ширина проходов (метры -> мм)
     const aisleWidthMm = facility.aisleWidthM * 1000;
     if (aisleWidthMm < robot.minAisleWidthMm) {
       reasons.push(
-        `Facility aisle width (${facility.aisleWidthM}m) is less than required minimum clearance (${robot.minAisleWidthMm}mm)`
+        `Ширина проезда объекта (${facility.aisleWidthM} м) меньше минимального габарита робота (${robot.minAisleWidthMm} мм)`
       );
     }
 
     // 3. Грузоподъемность
     if (facility.requiredPayloadKg > robot.payloadKg) {
       reasons.push(
-        `Required payload (${facility.requiredPayloadKg}kg) exceeds robot maximum payload limit (${robot.payloadKg}kg)`
+        `Требуемая нагрузка (${facility.requiredPayloadKg} кг) превышает грузоподъемность робота (${robot.payloadKg} кг)`
       );
     }
 
@@ -36,7 +36,7 @@ export function evaluateEligibility(
       facilityMax > robot.operatingTempRange.max
     ) {
       reasons.push(
-        `Facility temperature range [${facilityMin}°C, ${facilityMax}°C] exceeds robot limits [${robot.operatingTempRange.min}°C, ${robot.operatingTempRange.max}°C]`
+        `Рабочая температура объекта выйдет за допустимый диапазон эксплуатации (${robot.operatingTempRange.min}°C .. ${robot.operatingTempRange.max}°C)`
       );
     }
 

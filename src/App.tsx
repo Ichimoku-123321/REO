@@ -12,6 +12,7 @@ import { RobotComparisonTable } from './components/RobotComparisonTable.js';
 import { ScenarioMatrix } from './components/ScenarioMatrix.js';
 import { WhatIfPanel } from './components/WhatIfPanel.js';
 import { FormulaModal } from './components/FormulaModal.js';
+import { SimulationViewport } from './components/SimulationViewport.js';
 import {
   Cpu,
   CheckCircle2,
@@ -193,6 +194,9 @@ export default function App() {
             onOpenFormulaModal={() => setIsFormulaModalOpen(true)}
           />
         )}
+
+        {/* Step 7: 2.5D Topology Viewport */}
+        <SimulationViewport facility={facility} />
 
         {/* Formula Assumptions Modal */}
         <FormulaModal

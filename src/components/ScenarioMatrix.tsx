@@ -1,14 +1,27 @@
 import React from 'react';
 import type { EconomicEvaluation } from '../engine/economics.js';
 import type { Robot } from '../types/robot.js';
-import { Award, CheckCircle2, TrendingUp, DollarSign, Calendar, ShieldCheck, AlertTriangle } from 'lucide-react';
+import type { FacilityRequirements } from '../types/facility.js';
+import type { WhatIfParams } from '../engine/economics.js';
+import type { SpectralAnalysisResult } from '../engine/spectral_analyzer.js';
+import { generateFeasibilityPdf } from '../engine/export_pdf.js';
+import { Award, CheckCircle2, TrendingUp, FileText } from 'lucide-react';
 
 interface ScenarioMatrixProps {
   evaluation: EconomicEvaluation;
   robot: Robot;
+  facility: FacilityRequirements;
+  whatIf: WhatIfParams;
+  spectralResult?: SpectralAnalysisResult;
 }
 
-export const ScenarioMatrix: React.FC<ScenarioMatrixProps> = ({ evaluation, robot }) => {
+export const ScenarioMatrix: React.FC<ScenarioMatrixProps> = ({
+  evaluation,
+  robot,
+  facility,
+  whatIf,
+  spectralResult,
+}) => {
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat('ru-RU', {
       style: 'currency',
@@ -18,6 +31,20 @@ export const ScenarioMatrix: React.FC<ScenarioMatrixProps> = ({ evaluation, robo
   };
 
   const { asIs, capexPurchase, raas, recommendedScenario } = evaluation;
+
+  const handleDownloadPdf = () => {
+    generateFeasibilityPdf({
+      projectTitle: `ТЭО Роботизации - ${facility.industry.toUpperCase()}`,
+      facility,
+      selectedRobot: robot,
+      fleetSize: evaluation.fleetSize,
+      economicEvaluation: evaluation,
+      spectralResult,
+      whatIf,
+      generatedAt: new Date(),
+      version: 'СППР v1.0',
+    });
+  };
 
   return (
     <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-6 shadow-md mb-8">
@@ -32,11 +59,21 @@ export const ScenarioMatrix: React.FC<ScenarioMatrixProps> = ({ evaluation, robo
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-emerald-400 text-xs font-semibold">
-          <Award className="w-4 h-4 text-emerald-400" />
-          <span>
-            Рекомендация: {recommendedScenario === 'capexPurchase' ? 'Покупка парка (CAPEX)' : recommendedScenario === 'raas' ? 'Сервисная модель (RaaS)' : 'Базовый (Как есть)'}
-          </span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-emerald-400 text-xs font-semibold">
+            <Award className="w-4 h-4 text-emerald-400" />
+            <span>
+              Рекомендация: {recommendedScenario === 'capexPurchase' ? 'Покупка парка (CAPEX)' : recommendedScenario === 'raas' ? 'Сервисная модель (RaaS)' : 'Базовый (Как есть)'}
+            </span>
+          </div>
+
+          <button
+            onClick={handleDownloadPdf}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-blue-500/20 transition"
+          >
+            <FileText className="w-4 h-4" />
+            <span>📄 Скачать ТЭО (PDF)</span>
+          </button>
         </div>
       </div>
 

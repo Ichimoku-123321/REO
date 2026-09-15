@@ -1,5 +1,6 @@
 import React from 'react';
 import type { SimulationTelemetry } from '../engine/simulation_engine.js';
+import type { SpectralAnalysisResult } from '../engine/spectral_analyzer.js';
 import {
   Play,
   Pause,
@@ -10,6 +11,7 @@ import {
   Bot,
   AlertTriangle,
   CheckCircle2,
+  Network,
 } from 'lucide-react';
 
 interface SimulationControlsProps {
@@ -22,6 +24,7 @@ interface SimulationControlsProps {
   targetThroughputPerHour: number;
   fleetSize: number;
   selectedRobotName: string | null;
+  spectralAnalysis?: SpectralAnalysisResult;
 }
 
 export const SimulationControls: React.FC<SimulationControlsProps> = ({
@@ -34,9 +37,37 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   targetThroughputPerHour,
   fleetSize,
   selectedRobotName,
+  spectralAnalysis,
 }) => {
   const isDisabled = fleetSize === 0 || !selectedRobotName;
   const speedOptions = [1, 2, 5, 10];
+
+  const getConnectivityBadge = () => {
+    if (!spectralAnalysis) return null;
+    const { algebraicConnectivity, status } = spectralAnalysis;
+
+    if (status === 'OPTIMAL') {
+      return {
+        label: `Связность сеть (λ₂): ${algebraicConnectivity} — Высокая пропускная способность`,
+        colorClass: 'text-emerald-400',
+        bgClass: 'bg-emerald-500/10 border-emerald-500/20',
+      };
+    }
+    if (status === 'MODERATE') {
+      return {
+        label: `Связность сеть (λ₂): ${algebraicConnectivity} — Умеренная пропускная способность`,
+        colorClass: 'text-amber-400',
+        bgClass: 'bg-amber-500/10 border-amber-500/20',
+      };
+    }
+    return {
+      label: `Связность сеть (λ₂): ${algebraicConnectivity} — Обнаружено узкое горлышко`,
+      colorClass: 'text-red-400',
+      bgClass: 'bg-red-500/10 border-red-500/20',
+    };
+  };
+
+  const connectivityBadge = getConnectivityBadge();
 
   return (
     <div className="bg-slate-900/90 border-b border-slate-700/80 p-4">
@@ -125,10 +156,10 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
       </div>
 
       {/* Live Telemetry KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {/* 1. Throughput KPI Card */}
         <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
-          <div className="p-2.5 bg-blue-500/10 text-blue-400 rounded-lg border border-blue-500/20">
+          <div className="p-2.5 bg-blue-500/10 text-blue-400 rounded-lg border border-blue-500/20 shrink-0">
             <Gauge className="w-5 h-5" />
           </div>
           <div>
@@ -148,7 +179,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
 
         {/* 2. Fleet Utilization KPI Card */}
         <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
-          <div className="p-2.5 bg-purple-500/10 text-purple-400 rounded-lg border border-purple-500/20">
+          <div className="p-2.5 bg-purple-500/10 text-purple-400 rounded-lg border border-purple-500/20 shrink-0">
             <Activity className="w-5 h-5" />
           </div>
           <div>
@@ -169,7 +200,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
 
         {/* 3. Fleet Status Breakdown */}
         <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20">
+          <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20 shrink-0">
             <Bot className="w-5 h-5" />
           </div>
           <div>
@@ -185,7 +216,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
         <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
           {telemetry.congestionDetected ? (
             <>
-              <div className="p-2.5 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20 animate-pulse">
+              <div className="p-2.5 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20 animate-pulse shrink-0">
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
@@ -197,7 +228,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
             </>
           ) : (
             <>
-              <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20">
+              <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20 shrink-0">
                 <CheckCircle2 className="w-5 h-5" />
               </div>
               <div>
@@ -206,6 +237,26 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
               </div>
             </>
           )}
+        </div>
+
+        {/* 5. Spectral Graph Connectivity Card */}
+        <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
+          <div className={`p-2.5 rounded-lg border shrink-0 ${connectivityBadge?.bgClass || 'bg-slate-700/50 border-slate-600'}`}>
+            <Network className={`w-5 h-5 ${connectivityBadge?.colorClass || 'text-slate-400'}`} />
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-slate-400">Связность сети (λ₂)</p>
+            {spectralAnalysis ? (
+              <p className={`text-xs font-bold ${connectivityBadge?.colorClass}`}>
+                λ₂ = {spectralAnalysis.algebraicConnectivity}{' '}
+                <span className="text-[10px] opacity-80 block font-normal">
+                  ({spectralAnalysis.status === 'OPTIMAL' ? 'Высокая' : spectralAnalysis.status === 'MODERATE' ? 'Умеренная' : 'Узкое горлышко'})
+                </span>
+              </p>
+            ) : (
+              <p className="text-xs font-semibold text-slate-400">—</p>
+            )}
+          </div>
         </div>
       </div>
     </div>

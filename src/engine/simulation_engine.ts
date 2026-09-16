@@ -468,10 +468,15 @@ export class SimulationEngine {
               const dotHeadings = vForward.x * vForwardOther.x + vForward.y * vForwardOther.y;
               const approachSpeed = -(uAwayX * vForward.x + uAwayY * vForward.y);
 
+              const factor = (1.5 - distOther) / 1.5;
+              // Always apply radial separation
+              fAvoidX += factor * uAwayX * 1.0;
+              fAvoidY += factor * uAwayY * 1.0;
+
+              // Add lateral rightward evasion strictly for oncoming head-on encounters
               if (dotHeadings < -0.2 && approachSpeed > 0) {
-                const factor = (1.5 - distOther) / 1.5;
-                fAvoidX += factor * (uAwayX * 0.8 + vRight.x * 1.2);
-                fAvoidY += factor * (uAwayY * 0.8 + vRight.y * 1.2);
+                fAvoidX += factor * vRight.x * 1.2;
+                fAvoidY += factor * vRight.y * 1.2;
               }
             }
           }
@@ -511,8 +516,9 @@ export class SimulationEngine {
           agent.x += vx * dtSim;
           agent.y += vy * dtSim;
 
-          // Continuous Orientation update via Angular LERP (2D Cartesian Plane)
-          if (fTotalLen > 0.01) {
+          // Continuous Orientation update via Angular LERP (Freeze heading when stopped)
+          const currentSpeed = Math.hypot(vx, vy);
+          if (currentSpeed > 0.01) {
             const targetHeading = Math.atan2(vy, vx);
             const diff = Math.atan2(Math.sin(targetHeading - agent.headingRad), Math.cos(targetHeading - agent.headingRad));
             const alpha = Math.min(1.0, 0.15 * 60 * dtSim);

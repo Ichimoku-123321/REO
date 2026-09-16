@@ -563,9 +563,13 @@ export function SimulationViewport({
             agentMeshMap.set(agent.id, meshGroup);
           }
 
-          // Transform mapping: x_3d = agent.x, y_3d = 0, z_3d = agent.y
-          meshGroup.group.position.set(agent.x, 0, agent.y);
-          meshGroup.group.rotation.y = -agent.headingRad + Math.PI / 2;
+          // Transform mapping with finite guards: x_3d = agent.x, y_3d = 0, z_3d = agent.y
+          if (Number.isFinite(agent.x) && Number.isFinite(agent.y)) {
+            meshGroup.group.position.set(agent.x, 0, agent.y);
+          }
+          if (Number.isFinite(agent.headingRad)) {
+            meshGroup.group.rotation.y = -agent.headingRad + Math.PI / 2;
+          }
 
           // Update Halo color
           const colorHex = getHaloColor(agent.state, agent.isQueued);
@@ -584,7 +588,11 @@ export function SimulationViewport({
       }
 
       controls.update();
-      renderer.render(scene, camera);
+      try {
+        renderer.render(scene, camera);
+      } catch (err) {
+        console.error('Three.js render loop exception:', err);
+      }
     };
 
     animate();

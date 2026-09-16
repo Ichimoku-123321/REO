@@ -1,5 +1,7 @@
 import type { FacilityRequirements } from '../types/facility.js';
 import type { Robot } from '../types/robot.js';
+import { generateFacilityTopology } from './topology_generator.js';
+import { SimulationEngine } from './simulation_engine.js';
 
 export interface WhatIfParams {
   salaryChangePercent: number; // e.g., -30 to 50
@@ -34,6 +36,7 @@ export interface EconomicEvaluation {
   effectiveSalary: number;
   manualStaffCount: number;
   retainedSupervisorsCount: number;
+  trafficEfficiencyEta?: number;
   asIs: ScenarioMetrics;
   capexPurchase: ScenarioMetrics;
   raas: ScenarioMetrics;
@@ -86,15 +89,35 @@ export function calculateEconomics(
   );
   const capexDiscountFactor = Math.max(0, 1 - whatIf.capexDiscountPercent / 100);
 
-  // Availability coefficient & Fleet sizing
+  // Availability coefficient & Nominal fleet sizing
   const availabilityCoeff = calculateAvailabilityCoefficient(
     robot.batteryRuntimeHours,
     robot.batteryChargeMinutes
   );
-  const fleetSize = calculateFleetSize(
+  const nominalFleetSize = calculateFleetSize(
     effectiveThroughput,
     robot.throughputPerHour,
     availabilityCoeff
+  );
+
+  // Micro-simulation Headless Fast-Forward pass to derive real traffic efficiency factor eta
+  let trafficEfficiencyEta = 1.0;
+  try {
+    const topology = generateFacilityTopology(facility);
+    const simEngine = new SimulationEngine(topology, robot, nominalFleetSize);
+    const simResult = simEngine.runHeadlessFastForward(1800, 0.5); // 30 min fast-forward pass
+    if (simResult.trafficEfficiencyEta > 0) {
+      trafficEfficiencyEta = simResult.trafficEfficiencyEta;
+    }
+  } catch (e) {
+    // Fallback gracefully if topology generation or simulation engine encounters edge case
+    trafficEfficiencyEta = 1.0;
+  }
+
+  // Adjusted Fleet Size incorporating micro-level traffic losses (eta)
+  const fleetSize = Math.max(
+    nominalFleetSize,
+    Math.ceil(nominalFleetSize / Math.max(0.2, trafficEfficiencyEta))
   );
 
   // 1. Scenario 1: As-Is (Manual Labor)
@@ -207,6 +230,7 @@ export function calculateEconomics(
     effectiveSalary,
     manualStaffCount,
     retainedSupervisorsCount,
+    trafficEfficiencyEta,
     asIs,
     capexPurchase,
     raas,

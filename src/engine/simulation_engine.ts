@@ -218,14 +218,28 @@ export class SimulationEngine {
 
     this.topology.zones.forEach((zone) => {
       if (zone.type === 'STORAGE_AISLE') {
-        const rackRows = 4;
-        const rowHeight = (zone.height - 2) / rackRows;
-        for (let r = 0; r < rackRows; r++) {
-          const minX = zone.x + 1;
-          const maxX = zone.x + zone.width - 1;
-          const minY = zone.y + 1 + r * rowHeight;
-          const maxY = minY + rowHeight * 0.6;
-          this.obstacleBoxes.push({ minX, maxX, minY, maxY });
+        const isVertical = zone.height > zone.width * 1.2;
+
+        if (isVertical) {
+          const rackCols = 4;
+          const colWidth = Math.max(0.1, (zone.width - 2) / rackCols);
+          for (let c = 0; c < rackCols; c++) {
+            const minX = zone.x + 1 + c * colWidth;
+            const maxX = minX + colWidth * 0.6;
+            const minY = zone.y + 1;
+            const maxY = zone.y + zone.height - 1;
+            this.obstacleBoxes.push({ minX, maxX, minY, maxY });
+          }
+        } else {
+          const rackRows = 4;
+          const rowHeight = Math.max(0.1, (zone.height - 2) / rackRows);
+          for (let r = 0; r < rackRows; r++) {
+            const minX = zone.x + 1;
+            const maxX = zone.x + zone.width - 1;
+            const minY = zone.y + 1 + r * rowHeight;
+            const maxY = minY + rowHeight * 0.6;
+            this.obstacleBoxes.push({ minX, maxX, minY, maxY });
+          }
         }
       }
     });
@@ -388,7 +402,8 @@ export class SimulationEngine {
           const dy = targetNode.y - agent.y;
           const distToTarget = Math.hypot(dx, dy);
 
-          if (distToTarget <= 0.6) {
+          const arrivalThreshold = Math.max(0.85, this.robotRadius + 0.15);
+          if (distToTarget <= arrivalThreshold) {
             agent.currentNodeId = targetNode.id;
             agent.pathNodeIds.shift();
 
@@ -629,6 +644,50 @@ export class SimulationEngine {
     });
 
     return closest;
+  }
+
+  /**
+   * Fast-forwards simulation without rendering for targetDurationSeconds (default 3600s = 1 hr).
+   * Returns traffic efficiency factor eta = Q_real / Q_theor (capped at 1.0) and realized throughput.
+   */
+  public runHeadlessFastForward(
+    targetDurationSeconds: number = 3600,
+    dtSim: number = 0.5
+  ): {
+    realizedThroughputPerHour: number;
+    trafficEfficiencyEta: number;
+    completedDeliveries: number;
+  } {
+    this.initializeFleet();
+    const steps = Math.ceil(targetDurationSeconds / dtSim);
+
+    for (let step = 0; step < steps; step++) {
+      this.update(dtSim);
+    }
+
+    const elapsedHours = this.elapsedSimSeconds / 3600;
+    const realizedThroughput =
+      elapsedHours > 0 ? this.completedDeliveries / elapsedHours : 0;
+
+    const kAvail = Math.max(
+      0.01,
+      (this.robotSpec.batteryRuntimeHours || 8) /
+        ((this.robotSpec.batteryRuntimeHours || 8) +
+          (this.robotSpec.batteryChargeMinutes || 60) / 60)
+    );
+    const theoreticalFleetCapacity =
+      this.fleetSize * (this.robotSpec.throughputPerHour || 10) * kAvail;
+
+    let eta = 1.0;
+    if (theoreticalFleetCapacity > 0) {
+      eta = Math.min(1.0, Math.max(0.1, realizedThroughput / theoreticalFleetCapacity));
+    }
+
+    return {
+      realizedThroughputPerHour: Math.round(realizedThroughput * 10) / 10,
+      trafficEfficiencyEta: Math.round(eta * 1000) / 1000,
+      completedDeliveries: this.completedDeliveries,
+    };
   }
 
   /**

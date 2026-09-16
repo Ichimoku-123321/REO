@@ -316,34 +316,68 @@ export function SimulationViewport({
           const rackHeight = Math.min(4, facility.ceilingHeightM * 0.6);
           const rackGroup = new THREE.Group();
 
-          const rackRows = 4;
-          const rowHeight = (zone.height - 2) / rackRows;
-          for (let r = 0; r < rackRows; r++) {
-            const rackGeo = new THREE.BoxGeometry(
-              zone.width - 2,
-              rackHeight,
-              rowHeight * 0.6
-            );
-            const rackMat = new THREE.MeshStandardMaterial({
-              color: 0x334155,
-              roughness: 0.4,
-              metalness: 0.3,
-            });
-            const rackMesh = new THREE.Mesh(rackGeo, rackMat);
-            rackMesh.position.set(
-              zone.x + zone.width / 2,
-              rackHeight / 2,
-              zone.y + 1 + r * rowHeight + rowHeight * 0.3
-            );
-            rackMesh.castShadow = true;
-            rackMesh.receiveShadow = true;
-            rackGroup.add(rackMesh);
+          const isVertical = zone.height > zone.width * 1.2;
 
-            const rackEdges = new THREE.EdgesGeometry(rackGeo);
-            const rackLineMat = new THREE.LineBasicMaterial({ color: 0x64748b });
-            const rackLine = new THREE.LineSegments(rackEdges, rackLineMat);
-            rackLine.position.copy(rackMesh.position);
-            rackGroup.add(rackLine);
+          if (isVertical) {
+            const rackCols = 4;
+            const colWidth = Math.max(0.1, (zone.width - 2) / rackCols);
+            for (let c = 0; c < rackCols; c++) {
+              const rackGeo = new THREE.BoxGeometry(
+                colWidth * 0.6,
+                rackHeight,
+                zone.height - 2
+              );
+              const rackMat = new THREE.MeshStandardMaterial({
+                color: 0x334155,
+                roughness: 0.4,
+                metalness: 0.3,
+              });
+              const rackMesh = new THREE.Mesh(rackGeo, rackMat);
+              rackMesh.position.set(
+                zone.x + 1 + c * colWidth + colWidth * 0.3,
+                rackHeight / 2,
+                zone.y + zone.height / 2
+              );
+              rackMesh.castShadow = true;
+              rackMesh.receiveShadow = true;
+              rackGroup.add(rackMesh);
+
+              const rackEdges = new THREE.EdgesGeometry(rackGeo);
+              const rackLineMat = new THREE.LineBasicMaterial({ color: 0x64748b });
+              const rackLine = new THREE.LineSegments(rackEdges, rackLineMat);
+              rackLine.position.copy(rackMesh.position);
+              rackGroup.add(rackLine);
+            }
+          } else {
+            const rackRows = 4;
+            const rowHeight = Math.max(0.1, (zone.height - 2) / rackRows);
+            for (let r = 0; r < rackRows; r++) {
+              const rackGeo = new THREE.BoxGeometry(
+                zone.width - 2,
+                rackHeight,
+                rowHeight * 0.6
+              );
+              const rackMat = new THREE.MeshStandardMaterial({
+                color: 0x334155,
+                roughness: 0.4,
+                metalness: 0.3,
+              });
+              const rackMesh = new THREE.Mesh(rackGeo, rackMat);
+              rackMesh.position.set(
+                zone.x + zone.width / 2,
+                rackHeight / 2,
+                zone.y + 1 + r * rowHeight + rowHeight * 0.3
+              );
+              rackMesh.castShadow = true;
+              rackMesh.receiveShadow = true;
+              rackGroup.add(rackMesh);
+
+              const rackEdges = new THREE.EdgesGeometry(rackGeo);
+              const rackLineMat = new THREE.LineBasicMaterial({ color: 0x64748b });
+              const rackLine = new THREE.LineSegments(rackEdges, rackLineMat);
+              rackLine.position.copy(rackMesh.position);
+              rackGroup.add(rackLine);
+            }
           }
           scene.add(rackGroup);
         }

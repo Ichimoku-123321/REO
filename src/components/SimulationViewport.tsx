@@ -565,7 +565,7 @@ export function SimulationViewport({
 
           // Transform mapping: x_3d = agent.x, y_3d = 0, z_3d = agent.y
           meshGroup.group.position.set(agent.x, 0, agent.y);
-          meshGroup.group.rotation.y = agent.headingRad;
+          meshGroup.group.rotation.y = -agent.headingRad + Math.PI / 2;
 
           // Update Halo color
           const colorHex = getHaloColor(agent.state, agent.isQueued);

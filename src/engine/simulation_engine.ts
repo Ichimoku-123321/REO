@@ -210,7 +210,8 @@ export class SimulationEngine {
   }
 
   /**
-   * Extracts static obstacle bounding boxes from facility topology.
+   * Extracts static obstacle bounding boxes from facility topology,
+   * matching 3D rack geometry dimensions from SimulationViewport.
    */
   private extractObstacleBoxes(): void {
     this.obstacleBoxes = [];
@@ -220,10 +221,10 @@ export class SimulationEngine {
         const rackRows = 4;
         const rowHeight = (zone.height - 2) / rackRows;
         for (let r = 0; r < rackRows; r++) {
-          const minY = zone.y + 1 + r * rowHeight;
-          const maxY = minY + rowHeight * 0.55;
           const minX = zone.x + 1;
           const maxX = zone.x + zone.width - 1;
+          const minY = zone.y + 1 + r * rowHeight;
+          const maxY = minY + rowHeight * 0.6;
           this.obstacleBoxes.push({ minX, maxX, minY, maxY });
         }
       }
@@ -490,15 +491,31 @@ export class SimulationEngine {
             vy = maxSpeed * (fTotalY / fTotalLen);
           }
 
+          // Cancel inward velocity component directed toward obstacle interiors
+          for (const box of this.obstacleBoxes) {
+            const cx = Math.max(box.minX, Math.min(agent.x, box.maxX));
+            const cy = Math.max(box.minY, Math.min(agent.y, box.maxY));
+            const dObs = Math.hypot(agent.x - cx, agent.y - cy);
+            if (dObs < this.robotRadius + 0.06) {
+              const nx = dObs >= 0.001 ? (agent.x - cx) / dObs : 1;
+              const ny = dObs >= 0.001 ? (agent.y - cy) / dObs : 0;
+              const vDotN = vx * nx + vy * ny;
+              if (vDotN < 0) {
+                vx -= vDotN * nx;
+                vy -= vDotN * ny;
+              }
+            }
+          }
+
           // Position update via Continuous Euler Integration
           agent.x += vx * dtSim;
           agent.y += vy * dtSim;
 
-          // Continuous Orientation update via Angular LERP
+          // Continuous Orientation update via Angular LERP (2D Cartesian Plane)
           if (fTotalLen > 0.01) {
-            const targetHeading3D = Math.atan2(vx, vy); // Three.js Y-axis rotation heading
-            const diff = Math.atan2(Math.sin(targetHeading3D - agent.headingRad), Math.cos(targetHeading3D - agent.headingRad));
-            const alpha = Math.min(1.0, 0.12 * 60 * dtSim);
+            const targetHeading = Math.atan2(vy, vx);
+            const diff = Math.atan2(Math.sin(targetHeading - agent.headingRad), Math.cos(targetHeading - agent.headingRad));
+            const alpha = Math.min(1.0, 0.15 * 60 * dtSim);
             agent.headingRad += alpha * diff;
           }
 

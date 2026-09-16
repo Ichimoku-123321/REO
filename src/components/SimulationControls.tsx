@@ -44,26 +44,34 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
 
   const getConnectivityBadge = () => {
     if (!spectralAnalysis) return null;
-    const { algebraicConnectivity, status } = spectralAnalysis;
+    const { algebraicConnectivity } = spectralAnalysis;
 
-    if (status === 'OPTIMAL') {
+    // Show bottleneck alert only when spectral connectivity is critical AND physical congestion/queue is detected
+    const isBottleneck = algebraicConnectivity < 0.05 && (telemetry.queuedCount >= 2 || telemetry.congestionDetected);
+
+    if (isBottleneck) {
       return {
-        label: `Связность сеть (λ₂): ${algebraicConnectivity} — Высокая пропускная способность`,
+        label: `Связность сети (λ₂ = ${algebraicConnectivity}) — Обнаружено узкое горлышко`,
+        statusText: 'Узкое горлышко',
+        colorClass: 'text-red-400',
+        bgClass: 'bg-red-500/10 border-red-500/20',
+      };
+    }
+
+    if (algebraicConnectivity >= 0.15) {
+      return {
+        label: `Связность сети (λ₂ = ${algebraicConnectivity}) — Свободная топология`,
+        statusText: 'Свободная топология',
         colorClass: 'text-emerald-400',
         bgClass: 'bg-emerald-500/10 border-emerald-500/20',
       };
     }
-    if (status === 'MODERATE') {
-      return {
-        label: `Связность сеть (λ₂): ${algebraicConnectivity} — Умеренная пропускная способность`,
-        colorClass: 'text-amber-400',
-        bgClass: 'bg-amber-500/10 border-amber-500/20',
-      };
-    }
+
     return {
-      label: `Связность сеть (λ₂): ${algebraicConnectivity} — Обнаружено узкое горлышко`,
-      colorClass: 'text-red-400',
-      bgClass: 'bg-red-500/10 border-red-500/20',
+      label: `Связность сети (λ₂ = ${algebraicConnectivity}) — Высокая проходимость`,
+      statusText: 'Высокая проходимость',
+      colorClass: 'text-emerald-400',
+      bgClass: 'bg-emerald-500/10 border-emerald-500/20',
     };
   };
 
@@ -250,7 +258,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
               <p className={`text-xs font-bold ${connectivityBadge?.colorClass}`}>
                 λ₂ = {spectralAnalysis.algebraicConnectivity}{' '}
                 <span className="text-[10px] opacity-80 block font-normal">
-                  ({spectralAnalysis.status === 'OPTIMAL' ? 'Высокая' : spectralAnalysis.status === 'MODERATE' ? 'Умеренная' : 'Узкое горлышко'})
+                  ({connectivityBadge?.statusText})
                 </span>
               </p>
             ) : (

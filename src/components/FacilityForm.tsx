@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { FacilityRequirements, FacilityType } from '../types/facility.js';
 import { FACILITY_PRESETS } from '../data/presets.js';
 import { Building2, Sparkles } from 'lucide-react';
@@ -16,27 +16,65 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
   onPresetSelect,
   activePresetId,
 }) => {
+  const [localFacility, setLocalFacility] = useState<FacilityRequirements>(facility);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync local state when external facility prop changes (e.g. preset selected)
+  useEffect(() => {
+    setLocalFacility(facility);
+  }, [facility]);
+
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const triggerDebouncedChange = (updated: FacilityRequirements) => {
+    setLocalFacility(updated);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      onChange(updated);
+    }, 500);
+  };
+
   const handleNumericChange = (field: keyof FacilityRequirements, val: string) => {
     const num = parseFloat(val);
     if (!isNaN(num)) {
-      onChange({
-        ...facility,
+      const updated = {
+        ...localFacility,
         [field]: num,
-      });
+      };
+      triggerDebouncedChange(updated);
     }
   };
 
   const handleTempChange = (field: 'min' | 'max', val: string) => {
     const num = parseFloat(val);
     if (!isNaN(num)) {
-      onChange({
-        ...facility,
+      const updated = {
+        ...localFacility,
         operatingTempRange: {
-          ...facility.operatingTempRange,
+          ...localFacility.operatingTempRange,
           [field]: num,
         },
-      });
+      };
+      triggerDebouncedChange(updated);
     }
+  };
+
+  const handleIndustryChange = (industry: FacilityType) => {
+    const updated = { ...localFacility, industry };
+    setLocalFacility(updated);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    onChange(updated);
   };
 
   return (
@@ -91,10 +129,8 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
               Отраслевой профиль
             </label>
             <select
-              value={facility.industry}
-              onChange={(e) =>
-                onChange({ ...facility, industry: e.target.value as FacilityType })
-              }
+              value={localFacility.industry}
+              onChange={(e) => handleIndustryChange(e.target.value as FacilityType)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
             >
               <option value="warehouse">📦 Склад (warehouse)</option>
@@ -112,7 +148,7 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
             <input
               type="number"
               min={1}
-              value={facility.totalAreaSqm}
+              value={localFacility.totalAreaSqm}
               onChange={(e) => handleNumericChange('totalAreaSqm', e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
             />
@@ -127,7 +163,7 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
               type="number"
               step="0.1"
               min={0.5}
-              value={facility.aisleWidthM}
+              value={localFacility.aisleWidthM}
               onChange={(e) => handleNumericChange('aisleWidthM', e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
             />
@@ -142,7 +178,7 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
               type="number"
               step="0.1"
               min={1}
-              value={facility.ceilingHeightM}
+              value={localFacility.ceilingHeightM}
               onChange={(e) => handleNumericChange('ceilingHeightM', e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
             />
@@ -155,7 +191,7 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
             </label>
             <input
               type="number"
-              value={facility.operatingTempRange.min}
+              value={localFacility.operatingTempRange.min}
               onChange={(e) => handleTempChange('min', e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
             />
@@ -168,7 +204,7 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
             </label>
             <input
               type="number"
-              value={facility.operatingTempRange.max}
+              value={localFacility.operatingTempRange.max}
               onChange={(e) => handleTempChange('max', e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
             />
@@ -183,7 +219,7 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
               type="number"
               min={1}
               max={3}
-              value={facility.shiftsPerDay}
+              value={localFacility.shiftsPerDay}
               onChange={(e) => handleNumericChange('shiftsPerDay', e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
             />
@@ -198,7 +234,7 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
               type="number"
               min={1}
               max={24}
-              value={facility.hoursPerDay}
+              value={localFacility.hoursPerDay}
               onChange={(e) => handleNumericChange('hoursPerDay', e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
             />
@@ -212,7 +248,7 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
             <input
               type="number"
               min={1}
-              value={facility.requiredPayloadKg}
+              value={localFacility.requiredPayloadKg}
               onChange={(e) => handleNumericChange('requiredPayloadKg', e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
             />
@@ -226,7 +262,7 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
             <input
               type="number"
               min={1}
-              value={facility.targetThroughputPerHour}
+              value={localFacility.targetThroughputPerHour}
               onChange={(e) => handleNumericChange('targetThroughputPerHour', e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
             />
@@ -240,7 +276,7 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
             <input
               type="number"
               min={10000}
-              value={facility.averageWorkerSalaryRub}
+              value={localFacility.averageWorkerSalaryRub}
               onChange={(e) => handleNumericChange('averageWorkerSalaryRub', e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
             />

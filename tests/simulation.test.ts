@@ -71,12 +71,14 @@ test('Simulation Engine: Continuous Vector Steering & dynamic lateral evasion', 
   // Place two agents facing each other close by (< 1.5m)
   engine.agents[0].x = 10.0;
   engine.agents[0].y = 10.0;
+  engine.agents[0].headingRad = 0; // facing right (+x)
   engine.agents[0].state = 'MOVING_TO_PICKUP';
   engine.agents[0].targetNodeId = topology.nodes[0].id;
   engine.agents[0].pathNodeIds = [topology.nodes[0].id];
 
   engine.agents[1].x = 11.0;
   engine.agents[1].y = 10.0;
+  engine.agents[1].headingRad = Math.PI; // facing left (-x)
   engine.agents[1].state = 'MOVING_TO_PICKUP';
   engine.agents[1].targetNodeId = topology.nodes[0].id;
   engine.agents[1].pathNodeIds = [topology.nodes[0].id];
@@ -87,6 +89,46 @@ test('Simulation Engine: Continuous Vector Steering & dynamic lateral evasion', 
   // Positions and headings should update continuously without stopping or freezing
   assert.notEqual(engine.agents[0].x, 10.0);
   assert.ok(typeof engine.agents[0].headingRad === 'number');
+});
+
+test('Simulation Engine: Line-of-Sight respects robot radius obstacle inflation', () => {
+  const topology = generateFacilityTopology(mockFacility);
+  const robot = SEED_ROBOTS[0];
+  const engine = new SimulationEngine(topology, robot, 1);
+
+  // Set an obstacle box
+  engine.obstacleBoxes = [{ minX: 10, maxX: 20, minY: 10, maxY: 20 }];
+
+  // Line segment passing 0.3m outside raw box (minY - 0.3 = 9.7)
+  // Without inflation, line (0, 9.7) -> (30, 9.7) does not intersect (10..20, 10..20).
+  // With robotRadius (~0.7m), box expands minY to 9.3, so line intersects inflated box.
+  assert.equal(engine.hasLineOfSight(0, 9.7, 30, 9.7), false);
+});
+
+test('Simulation Engine: Hard boundary push-out when robot penetrates obstacle buffer', () => {
+  const topology = generateFacilityTopology(mockFacility);
+  const robot = SEED_ROBOTS[0];
+  const engine = new SimulationEngine(topology, robot, 1);
+
+  // Add a test box
+  engine.obstacleBoxes = [{ minX: 10, maxX: 20, minY: 10, maxY: 20 }];
+
+  const agent = engine.agents[0];
+  // Position agent inside box boundary buffer (e.g. at x=9.8, y=15.0 -> dObs = 0.2 < robotRadius)
+  agent.x = 9.8;
+  agent.y = 15.0;
+  agent.state = 'MOVING_TO_PICKUP';
+  agent.targetNodeId = topology.nodes[0].id;
+  agent.pathNodeIds = [topology.nodes[0].id];
+
+  engine.update(0.05);
+
+  // Agent should be pushed out so that dObs >= robotRadius
+  const cx = Math.max(10, Math.min(agent.x, 20));
+  const cy = Math.max(10, Math.min(agent.y, 20));
+  const dObs = Math.hypot(agent.x - cx, agent.y - cy);
+
+  assert.ok(dObs >= engine.robotRadius - 0.01, `Expected dObs >= ${engine.robotRadius}, got ${dObs}`);
 });
 
 test('Simulation Engine: Agent FSM state transitions & movement', () => {

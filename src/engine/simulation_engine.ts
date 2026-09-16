@@ -175,6 +175,7 @@ export class SimulationEngine {
   public agents: AgentState[] = [];
   public elapsedSimSeconds: number = 0;
   public completedDeliveries: number = 0;
+  public robotRadius: number;
 
   // Key node caches and O(1) map
   private nodeMap: Map<string, GraphNode> = new Map();
@@ -189,6 +190,10 @@ export class SimulationEngine {
     this.topology = topology;
     this.robotSpec = robotSpec;
     this.fleetSize = Math.max(0, fleetSize);
+
+    const robotWidth = (this.robotSpec.dimensionsMm?.width ?? 800) / 1000;
+    const robotLength = (this.robotSpec.dimensionsMm?.length ?? 1000) / 1000;
+    this.robotRadius = Math.max(0.4, Math.hypot(robotWidth, robotLength) / 2 + 0.1);
 
     this.classifyNodes();
     this.extractObstacleBoxes();
@@ -205,7 +210,8 @@ export class SimulationEngine {
   }
 
   /**
-   * Extracts static obstacle bounding boxes from facility topology.
+   * Extracts static obstacle bounding boxes from facility topology,
+   * matching 3D rack geometry dimensions from SimulationViewport.
    */
   private extractObstacleBoxes(): void {
     this.obstacleBoxes = [];
@@ -215,10 +221,10 @@ export class SimulationEngine {
         const rackRows = 4;
         const rowHeight = (zone.height - 2) / rackRows;
         for (let r = 0; r < rackRows; r++) {
-          const minY = zone.y + 1 + r * rowHeight;
-          const maxY = minY + rowHeight * 0.55;
           const minX = zone.x + 1;
           const maxX = zone.x + zone.width - 1;
+          const minY = zone.y + 1 + r * rowHeight;
+          const maxY = minY + rowHeight * 0.6;
           this.obstacleBoxes.push({ minX, maxX, minY, maxY });
         }
       }
@@ -226,11 +232,18 @@ export class SimulationEngine {
   }
 
   /**
-   * Line-of-sight raycast check between two 2D points against static obstacles.
+   * Line-of-sight raycast check between two 2D points against static obstacles,
+   * taking into account the robot's physical collision radius (Minkowski sum expansion).
    */
   public hasLineOfSight(x1: number, y1: number, x2: number, y2: number): boolean {
     for (const box of this.obstacleBoxes) {
-      if (lineIntersectsAABB(x1, y1, x2, y2, box)) {
+      const inflatedBox: ObstacleBox = {
+        minX: box.minX - this.robotRadius,
+        maxX: box.maxX + this.robotRadius,
+        minY: box.minY - this.robotRadius,
+        maxY: box.maxY + this.robotRadius,
+      };
+      if (lineIntersectsAABB(x1, y1, x2, y2, inflatedBox)) {
         return false;
       }
     }
@@ -394,14 +407,32 @@ export class SimulationEngine {
           const dSafe = 1.2;
 
           for (const box of this.obstacleBoxes) {
-            const cx = Math.max(box.minX, Math.min(agent.x, box.maxX));
-            const cy = Math.max(box.minY, Math.min(agent.y, box.maxY));
-            const dObs = Math.hypot(agent.x - cx, agent.y - cy);
+            let cx = Math.max(box.minX, Math.min(agent.x, box.maxX));
+            let cy = Math.max(box.minY, Math.min(agent.y, box.maxY));
+            let dObs = Math.hypot(agent.x - cx, agent.y - cy);
+
+            // Hard Boundary Push-out if robot penetrated the physical collision buffer
+            if (dObs < this.robotRadius) {
+              let nx = 1;
+              let ny = 0;
+              if (dObs >= 0.001) {
+                nx = (agent.x - cx) / dObs;
+                ny = (agent.y - cy) / dObs;
+              }
+              const pushDist = this.robotRadius + 0.05;
+              agent.x = cx + nx * pushDist;
+              agent.y = cy + ny * pushDist;
+
+              // Recalculate closest point and distance after push-out
+              cx = Math.max(box.minX, Math.min(agent.x, box.maxX));
+              cy = Math.max(box.minY, Math.min(agent.y, box.maxY));
+              dObs = Math.hypot(agent.x - cx, agent.y - cy);
+            }
 
             if (dObs < dSafe) {
               const nx = dObs > 0.001 ? (agent.x - cx) / dObs : 1;
               const ny = dObs > 0.001 ? (agent.y - cy) / dObs : 0;
-              const fMag = Math.pow(1 / Math.max(0.01, dObs) - 1 / dSafe, 2);
+              const fMag = Math.min(8.0, Math.pow(1 / Math.max(0.2, dObs) - 1 / dSafe, 2));
 
               // Tangential sliding: cancel inward goal force component
               const dot = fAttX * nx + fAttY * ny;
@@ -420,6 +451,9 @@ export class SimulationEngine {
           let fAvoidY = 0;
           let nearbyRobotCount = 0;
 
+          const vForward = { x: Math.cos(agent.headingRad), y: Math.sin(agent.headingRad) };
+          const vRight = { x: vForward.y, y: -vForward.x };
+
           for (let j = 0; j < this.agents.length; j++) {
             if (i === j) continue;
             const other = this.agents[j];
@@ -430,13 +464,20 @@ export class SimulationEngine {
               const uAwayX = (agent.x - other.x) / distOther;
               const uAwayY = (agent.y - other.y) / distOther;
 
-              // Rule of the Road: Lateral Right Evasion Vector
-              const uRightX = uAwayY;
-              const uRightY = -uAwayX;
+              const vForwardOther = { x: Math.cos(other.headingRad), y: Math.sin(other.headingRad) };
+              const dotHeadings = vForward.x * vForwardOther.x + vForward.y * vForwardOther.y;
+              const approachSpeed = -(uAwayX * vForward.x + uAwayY * vForward.y);
 
               const factor = (1.5 - distOther) / 1.5;
-              fAvoidX += factor * (uAwayX + uRightX);
-              fAvoidY += factor * (uAwayY + uRightY);
+              // Always apply radial separation
+              fAvoidX += factor * uAwayX * 1.0;
+              fAvoidY += factor * uAwayY * 1.0;
+
+              // Add lateral rightward evasion strictly for oncoming head-on encounters
+              if (dotHeadings < -0.2 && approachSpeed > 0) {
+                fAvoidX += factor * vRight.x * 1.2;
+                fAvoidY += factor * vRight.y * 1.2;
+              }
             }
           }
 
@@ -455,15 +496,32 @@ export class SimulationEngine {
             vy = maxSpeed * (fTotalY / fTotalLen);
           }
 
+          // Cancel inward velocity component directed toward obstacle interiors
+          for (const box of this.obstacleBoxes) {
+            const cx = Math.max(box.minX, Math.min(agent.x, box.maxX));
+            const cy = Math.max(box.minY, Math.min(agent.y, box.maxY));
+            const dObs = Math.hypot(agent.x - cx, agent.y - cy);
+            if (dObs < this.robotRadius + 0.06) {
+              const nx = dObs >= 0.001 ? (agent.x - cx) / dObs : 1;
+              const ny = dObs >= 0.001 ? (agent.y - cy) / dObs : 0;
+              const vDotN = vx * nx + vy * ny;
+              if (vDotN < 0) {
+                vx -= vDotN * nx;
+                vy -= vDotN * ny;
+              }
+            }
+          }
+
           // Position update via Continuous Euler Integration
           agent.x += vx * dtSim;
           agent.y += vy * dtSim;
 
-          // Continuous Orientation update via Angular LERP
-          if (fTotalLen > 0.01) {
-            const targetHeading3D = Math.atan2(vx, vy); // Three.js Y-axis rotation heading
-            const diff = Math.atan2(Math.sin(targetHeading3D - agent.headingRad), Math.cos(targetHeading3D - agent.headingRad));
-            const alpha = Math.min(1.0, 0.12 * 60 * dtSim);
+          // Continuous Orientation update via Angular LERP (Freeze heading when stopped)
+          const currentSpeed = Math.hypot(vx, vy);
+          if (currentSpeed > 0.01) {
+            const targetHeading = Math.atan2(vy, vx);
+            const diff = Math.atan2(Math.sin(targetHeading - agent.headingRad), Math.cos(targetHeading - agent.headingRad));
+            const alpha = Math.min(1.0, 0.15 * 60 * dtSim);
             agent.headingRad += alpha * diff;
           }
 

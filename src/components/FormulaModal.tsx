@@ -42,20 +42,22 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({ isOpen, onClose }) =
           <section className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-5">
             <h3 className="text-base font-bold text-blue-400 flex items-center gap-2 mb-3">
               <Zap className="w-5 h-5 text-blue-400" />
-              1. Расчет размера парка роботов (N_fleet) и автономности
+              1. Расчет размера парка роботов (N_fleet) и микро-имитационная калибровка
             </h3>
             <div className="space-y-3 text-sm text-slate-300">
-              <p>
-                Коэффициент технической готовности с учетом времени зарядки АКБ (k_avail):
+              <p className="font-semibold text-slate-200">
+                1. Номинальная потребность парка (по нормативу ТЗ):
               </p>
-              <div className="bg-slate-950 p-3 rounded-lg font-mono text-xs text-blue-300 border border-slate-800">
-                k_avail = batteryRuntimeHours / (batteryRuntimeHours + (batteryChargeMinutes / 60))
+              <div className="bg-slate-950 p-3 rounded-lg font-mono text-xs text-blue-300 border border-slate-800 space-y-1">
+                <div>k_avail = batteryRuntimeHours / (batteryRuntimeHours + (batteryChargeMinutes / 60))</div>
+                <div>N_nominal = ceil( targetThroughputPerHour / (robot.throughputPerHour * k_avail) )</div>
               </div>
-              <p>
-                Требуемое количество роботов в парке (N_fleet):
+              <p className="font-semibold text-slate-200 pt-1">
+                2. Верификация цифровым двойником (Headless Fast-Forward Pass):
               </p>
-              <div className="bg-slate-950 p-3 rounded-lg font-mono text-xs text-blue-300 border border-slate-800">
-                N_fleet = ceil( targetThroughputPerHour / (robot.throughputPerHour * k_avail) )
+              <div className="bg-slate-950 p-3 rounded-lg font-mono text-xs text-blue-300 border border-slate-800 space-y-1">
+                <div>eta_traffic = Q_real / Q_theor  (коэффициент топологических потерь)</div>
+                <div>N_fleet = max( N_nominal, ceil( N_nominal / eta_traffic ) )</div>
               </div>
             </div>
           </section>
@@ -73,6 +75,9 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({ isOpen, onClose }) =
               <div className="bg-slate-950 p-3 rounded-lg font-mono text-xs text-rose-300 border border-slate-800">
                 Staff_manual = max(1, ceil( targetThroughputPerHour / 12 ) * shiftsPerDay)
               </div>
+              <p className="text-xs text-slate-400 italic">
+                * 12 шт/ч — нормативная выработка одного ручного оператора в смену (согласно ТЗ/отраслевым стандартам).
+              </p>
               <p>
                 Ежегодный ФОТ с учетом страх. взносов и налогов (+30%):
               </p>
@@ -99,6 +104,7 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({ isOpen, onClose }) =
                 <div>Net_Annual_Savings = OPEX_labor - Annual_OPEX</div>
                 <div>Payback_Years = Total_CAPEX / Net_Annual_Savings</div>
                 <div>5_Year_ROI = ((Net_Annual_Savings * 5) - Total_CAPEX) / Total_CAPEX * 100%</div>
+                <div>5_Year_TCO = Total_CAPEX + (Annual_OPEX * 5)</div>
               </div>
             </div>
           </section>

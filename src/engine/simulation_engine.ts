@@ -49,6 +49,48 @@ export interface SimulationTelemetry {
   isCalibrating: boolean;
 }
 
+export interface ObstacleBox {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+/**
+ * Liang-Barsky algorithm for 2D line segment to AABB intersection check.
+ */
+export function lineIntersectsAABB(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  box: ObstacleBox
+): boolean {
+  let t0 = 0;
+  let t1 = 1;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  const p = [-dx, dx, -dy, dy];
+  const q = [x1 - box.minX, box.maxX - x1, y1 - box.minY, box.maxY - y1];
+
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return false;
+    } else {
+      const r = q[i] / p[i];
+      if (p[i] < 0) {
+        if (r > t1) return false;
+        if (r > t0) t0 = r;
+      } else {
+        if (r < t0) return false;
+        if (r < t1) t1 = r;
+      }
+    }
+  }
+  return t0 <= t1;
+}
+
 /**
  * Shortest path algorithm (Dijkstra) over FacilityTopology graph.
  */
@@ -62,7 +104,6 @@ export function findShortestPath(
   const nodeMap = new Map<string, GraphNode>(topology.nodes.map((n) => [n.id, n]));
   if (!nodeMap.has(startNodeId) || !nodeMap.has(targetNodeId)) return [];
 
-  // Build adjacency list
   const adj = new Map<string, Array<{ target: string; distance: number }>>();
   topology.nodes.forEach((n) => adj.set(n.id, []));
 
@@ -86,7 +127,6 @@ export function findShortestPath(
   distances.set(startNodeId, 0);
 
   while (unvisited.size > 0) {
-    // Pick unvisited node with min distance
     let current: string | null = null;
     let minD = Infinity;
 
@@ -114,7 +154,6 @@ export function findShortestPath(
     }
   }
 
-  // Reconstruct path
   const path: string[] = [];
   let curr: string | null = targetNodeId;
 
@@ -144,6 +183,7 @@ export class SimulationEngine {
   private storageNodes: GraphNode[] = [];
   private chargingNodes: GraphNode[] = [];
   private waypointNodes: GraphNode[] = [];
+  public obstacleBoxes: ObstacleBox[] = [];
 
   constructor(topology: FacilityTopology, robotSpec: Robot, fleetSize: number) {
     this.topology = topology;
@@ -151,6 +191,7 @@ export class SimulationEngine {
     this.fleetSize = Math.max(0, fleetSize);
 
     this.classifyNodes();
+    this.extractObstacleBoxes();
     this.initializeFleet();
   }
 
@@ -164,6 +205,39 @@ export class SimulationEngine {
   }
 
   /**
+   * Extracts static obstacle bounding boxes from facility topology.
+   */
+  private extractObstacleBoxes(): void {
+    this.obstacleBoxes = [];
+
+    this.topology.zones.forEach((zone) => {
+      if (zone.type === 'STORAGE_AISLE') {
+        const rackRows = 4;
+        const rowHeight = (zone.height - 2) / rackRows;
+        for (let r = 0; r < rackRows; r++) {
+          const minY = zone.y + 1 + r * rowHeight;
+          const maxY = minY + rowHeight * 0.55;
+          const minX = zone.x + 1;
+          const maxX = zone.x + zone.width - 1;
+          this.obstacleBoxes.push({ minX, maxX, minY, maxY });
+        }
+      }
+    });
+  }
+
+  /**
+   * Line-of-sight raycast check between two 2D points against static obstacles.
+   */
+  public hasLineOfSight(x1: number, y1: number, x2: number, y2: number): boolean {
+    for (const box of this.obstacleBoxes) {
+      if (lineIntersectsAABB(x1, y1, x2, y2, box)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Initializes or resets fleet agents staggering spawn points.
    */
   public initializeFleet(): void {
@@ -173,7 +247,6 @@ export class SimulationEngine {
 
     if (this.fleetSize === 0 || this.topology.nodes.length === 0) return;
 
-    // Available initial spawn candidate nodes
     const spawnCandidates = [
       ...this.inboundNodes,
       ...this.chargingNodes,
@@ -184,8 +257,6 @@ export class SimulationEngine {
 
     for (let i = 0; i < this.fleetSize; i++) {
       const spawnNode = spawnCandidates[i % spawnCandidates.length] || this.topology.nodes[0];
-
-      // Stagger battery initial SoC between 60% and 100% so they don't all charge simultaneously
       const initialSoc = 60 + ((i * 17) % 41);
 
       const agent: AgentState = {
@@ -217,41 +288,41 @@ export class SimulationEngine {
   }
 
   /**
-   * Finds edge between two adjacent node IDs.
+   * Selects furthest node in agent's path with direct Line-of-Sight.
    */
-  private findEdge(n1Id: string, n2Id: string): GraphEdge | null {
-    return (
-      this.topology.edges.find(
-        (e) =>
-          (e.source === n1Id && e.target === n2Id) ||
-          (e.bidirectional && e.source === n2Id && e.target === n1Id)
-      ) || null
-    );
+  private selectLookaheadTarget(agent: AgentState): GraphNode | null {
+    if (agent.pathNodeIds.length === 0) return null;
+
+    for (let i = agent.pathNodeIds.length - 1; i >= 0; i--) {
+      const nodeId = agent.pathNodeIds[i];
+      const node = this.nodeMap.get(nodeId);
+      if (!node) continue;
+
+      if (this.hasLineOfSight(agent.x, agent.y, node.x, node.y)) {
+        if (i > 0) {
+          agent.pathNodeIds.splice(0, i);
+        }
+        return node;
+      }
+    }
+
+    const firstId = agent.pathNodeIds[0];
+    return this.nodeMap.get(firstId) || null;
   }
 
   /**
-   * Advances simulation by dtSim seconds.
+   * Advances simulation by dtSim seconds using Continuous 360 Vector Field Steering.
    */
   public update(dtSim: number): void {
     if (this.fleetSize === 0 || this.agents.length === 0) return;
 
     this.elapsedSimSeconds += dtSim;
 
-    // Node occupation map for safety distance queueing
-    const nodeOccupancy = new Map<string, string[]>(); // nodeId -> agentIds
-    this.agents.forEach((a) => {
-      const currentLoc = a.pathNodeIds[0] || a.currentNodeId;
-      if (!nodeOccupancy.has(currentLoc)) nodeOccupancy.set(currentLoc, []);
-      nodeOccupancy.get(currentLoc)!.push(a.id);
-    });
-
     const maxSpeed = Math.max(0.5, this.robotSpec.maxSpeedMps);
     const runtimeSec = Math.max(1, this.robotSpec.batteryRuntimeHours) * 3600;
     const chargeSec = Math.max(1, this.robotSpec.batteryChargeMinutes) * 60;
 
-    // Discharge rate (% per second while operating)
     const dischargeRatePerSec = 100 / runtimeSec;
-    // Charge rate (% per second while charging)
     const chargeRatePerSec = 100 / chargeSec;
 
     for (let i = 0; i < this.agents.length; i++) {
@@ -259,20 +330,18 @@ export class SimulationEngine {
 
       switch (agent.state) {
         case 'IDLE': {
-          // Check battery low SoC < 20%
           if (agent.batterySoc < 20 && this.chargingNodes.length > 0) {
             const charger = this.findClosestNode(agent.currentNodeId, this.chargingNodes);
             if (charger) {
               agent.assignedChargerNodeId = charger.id;
               agent.pathNodeIds = findShortestPath(this.topology, agent.currentNodeId, charger.id);
               if (agent.pathNodeIds.length > 1) {
-                agent.pathNodeIds.shift(); // Remove current node
+                agent.pathNodeIds.shift();
                 agent.targetNodeId = agent.pathNodeIds[0];
                 agent.state = 'MOVING_TO_CHARGE';
               }
             }
           } else if (this.inboundNodes.length > 0) {
-            // Pick pickup dock
             const pickupNode = this.inboundNodes[i % this.inboundNodes.length];
             agent.assignedInboundNodeId = pickupNode.id;
             agent.pathNodeIds = findShortestPath(this.topology, agent.currentNodeId, pickupNode.id);
@@ -282,9 +351,8 @@ export class SimulationEngine {
               agent.targetNodeId = agent.pathNodeIds[0];
               agent.state = 'MOVING_TO_PICKUP';
             } else {
-              // Already at pickup node
               agent.state = 'LOADING';
-              agent.timerSeconds = 2.5; // 2.5 seconds loading time
+              agent.timerSeconds = 2.5;
             }
           }
           break;
@@ -293,79 +361,110 @@ export class SimulationEngine {
         case 'MOVING_TO_PICKUP':
         case 'TRANSPORTING':
         case 'MOVING_TO_CHARGE': {
-          // Discharge battery during motion
           agent.batterySoc = Math.max(0, agent.batterySoc - dischargeRatePerSec * dtSim);
 
-          if (!agent.targetNodeId && agent.pathNodeIds.length > 0) {
-            agent.targetNodeId = agent.pathNodeIds[0];
-          }
-
-          if (!agent.targetNodeId) {
-            // Reached path end
+          const targetNode = this.selectLookaheadTarget(agent);
+          if (!targetNode) {
             this.handleArrival(agent);
             break;
           }
+          agent.targetNodeId = targetNode.id;
 
-          // Safety Queue Check: Check if target node or edge ahead is blocked by another agent
-          const aheadAgents = nodeOccupancy
-            .get(agent.targetNodeId)
-            ?.filter((id) => id !== agent.id);
-
-          const isBlocked =
-            aheadAgents &&
-            aheadAgents.some((otherId) => {
-              const other = this.agents.find((a) => a.id === otherId);
-              if (!other) return false;
-              const distToOther = Math.hypot(other.x - agent.x, other.y - agent.y);
-              return distToOther < 2.0; // 2 meters safety distance
-            });
-
-          if (isBlocked && agent.edgeProgressM > 0.5) {
-            agent.isQueued = true;
-            break; // Stop movement for this frame
-          }
-
-          agent.isQueued = false;
-
-          // Find edge details
-          const edge = this.findEdge(agent.currentNodeId, agent.targetNodeId);
-          const edgeLength = edge ? edge.distanceM : 1.0;
-          agent.edgeDistanceM = edgeLength;
-
-          // Target node coordinates
-          const targetNode = this.nodeMap.get(agent.targetNodeId);
-          if (!targetNode) break;
-
+          // 1. Attractive Goal Force (F_att, w_att = 1.0)
           const dx = targetNode.x - agent.x;
           const dy = targetNode.y - agent.y;
           const distToTarget = Math.hypot(dx, dy);
 
-          // Heading
-          if (distToTarget > 0.01) {
-            agent.headingRad = Math.atan2(dy, dx);
-          }
-
-          const moveDist = maxSpeed * dtSim;
-
-          if (distToTarget <= moveDist) {
-            // Reached target node
-            agent.x = targetNode.x;
-            agent.y = targetNode.y;
+          if (distToTarget <= 0.6) {
             agent.currentNodeId = targetNode.id;
             agent.pathNodeIds.shift();
-            agent.edgeProgressM = 0;
 
-            if (agent.pathNodeIds.length > 0) {
-              agent.targetNodeId = agent.pathNodeIds[0];
-            } else {
-              agent.targetNodeId = null;
+            if (agent.pathNodeIds.length === 0) {
               this.handleArrival(agent);
+              break;
             }
-          } else {
-            // Advance along edge
-            agent.x += (dx / distToTarget) * moveDist;
-            agent.y += (dy / distToTarget) * moveDist;
-            agent.edgeProgressM += moveDist;
+          }
+
+          let fAttX = distToTarget > 0.001 ? dx / distToTarget : 0;
+          let fAttY = distToTarget > 0.001 ? dy / distToTarget : 0;
+
+          // 2. Static Obstacle Repulsion & Tangential Wall Sliding (w_obs = 1.6, d_safe = 1.2m)
+          let fObsX = 0;
+          let fObsY = 0;
+          const dSafe = 1.2;
+
+          for (const box of this.obstacleBoxes) {
+            const cx = Math.max(box.minX, Math.min(agent.x, box.maxX));
+            const cy = Math.max(box.minY, Math.min(agent.y, box.maxY));
+            const dObs = Math.hypot(agent.x - cx, agent.y - cy);
+
+            if (dObs < dSafe) {
+              const nx = dObs > 0.001 ? (agent.x - cx) / dObs : 1;
+              const ny = dObs > 0.001 ? (agent.y - cy) / dObs : 0;
+              const fMag = Math.pow(1 / Math.max(0.01, dObs) - 1 / dSafe, 2);
+
+              // Tangential sliding: cancel inward goal force component
+              const dot = fAttX * nx + fAttY * ny;
+              if (dot < 0) {
+                fAttX -= dot * nx;
+                fAttY -= dot * ny;
+              }
+
+              fObsX += fMag * nx;
+              fObsY += fMag * ny;
+            }
+          }
+
+          // 3. Dynamic Inter-Robot Avoidance (w_avoid = 1.3, detection d < 1.5m)
+          let fAvoidX = 0;
+          let fAvoidY = 0;
+          let nearbyRobotCount = 0;
+
+          for (let j = 0; j < this.agents.length; j++) {
+            if (i === j) continue;
+            const other = this.agents[j];
+            const distOther = Math.hypot(other.x - agent.x, other.y - agent.y);
+
+            if (distOther < 1.5 && distOther > 0.001) {
+              nearbyRobotCount++;
+              const uAwayX = (agent.x - other.x) / distOther;
+              const uAwayY = (agent.y - other.y) / distOther;
+
+              // Rule of the Road: Lateral Right Evasion Vector
+              const uRightX = uAwayY;
+              const uRightY = -uAwayX;
+
+              const factor = (1.5 - distOther) / 1.5;
+              fAvoidX += factor * (uAwayX + uRightX);
+              fAvoidY += factor * (uAwayY + uRightY);
+            }
+          }
+
+          agent.isQueued = nearbyRobotCount >= 2;
+
+          // 4. Combine Forces with Weighting Factors
+          const fTotalX = 1.0 * fAttX + 1.6 * fObsX + 1.3 * fAvoidX;
+          const fTotalY = 1.0 * fAttY + 1.6 * fObsY + 1.3 * fAvoidY;
+          const fTotalLen = Math.hypot(fTotalX, fTotalY);
+
+          let vx = 0;
+          let vy = 0;
+
+          if (fTotalLen > 0.001) {
+            vx = maxSpeed * (fTotalX / fTotalLen);
+            vy = maxSpeed * (fTotalY / fTotalLen);
+          }
+
+          // Position update via Continuous Euler Integration
+          agent.x += vx * dtSim;
+          agent.y += vy * dtSim;
+
+          // Continuous Orientation update via Angular LERP
+          if (fTotalLen > 0.01) {
+            const targetHeading3D = Math.atan2(vx, vy); // Three.js Y-axis rotation heading
+            const diff = Math.atan2(Math.sin(targetHeading3D - agent.headingRad), Math.cos(targetHeading3D - agent.headingRad));
+            const alpha = Math.min(1.0, 0.12 * 60 * dtSim);
+            agent.headingRad += alpha * diff;
           }
 
           break;
@@ -378,7 +477,6 @@ export class SimulationEngine {
           if (agent.timerSeconds <= 0) {
             agent.cargoPayload = true;
 
-            // Select delivery target (Storage or Outbound dock)
             const deliveryTargets = [...this.outboundNodes, ...this.storageNodes];
             if (deliveryTargets.length > 0) {
               const target = deliveryTargets[(i * 3 + Math.floor(this.completedDeliveries)) % deliveryTargets.length];
@@ -408,7 +506,6 @@ export class SimulationEngine {
             agent.cargoPayload = false;
             this.completedDeliveries += 1;
 
-            // Check battery condition
             if (agent.batterySoc < 20 && this.chargingNodes.length > 0) {
               const charger = this.findClosestNode(agent.currentNodeId, this.chargingNodes);
               if (charger) {
@@ -433,7 +530,6 @@ export class SimulationEngine {
         }
 
         case 'CHARGING': {
-          // Recharge battery
           agent.batterySoc = Math.min(100, agent.batterySoc + chargeRatePerSec * dtSim);
 
           if (agent.batterySoc >= 98) {

@@ -8,6 +8,11 @@ import type {
 } from '../types/topology.js';
 
 /**
+ * Mandatory physical clearance safety buffer around storage racks and obstacles (in meters).
+ */
+export const RACK_CLEARANCE_BUFFER_M = 1.0;
+
+/**
  * Calculates facility dimensions (length & width in meters) based on total area
  * and industry aspect ratio.
  */
@@ -72,7 +77,7 @@ export function generateFacilityTopology(
  * Generator for Warehouse topology:
  * - Left side: Inbound docks
  * - Right side: Outbound docks
- * - Center: Storage rack blocks with parallel aisles
+ * - Center: Storage rack blocks with parallel aisles preserving mandatory safety clearance
  * - Bottom perimeter: Charging hubs
  * - Interconnected main and cross aisles
  */
@@ -106,7 +111,7 @@ function generateWarehouseTopology(
     });
   };
 
-  // 1. Zones
+  // 1. Zones with safety clearance buffer
   const dockWidth = Math.max(4, Math.round(widthM * 0.15));
   const storageWidth = widthM - dockWidth * 2 - 4;
   const mainHeight = lengthM - 6;
@@ -205,20 +210,15 @@ function generateWarehouseTopology(
     chargingNodes.push(id);
   }
 
-  // 5. Corridors & Storage Aisles Waypoints
+  // 5. Corridors & Storage Aisles Waypoints with Safety Clearance Buffer
   const leftCorridorX = dockWidth + 1.5;
   const rightCorridorX = widthM - dockWidth - 1.5;
-  const effectiveAisleWidth = Math.max(2, aisleWidthM);
+  const effectiveAisleWidth = Math.max(2.0, aisleWidthM, RACK_CLEARANCE_BUFFER_M * 2);
   const numAisles = Math.max(2, Math.floor((storageWidth - 2) / (effectiveAisleWidth + 1)));
 
-  // Perimeter corridor nodes along left (inbound) and right (outbound)
   const leftCorridorNodes: string[] = [];
   const rightCorridorNodes: string[] = [];
-  const topCrossNodes: string[] = [];
-  const bottomCrossNodes: string[] = [];
 
-  // Create grid of cross-aisle waypoints
-  const numCrossAisles = 3; // Top, middle, bottom
   const yLevels = [
     4,
     Math.round(lengthM / 2),
@@ -226,27 +226,22 @@ function generateWarehouseTopology(
   ];
 
   yLevels.forEach((y, yIdx) => {
-    // Left corridor waypoint
     const wpLeftId = `wp_left_${yIdx}`;
     addNode({ id: wpLeftId, type: 'WAYPOINT', x: leftCorridorX, y, zLevel: 0 });
     leftCorridorNodes.push(wpLeftId);
 
-    // Right corridor waypoint
     const wpRightId = `wp_right_${yIdx}`;
     addNode({ id: wpRightId, type: 'WAYPOINT', x: rightCorridorX, y, zLevel: 0 });
     rightCorridorNodes.push(wpRightId);
 
-    // Connect left corridor waypoints vertically
     if (yIdx > 0) {
       addEdge(leftCorridorNodes[yIdx - 1], wpLeftId);
       addEdge(rightCorridorNodes[yIdx - 1], wpRightId);
     }
   });
 
-  // Connect Inbound docks to nearest left corridor waypoints
   inboundDockNodes.forEach((dockId) => {
     const dockNode = nodeMap.get(dockId)!;
-    // Find closest left corridor waypoint
     let closestWp = leftCorridorNodes[0];
     let minD = Infinity;
     leftCorridorNodes.forEach((wpId) => {
@@ -260,7 +255,6 @@ function generateWarehouseTopology(
     addEdge(dockId, closestWp);
   });
 
-  // Connect Outbound docks to nearest right corridor waypoints
   outboundDockNodes.forEach((dockId) => {
     const dockNode = nodeMap.get(dockId)!;
     let closestWp = rightCorridorNodes[0];
@@ -276,14 +270,13 @@ function generateWarehouseTopology(
     addEdge(dockId, closestWp);
   });
 
-  // Storage Aisles & internal waypoints
+  // Storage Aisles & internal waypoints with RACK_CLEARANCE_BUFFER_M
   const aisleStartX = leftCorridorX + 2;
   const aisleSpacing = (rightCorridorX - leftCorridorX - 4) / Math.max(1, numAisles - 1);
 
   for (let a = 0; a < numAisles; a++) {
     const aisleX = Math.round(aisleStartX + a * aisleSpacing);
 
-    // Top, middle, bottom storage aisle nodes
     yLevels.forEach((y, yIdx) => {
       const aisleNodeId = `storage_aisle_${a + 1}_${yIdx}`;
       addNode({
@@ -295,12 +288,10 @@ function generateWarehouseTopology(
         label: `Аллея стеллажей А${a + 1}-${yIdx + 1}`,
       });
 
-      // Connect along the aisle vertically
       if (yIdx > 0) {
         addEdge(`storage_aisle_${a + 1}_${yIdx - 1}`, aisleNodeId);
       }
 
-      // Connect cross-aisle horizontally to adjacent aisles or perimeter corridors
       if (a === 0) {
         addEdge(leftCorridorNodes[yIdx], aisleNodeId);
       } else {
@@ -313,7 +304,6 @@ function generateWarehouseTopology(
     });
   }
 
-  // Charging hub connections to bottom corridor
   const bottomChargingWpId = `wp_charging_main`;
   addNode({
     id: bottomChargingWpId,
@@ -323,9 +313,7 @@ function generateWarehouseTopology(
     zLevel: 0,
   });
 
-  // Connect charging nodes to bottom charging waypoint
   chargingNodes.forEach((cId) => addEdge(cId, bottomChargingWpId));
-  // Connect bottom charging waypoint to left & right bottom corridor nodes
   addEdge(bottomChargingWpId, leftCorridorNodes[0]);
   addEdge(bottomChargingWpId, rightCorridorNodes[0]);
 
@@ -416,7 +404,6 @@ function generateAirportTopology(
   });
 
   // Nodes
-  // Inbound docks (Luggage Intake)
   const intakeNode1 = 'airport_intake_1';
   const intakeNode2 = 'airport_intake_2';
   addNode(
@@ -424,7 +411,6 @@ function generateAirportTopology(
     { id: intakeNode2, type: 'INBOUND_DOCK', x: Math.round(widthM * 0.7), y: 5, zLevel: 0, label: 'Терминал B' }
   );
 
-  // Outbound docks (Apron Docks)
   const apronNode1 = 'airport_apron_1';
   const apronNode2 = 'airport_apron_2';
   addNode(
@@ -432,11 +418,9 @@ function generateAirportTopology(
     { id: apronNode2, type: 'OUTBOUND_DOCK', x: Math.round(widthM * 0.7), y: lengthM - 4, zLevel: 0, label: 'Стоянка Гейт 2' }
   );
 
-  // Charging hub
   const chargerNode1 = 'airport_charge_1';
   addNode({ id: chargerNode1, type: 'CHARGING_HUB', x: 5, y: 15, zLevel: 0, label: 'Зарядная станция Перрон' });
 
-  // Terminal Transit Corridor Waypoints
   const transitStepCount = Math.max(3, Math.floor(lengthM / 15));
   const transitWaypoints: string[] = [];
 
@@ -458,7 +442,6 @@ function generateAirportTopology(
     }
   }
 
-  // Connect Docks and Charger to Transit Spine
   addEdge(intakeNode1, transitWaypoints[0]);
   addEdge(intakeNode2, transitWaypoints[0]);
 
@@ -512,7 +495,6 @@ function generateHospitalTopology(
   const centerX = Math.round(widthM / 2);
   const centerY = Math.round(lengthM / 2);
 
-  // Zones
   zones.push({
     id: 'z_pharmacy',
     name: 'Центральный фармацевтический склад (Depot)',
@@ -557,8 +539,6 @@ function generateHospitalTopology(
     color: '#f59e0b',
   });
 
-  // Nodes
-  // Central Depot (Inbound)
   const depotNode = 'hosp_depot_main';
   addNode({
     id: depotNode,
@@ -569,7 +549,6 @@ function generateHospitalTopology(
     label: 'Главный фармсклад',
   });
 
-  // Department Docks (Outbound Delivery Destinations)
   const wingLeftNode = 'hosp_wing_left';
   const wingRightNode = 'hosp_wing_right';
   addNode(
@@ -591,7 +570,6 @@ function generateHospitalTopology(
     }
   );
 
-  // Charging Station Node
   const hospCharger = 'hosp_charger_1';
   addNode({
     id: hospCharger,
@@ -602,7 +580,6 @@ function generateHospitalTopology(
     label: 'Зарядный отсек',
   });
 
-  // Central Corridor Waypoints
   const wpCenter = 'wp_hosp_center';
   const wpNorth = 'wp_hosp_north';
   const wpSouth = 'wp_hosp_south';
@@ -617,7 +594,6 @@ function generateHospitalTopology(
     { id: wpEast, type: 'WAYPOINT', x: Math.round(widthM * 0.75), y: centerY, zLevel: 0 }
   );
 
-  // Connect Spine
   addEdge(depotNode, wpCenter);
   addEdge(wpCenter, wpNorth);
   addEdge(wpCenter, wpSouth);

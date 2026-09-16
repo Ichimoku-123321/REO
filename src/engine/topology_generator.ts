@@ -69,45 +69,107 @@ export function generateFacilityTopology(
 }
 
 /**
+ * Helper function to generate an 8-way grid graph given cell types and facility dimensions.
+ */
+function build8WayGridTopology(
+  widthM: number,
+  lengthM: number,
+  cellTypes: Map<string, { type: NodeType; label?: string; isPassable: boolean }>,
+  zones: FacilityZone[]
+): FacilityTopology {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  const nodeGrid = new Map<string, GraphNode>();
+
+  const cols = widthM;
+  const rows = lengthM;
+
+  // 1. Create nodes for all passable cells
+  for (let x = 0; x < cols; x++) {
+    for (let y = 0; y < rows; y++) {
+      const key = `${x}_${y}`;
+      const info = cellTypes.get(key) || { type: 'WAYPOINT', isPassable: true };
+
+      if (!info.isPassable) continue;
+
+      const nodeId = `node_${x}_${y}`;
+      const node: GraphNode = {
+        id: nodeId,
+        type: info.type,
+        x: x + 0.5,
+        y: y + 0.5,
+        zLevel: 0,
+        label: info.label,
+      };
+
+      nodes.push(node);
+      nodeGrid.set(key, node);
+    }
+  }
+
+  // 2. Build 8-way edges between adjacent passable cells
+  let edgeIdSeq = 1;
+  const isPassableCell = (gx: number, gy: number) => {
+    if (gx < 0 || gx >= cols || gy < 0 || gy >= rows) return false;
+    return nodeGrid.has(`${gx}_${gy}`);
+  };
+
+  for (let x = 0; x < cols; x++) {
+    for (let y = 0; y < rows; y++) {
+      const currKey = `${x}_${y}`;
+      const currNode = nodeGrid.get(currKey);
+      if (!currNode) continue;
+
+      // Directions: 4 orthogonal + 4 diagonal
+      const dirs = [
+        { dx: 1, dy: 0, dist: 1.0, isDiag: false },
+        { dx: 0, dy: 1, dist: 1.0, isDiag: false },
+        { dx: 1, dy: 1, dist: 1.414, isDiag: true, orth1: [1, 0], orth2: [0, 1] },
+        { dx: 1, dy: -1, dist: 1.414, isDiag: true, orth1: [1, 0], orth2: [0, -1] },
+      ];
+
+      for (const dir of dirs) {
+        const nx = x + dir.dx;
+        const ny = y + dir.dy;
+        if (!isPassableCell(nx, ny)) continue;
+
+        // For diagonal movements, prevent corner cutting through impassable obstacles
+        if (dir.isDiag && dir.orth1 && dir.orth2) {
+          const o1Pass = isPassableCell(x + dir.orth1[0], y + dir.orth1[1]);
+          const o2Pass = isPassableCell(x + dir.orth2[0], y + dir.orth2[1]);
+          if (!o1Pass || !o2Pass) continue;
+        }
+
+        const neighborNode = nodeGrid.get(`${nx}_${ny}`)!;
+        edges.push({
+          id: `e_${edgeIdSeq++}`,
+          source: currNode.id,
+          target: neighborNode.id,
+          distanceM: dir.dist,
+          bidirectional: true,
+        });
+      }
+    }
+  }
+
+  return { widthM, lengthM, nodes, edges, zones };
+}
+
+/**
  * Generator for Warehouse topology:
  * - Left side: Inbound docks
  * - Right side: Outbound docks
  * - Center: Storage rack blocks with parallel aisles
  * - Bottom perimeter: Charging hubs
- * - Interconnected main and cross aisles
+ * - Interconnected 8-way grid mesh
  */
 function generateWarehouseTopology(
   widthM: number,
   lengthM: number,
   aisleWidthM: number
 ): FacilityTopology {
-  const nodes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
   const zones: FacilityZone[] = [];
-  const nodeMap = new Map<string, GraphNode>();
-
-  const addNode = (node: GraphNode) => {
-    nodes.push(node);
-    nodeMap.set(node.id, node);
-  };
-
-  let edgeIdSeq = 1;
-  const addEdge = (sourceId: string, targetId: string) => {
-    const srcNode = nodeMap.get(sourceId);
-    const tgtNode = nodeMap.get(targetId);
-    if (!srcNode || !tgtNode) return;
-    const distanceM = dist(srcNode, tgtNode);
-    edges.push({
-      id: `e_${edgeIdSeq++}`,
-      source: sourceId,
-      target: targetId,
-      distanceM: distanceM || 1,
-      bidirectional: true,
-    });
-  };
-
-  // 1. Zones
-  const dockWidth = Math.max(4, Math.round(widthM * 0.15));
+  const dockWidth = Math.max(3, Math.round(widthM * 0.15));
   const storageWidth = widthM - dockWidth * 2 - 4;
   const mainHeight = lengthM - 6;
 
@@ -119,18 +181,18 @@ function generateWarehouseTopology(
     y: 3,
     width: dockWidth,
     height: mainHeight,
-    color: '#3b82f6', // blue
+    color: '#3b82f6',
   });
 
   zones.push({
     id: 'z_storage',
     name: 'Складская зона (Storage Racks)',
     type: 'STORAGE_AISLE',
-    x: dockWidth + 3,
+    x: dockWidth + 2,
     y: 3,
     width: Math.max(6, storageWidth),
     height: mainHeight,
-    color: '#475569', // slate
+    color: '#475569',
   });
 
   zones.push({
@@ -141,7 +203,7 @@ function generateWarehouseTopology(
     y: 3,
     width: dockWidth,
     height: mainHeight,
-    color: '#0284c7', // sky blue
+    color: '#0284c7',
   });
 
   zones.push({
@@ -152,184 +214,81 @@ function generateWarehouseTopology(
     y: 0.5,
     width: 16,
     height: 2,
-    color: '#f59e0b', // amber
+    color: '#f59e0b',
   });
 
-  // 2. Inbound Docks Nodes
-  const numDocks = Math.max(2, Math.min(6, Math.floor(lengthM / 15)));
-  const inboundDockNodes: string[] = [];
-  for (let i = 0; i < numDocks; i++) {
-    const id = `inbound_dock_${i + 1}`;
-    const y = Math.round(5 + (i * (lengthM - 10)) / (numDocks - 1 || 1));
-    addNode({
-      id,
-      type: 'INBOUND_DOCK',
-      x: Math.round(dockWidth / 2 + 1),
-      y,
-      zLevel: 0,
-      label: `Ворота приемки №${i + 1}`,
-    });
-    inboundDockNodes.push(id);
-  }
+  const cellTypes = new Map<string, { type: NodeType; label?: string; isPassable: boolean }>();
 
-  // 3. Outbound Docks Nodes
-  const outboundDockNodes: string[] = [];
-  for (let i = 0; i < numDocks; i++) {
-    const id = `outbound_dock_${i + 1}`;
-    const y = Math.round(5 + (i * (lengthM - 10)) / (numDocks - 1 || 1));
-    addNode({
-      id,
-      type: 'OUTBOUND_DOCK',
-      x: Math.round(widthM - dockWidth / 2 - 1),
-      y,
-      zLevel: 0,
-      label: `Ворота отгрузки №${i + 1}`,
-    });
-    outboundDockNodes.push(id);
-  }
+  // Determine rack block layout in storage zone
+  const rackStartX = dockWidth + 3;
+  const rackEndX = widthM - dockWidth - 3;
+  const rackStartY = 4;
+  const rackEndY = lengthM - 5;
+  const effectiveAisleWidth = Math.max(2, Math.round(aisleWidthM));
 
-  // 4. Charging Hub Nodes
-  const numChargers = Math.max(2, Math.min(4, Math.floor(widthM / 10)));
-  const chargingNodes: string[] = [];
-  for (let i = 0; i < numChargers; i++) {
-    const id = `charging_${i + 1}`;
-    const x = Math.round(widthM / 2 - 6 + i * 4);
-    addNode({
-      id,
-      type: 'CHARGING_HUB',
-      x,
-      y: 1.5,
-      zLevel: 0,
-      label: `Зарядная станция №${i + 1}`,
-    });
-    chargingNodes.push(id);
-  }
+  for (let x = 0; x < widthM; x++) {
+    for (let y = 0; y < lengthM; y++) {
+      const key = `${x}_${y}`;
 
-  // 5. Corridors & Storage Aisles Waypoints
-  const leftCorridorX = dockWidth + 1.5;
-  const rightCorridorX = widthM - dockWidth - 1.5;
-  const effectiveAisleWidth = Math.max(2, aisleWidthM);
-  const numAisles = Math.max(2, Math.floor((storageWidth - 2) / (effectiveAisleWidth + 1)));
+      // Inbound dock zone
+      if (x >= 1 && x < 1 + dockWidth && y >= 3 && y < 3 + mainHeight) {
+        const dockIdx = Math.floor((y - 3) / Math.max(1, mainHeight / 4)) + 1;
+        cellTypes.set(key, {
+          type: 'INBOUND_DOCK',
+          label: `Ворота приемки №${dockIdx}`,
+          isPassable: true,
+        });
+        continue;
+      }
 
-  // Perimeter corridor nodes along left (inbound) and right (outbound)
-  const leftCorridorNodes: string[] = [];
-  const rightCorridorNodes: string[] = [];
-  const topCrossNodes: string[] = [];
-  const bottomCrossNodes: string[] = [];
+      // Outbound dock zone
+      if (x >= widthM - dockWidth - 1 && x < widthM - 1 && y >= 3 && y < 3 + mainHeight) {
+        const dockIdx = Math.floor((y - 3) / Math.max(1, mainHeight / 4)) + 1;
+        cellTypes.set(key, {
+          type: 'OUTBOUND_DOCK',
+          label: `Ворота отгрузки №${dockIdx}`,
+          isPassable: true,
+        });
+        continue;
+      }
 
-  // Create grid of cross-aisle waypoints
-  const numCrossAisles = 3; // Top, middle, bottom
-  const yLevels = [
-    4,
-    Math.round(lengthM / 2),
-    lengthM - 4,
-  ];
+      // Charging hub zone
+      if (x >= Math.round(widthM / 2 - 8) && x < Math.round(widthM / 2 + 8) && y >= 0 && y < 2) {
+        const chargerIdx = Math.floor((x - Math.round(widthM / 2 - 8)) / 4) + 1;
+        cellTypes.set(key, {
+          type: 'CHARGING_HUB',
+          label: `Зарядная станция №${chargerIdx}`,
+          isPassable: true,
+        });
+        continue;
+      }
 
-  yLevels.forEach((y, yIdx) => {
-    // Left corridor waypoint
-    const wpLeftId = `wp_left_${yIdx}`;
-    addNode({ id: wpLeftId, type: 'WAYPOINT', x: leftCorridorX, y, zLevel: 0 });
-    leftCorridorNodes.push(wpLeftId);
+      // Storage zone racks and aisles
+      if (x >= rackStartX && x <= rackEndX && y >= rackStartY && y <= rackEndY) {
+        // Create rack blocks spaced by aisles
+        const relX = x - rackStartX;
+        const period = effectiveAisleWidth + 1; // 1 cell rack, N cells aisle
+        if (relX % period === 0) {
+          // Cross-aisles at top, middle, bottom
+          const midY = Math.round(lengthM / 2);
+          if (y === rackStartY || y === midY || y === rackEndY) {
+            cellTypes.set(key, { type: 'STORAGE_AISLE', label: `Аллея`, isPassable: true });
+          } else {
+            // RACK block - IMPASSABLE
+            cellTypes.set(key, { type: 'STORAGE_AISLE', isPassable: false });
+          }
+        } else {
+          cellTypes.set(key, { type: 'STORAGE_AISLE', label: `Аллея стеллажей`, isPassable: true });
+        }
+        continue;
+      }
 
-    // Right corridor waypoint
-    const wpRightId = `wp_right_${yIdx}`;
-    addNode({ id: wpRightId, type: 'WAYPOINT', x: rightCorridorX, y, zLevel: 0 });
-    rightCorridorNodes.push(wpRightId);
-
-    // Connect left corridor waypoints vertically
-    if (yIdx > 0) {
-      addEdge(leftCorridorNodes[yIdx - 1], wpLeftId);
-      addEdge(rightCorridorNodes[yIdx - 1], wpRightId);
+      // Open floor waypoint
+      cellTypes.set(key, { type: 'WAYPOINT', isPassable: true });
     }
-  });
-
-  // Connect Inbound docks to nearest left corridor waypoints
-  inboundDockNodes.forEach((dockId) => {
-    const dockNode = nodeMap.get(dockId)!;
-    // Find closest left corridor waypoint
-    let closestWp = leftCorridorNodes[0];
-    let minD = Infinity;
-    leftCorridorNodes.forEach((wpId) => {
-      const wpNode = nodeMap.get(wpId)!;
-      const d = dist(dockNode, wpNode);
-      if (d < minD) {
-        minD = d;
-        closestWp = wpId;
-      }
-    });
-    addEdge(dockId, closestWp);
-  });
-
-  // Connect Outbound docks to nearest right corridor waypoints
-  outboundDockNodes.forEach((dockId) => {
-    const dockNode = nodeMap.get(dockId)!;
-    let closestWp = rightCorridorNodes[0];
-    let minD = Infinity;
-    rightCorridorNodes.forEach((wpId) => {
-      const wpNode = nodeMap.get(wpId)!;
-      const d = dist(dockNode, wpNode);
-      if (d < minD) {
-        minD = d;
-        closestWp = wpId;
-      }
-    });
-    addEdge(dockId, closestWp);
-  });
-
-  // Storage Aisles & internal waypoints
-  const aisleStartX = leftCorridorX + 2;
-  const aisleSpacing = (rightCorridorX - leftCorridorX - 4) / Math.max(1, numAisles - 1);
-
-  for (let a = 0; a < numAisles; a++) {
-    const aisleX = Math.round(aisleStartX + a * aisleSpacing);
-
-    // Top, middle, bottom storage aisle nodes
-    yLevels.forEach((y, yIdx) => {
-      const aisleNodeId = `storage_aisle_${a + 1}_${yIdx}`;
-      addNode({
-        id: aisleNodeId,
-        type: 'STORAGE_AISLE',
-        x: aisleX,
-        y,
-        zLevel: 0,
-        label: `Аллея стеллажей А${a + 1}-${yIdx + 1}`,
-      });
-
-      // Connect along the aisle vertically
-      if (yIdx > 0) {
-        addEdge(`storage_aisle_${a + 1}_${yIdx - 1}`, aisleNodeId);
-      }
-
-      // Connect cross-aisle horizontally to adjacent aisles or perimeter corridors
-      if (a === 0) {
-        addEdge(leftCorridorNodes[yIdx], aisleNodeId);
-      } else {
-        addEdge(`storage_aisle_${a}_${yIdx}`, aisleNodeId);
-      }
-
-      if (a === numAisles - 1) {
-        addEdge(aisleNodeId, rightCorridorNodes[yIdx]);
-      }
-    });
   }
 
-  // Charging hub connections to bottom corridor
-  const bottomChargingWpId = `wp_charging_main`;
-  addNode({
-    id: bottomChargingWpId,
-    type: 'WAYPOINT',
-    x: Math.round(widthM / 2),
-    y: 3,
-    zLevel: 0,
-  });
-
-  // Connect charging nodes to bottom charging waypoint
-  chargingNodes.forEach((cId) => addEdge(cId, bottomChargingWpId));
-  // Connect bottom charging waypoint to left & right bottom corridor nodes
-  addEdge(bottomChargingWpId, leftCorridorNodes[0]);
-  addEdge(bottomChargingWpId, rightCorridorNodes[0]);
-
-  return { widthM, lengthM, nodes, edges, zones };
+  return build8WayGridTopology(widthM, lengthM, cellTypes, zones);
 }
 
 /**
@@ -343,34 +302,8 @@ function generateAirportTopology(
   widthM: number,
   lengthM: number
 ): FacilityTopology {
-  const nodes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
   const zones: FacilityZone[] = [];
-  const nodeMap = new Map<string, GraphNode>();
 
-  const addNode = (...newNodes: GraphNode[]) => {
-    newNodes.forEach((node) => {
-      nodes.push(node);
-      nodeMap.set(node.id, node);
-    });
-  };
-
-  let edgeIdSeq = 1;
-  const addEdge = (sourceId: string, targetId: string) => {
-    const srcNode = nodeMap.get(sourceId);
-    const tgtNode = nodeMap.get(targetId);
-    if (!srcNode || !tgtNode) return;
-    const distanceM = dist(srcNode, tgtNode);
-    edges.push({
-      id: `e_${edgeIdSeq++}`,
-      source: sourceId,
-      target: targetId,
-      distanceM: distanceM || 1,
-      bidirectional: true,
-    });
-  };
-
-  // Zones
   zones.push({
     id: 'z_intake',
     name: 'Зона приёма багажа (Intake Hub)',
@@ -389,7 +322,7 @@ function generateAirportTopology(
     x: Math.round(widthM * 0.25),
     y: 10,
     width: Math.round(widthM * 0.5),
-    height: lengthM - 18,
+    height: Math.max(4, lengthM - 18),
     color: '#334155',
   });
 
@@ -411,65 +344,29 @@ function generateAirportTopology(
     x: 2,
     y: 10,
     width: 6,
-    height: Math.min(12, lengthM - 20),
+    height: Math.min(12, Math.max(2, lengthM - 20)),
     color: '#f59e0b',
   });
 
-  // Nodes
-  // Inbound docks (Luggage Intake)
-  const intakeNode1 = 'airport_intake_1';
-  const intakeNode2 = 'airport_intake_2';
-  addNode(
-    { id: intakeNode1, type: 'INBOUND_DOCK', x: Math.round(widthM * 0.3), y: 5, zLevel: 0, label: 'Терминал A' },
-    { id: intakeNode2, type: 'INBOUND_DOCK', x: Math.round(widthM * 0.7), y: 5, zLevel: 0, label: 'Терминал B' }
-  );
+  const cellTypes = new Map<string, { type: NodeType; label?: string; isPassable: boolean }>();
 
-  // Outbound docks (Apron Docks)
-  const apronNode1 = 'airport_apron_1';
-  const apronNode2 = 'airport_apron_2';
-  addNode(
-    { id: apronNode1, type: 'OUTBOUND_DOCK', x: Math.round(widthM * 0.3), y: lengthM - 4, zLevel: 0, label: 'Стоянка Гейт 1' },
-    { id: apronNode2, type: 'OUTBOUND_DOCK', x: Math.round(widthM * 0.7), y: lengthM - 4, zLevel: 0, label: 'Стоянка Гейт 2' }
-  );
+  for (let x = 0; x < widthM; x++) {
+    for (let y = 0; y < lengthM; y++) {
+      const key = `${x}_${y}`;
 
-  // Charging hub
-  const chargerNode1 = 'airport_charge_1';
-  addNode({ id: chargerNode1, type: 'CHARGING_HUB', x: 5, y: 15, zLevel: 0, label: 'Зарядная станция Перрон' });
-
-  // Terminal Transit Corridor Waypoints
-  const transitStepCount = Math.max(3, Math.floor(lengthM / 15));
-  const transitWaypoints: string[] = [];
-
-  for (let i = 0; i < transitStepCount; i++) {
-    const wpId = `wp_airport_transit_${i}`;
-    const y = Math.round(8 + (i * (lengthM - 16)) / (transitStepCount - 1 || 1));
-    addNode({
-      id: wpId,
-      type: 'WAYPOINT',
-      x: Math.round(widthM / 2),
-      y,
-      zLevel: 0,
-      label: `Транзитный узел T${i + 1}`,
-    });
-    transitWaypoints.push(wpId);
-
-    if (i > 0) {
-      addEdge(transitWaypoints[i - 1], wpId);
+      if (x >= 2 && x < widthM - 2 && y >= 2 && y < 8) {
+        cellTypes.set(key, { type: 'INBOUND_DOCK', label: 'Терминал багажа', isPassable: true });
+      } else if (x >= 2 && x < widthM - 2 && y >= lengthM - 7 && y < lengthM - 2) {
+        cellTypes.set(key, { type: 'OUTBOUND_DOCK', label: 'Стоянка Гейт', isPassable: true });
+      } else if (x >= 2 && x < 8 && y >= 10 && y < 10 + Math.min(12, Math.max(2, lengthM - 20))) {
+        cellTypes.set(key, { type: 'CHARGING_HUB', label: 'Зарядная станция Перрон', isPassable: true });
+      } else {
+        cellTypes.set(key, { type: 'WAYPOINT', isPassable: true });
+      }
     }
   }
 
-  // Connect Docks and Charger to Transit Spine
-  addEdge(intakeNode1, transitWaypoints[0]);
-  addEdge(intakeNode2, transitWaypoints[0]);
-
-  const lastWp = transitWaypoints[transitWaypoints.length - 1];
-  addEdge(apronNode1, lastWp);
-  addEdge(apronNode2, lastWp);
-
-  const midWp = transitWaypoints[Math.floor(transitWaypoints.length / 2)];
-  addEdge(chargerNode1, midWp);
-
-  return { widthM, lengthM, nodes, edges, zones };
+  return build8WayGridTopology(widthM, lengthM, cellTypes, zones);
 }
 
 /**
@@ -482,45 +379,19 @@ function generateHospitalTopology(
   widthM: number,
   lengthM: number
 ): FacilityTopology {
-  const nodes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
   const zones: FacilityZone[] = [];
-  const nodeMap = new Map<string, GraphNode>();
-
-  const addNode = (...newNodes: GraphNode[]) => {
-    newNodes.forEach((node) => {
-      nodes.push(node);
-      nodeMap.set(node.id, node);
-    });
-  };
-
-  let edgeIdSeq = 1;
-  const addEdge = (sourceId: string, targetId: string) => {
-    const srcNode = nodeMap.get(sourceId);
-    const tgtNode = nodeMap.get(targetId);
-    if (!srcNode || !tgtNode) return;
-    const distanceM = dist(srcNode, tgtNode);
-    edges.push({
-      id: `e_${edgeIdSeq++}`,
-      source: sourceId,
-      target: targetId,
-      distanceM: distanceM || 1,
-      bidirectional: true,
-    });
-  };
-
   const centerX = Math.round(widthM / 2);
   const centerY = Math.round(lengthM / 2);
+  const wingWidth = Math.max(6, Math.round(widthM * 0.3));
 
-  // Zones
   zones.push({
     id: 'z_pharmacy',
     name: 'Центральный фармацевтический склад (Depot)',
     type: 'INBOUND_DOCK',
-    x: centerX - 8,
-    y: centerY - 4,
-    width: 16,
-    height: 8,
+    x: Math.max(1, centerX - 8),
+    y: Math.max(1, centerY - 4),
+    width: Math.min(16, widthM - 2),
+    height: Math.min(8, lengthM - 2),
     color: '#3b82f6',
   });
 
@@ -530,8 +401,8 @@ function generateHospitalTopology(
     type: 'OUTBOUND_DOCK',
     x: 2,
     y: 4,
-    width: Math.max(6, Math.round(widthM * 0.3)),
-    height: lengthM - 8,
+    width: wingWidth,
+    height: Math.max(4, lengthM - 8),
     color: '#0284c7',
   });
 
@@ -539,10 +410,10 @@ function generateHospitalTopology(
     id: 'z_wing_right',
     name: 'Терапевтическое отделение (Right Wing)',
     type: 'OUTBOUND_DOCK',
-    x: widthM - Math.max(6, Math.round(widthM * 0.3)) - 2,
+    x: Math.max(2, widthM - wingWidth - 2),
     y: 4,
-    width: Math.max(6, Math.round(widthM * 0.3)),
-    height: lengthM - 8,
+    width: wingWidth,
+    height: Math.max(4, lengthM - 8),
     color: '#0284c7',
   });
 
@@ -550,85 +421,32 @@ function generateHospitalTopology(
     id: 'z_charging_hosp',
     name: 'Зарядный блок (Charging Hub)',
     type: 'CHARGING_HUB',
-    x: centerX - 6,
+    x: Math.max(1, centerX - 6),
     y: 1,
-    width: 12,
+    width: Math.min(12, widthM - 2),
     height: 3,
     color: '#f59e0b',
   });
 
-  // Nodes
-  // Central Depot (Inbound)
-  const depotNode = 'hosp_depot_main';
-  addNode({
-    id: depotNode,
-    type: 'INBOUND_DOCK',
-    x: centerX,
-    y: centerY,
-    zLevel: 0,
-    label: 'Главный фармсклад',
-  });
+  const cellTypes = new Map<string, { type: NodeType; label?: string; isPassable: boolean }>();
 
-  // Department Docks (Outbound Delivery Destinations)
-  const wingLeftNode = 'hosp_wing_left';
-  const wingRightNode = 'hosp_wing_right';
-  addNode(
-    {
-      id: wingLeftNode,
-      type: 'OUTBOUND_DOCK',
-      x: Math.round(widthM * 0.15),
-      y: centerY,
-      zLevel: 0,
-      label: 'Пост хирургии №1',
-    },
-    {
-      id: wingRightNode,
-      type: 'OUTBOUND_DOCK',
-      x: Math.round(widthM * 0.85),
-      y: centerY,
-      zLevel: 0,
-      label: 'Пост терапии №2',
+  for (let x = 0; x < widthM; x++) {
+    for (let y = 0; y < lengthM; y++) {
+      const key = `${x}_${y}`;
+
+      if (x >= centerX - 4 && x < centerX + 4 && y >= centerY - 2 && y < centerY + 2) {
+        cellTypes.set(key, { type: 'INBOUND_DOCK', label: 'Главный фармсклад', isPassable: true });
+      } else if (x >= 2 && x < 2 + wingWidth && y >= 4 && y < lengthM - 4) {
+        cellTypes.set(key, { type: 'OUTBOUND_DOCK', label: 'Пост хирургии №1', isPassable: true });
+      } else if (x >= widthM - wingWidth - 2 && x < widthM - 2 && y >= 4 && y < lengthM - 4) {
+        cellTypes.set(key, { type: 'OUTBOUND_DOCK', label: 'Пост терапии №2', isPassable: true });
+      } else if (x >= centerX - 4 && x < centerX + 4 && y >= 1 && y < 4) {
+        cellTypes.set(key, { type: 'CHARGING_HUB', label: 'Зарядный отсек', isPassable: true });
+      } else {
+        cellTypes.set(key, { type: 'WAYPOINT', isPassable: true });
+      }
     }
-  );
+  }
 
-  // Charging Station Node
-  const hospCharger = 'hosp_charger_1';
-  addNode({
-    id: hospCharger,
-    type: 'CHARGING_HUB',
-    x: centerX,
-    y: 2.5,
-    zLevel: 0,
-    label: 'Зарядный отсек',
-  });
-
-  // Central Corridor Waypoints
-  const wpCenter = 'wp_hosp_center';
-  const wpNorth = 'wp_hosp_north';
-  const wpSouth = 'wp_hosp_south';
-  const wpWest = 'wp_hosp_west';
-  const wpEast = 'wp_hosp_east';
-
-  addNode(
-    { id: wpCenter, type: 'WAYPOINT', x: centerX, y: centerY - 5, zLevel: 0 },
-    { id: wpNorth, type: 'WAYPOINT', x: centerX, y: 5, zLevel: 0 },
-    { id: wpSouth, type: 'WAYPOINT', x: centerX, y: lengthM - 5, zLevel: 0 },
-    { id: wpWest, type: 'WAYPOINT', x: Math.round(widthM * 0.25), y: centerY, zLevel: 0 },
-    { id: wpEast, type: 'WAYPOINT', x: Math.round(widthM * 0.75), y: centerY, zLevel: 0 }
-  );
-
-  // Connect Spine
-  addEdge(depotNode, wpCenter);
-  addEdge(wpCenter, wpNorth);
-  addEdge(wpCenter, wpSouth);
-
-  addEdge(depotNode, wpWest);
-  addEdge(wpWest, wingLeftNode);
-
-  addEdge(depotNode, wpEast);
-  addEdge(wpEast, wingRightNode);
-
-  addEdge(hospCharger, wpNorth);
-
-  return { widthM, lengthM, nodes, edges, zones };
+  return build8WayGridTopology(widthM, lengthM, cellTypes, zones);
 }

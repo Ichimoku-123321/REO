@@ -350,28 +350,6 @@ export function SimulationViewport({
       });
     }
 
-    // 8. Transit Waypoint Paths (Graph Edges Overlay)
-    const nodeMap = new Map(topology.nodes.map((n) => [n.id, n]));
-
-    topology.edges.forEach((edge) => {
-      const src = nodeMap.get(edge.source);
-      const tgt = nodeMap.get(edge.target);
-      if (!src || !tgt) return;
-
-      const points = [
-        new THREE.Vector3(src.x, 0.1, src.y),
-        new THREE.Vector3(tgt.x, 0.1, tgt.y),
-      ];
-      const edgeGeo = new THREE.BufferGeometry().setFromPoints(points);
-      const edgeMat = new THREE.LineBasicMaterial({
-        color: 0x38bdf8,
-        transparent: true,
-        opacity: 0.6,
-        linewidth: 2,
-      });
-      const line = new THREE.Line(edgeGeo, edgeMat);
-      scene.add(line);
-    });
 
     // 9. Node Markers
     const getNodeColor = (type: NodeType): number => {

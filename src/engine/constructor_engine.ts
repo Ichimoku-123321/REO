@@ -77,17 +77,16 @@ export function rebuildTopologyFromGrid(
 
   const { cols, rows, cellSizeM, tiles } = grid;
 
-  // 1. Map tiles to Graph Nodes (ignoring OBSTACLE and RACK for passage)
+  // 1. Map tiles to Graph Nodes (RACK and OBSTACLE are impassable)
   const nodeGrid = new Map<string, GraphNode>();
-  let nodeSeq = 1;
 
   for (let x = 0; x < cols; x++) {
     for (let y = 0; y < rows; y++) {
       const key = getTileKey(x, y);
       const tileType = tiles.get(key) || 'EMPTY_FLOOR';
 
-      if (tileType === 'OBSTACLE') {
-        // Unpassable structural column/wall, create no node
+      if (tileType === 'OBSTACLE' || tileType === 'RACK') {
+        // Unpassable obstacle / rack cell
         continue;
       }
 
@@ -106,9 +105,6 @@ export function rebuildTopologyFromGrid(
       } else if (tileType === 'CHARGER') {
         graphNodeType = 'CHARGING_HUB';
         label = `Зарядка (${x},${y})`;
-      } else if (tileType === 'RACK') {
-        graphNodeType = 'STORAGE_AISLE';
-        label = `Стеллаж (${x},${y})`;
       }
 
       const nodeId = `c_node_${x}_${y}`;
@@ -126,42 +122,42 @@ export function rebuildTopologyFromGrid(
     }
   }
 
-  // 2. Generate edges between orthogonally adjacent passable grid tiles
+  // 2. Generate 8-way edges between passable grid tiles
   let edgeSeq = 1;
+  const isPassable = (gx: number, gy: number) => nodeGrid.has(getTileKey(gx, gy));
+
   for (let x = 0; x < cols; x++) {
     for (let y = 0; y < rows; y++) {
       const currKey = getTileKey(x, y);
       const currNode = nodeGrid.get(currKey);
       if (!currNode) continue;
 
-      // Right neighbor
-      if (x + 1 < cols) {
-        const rightKey = getTileKey(x + 1, y);
-        const rightNode = nodeGrid.get(rightKey);
-        if (rightNode) {
-          edges.push({
-            id: `c_edge_${edgeSeq++}`,
-            source: currNode.id,
-            target: rightNode.id,
-            distanceM: cellSizeM,
-            bidirectional: true,
-          });
-        }
-      }
+      const dirs = [
+        { dx: 1, dy: 0, distFactor: 1.0, isDiag: false },
+        { dx: 0, dy: 1, distFactor: 1.0, isDiag: false },
+        { dx: 1, dy: 1, distFactor: 1.414, isDiag: true, orth1: [1, 0], orth2: [0, 1] },
+        { dx: 1, dy: -1, distFactor: 1.414, isDiag: true, orth1: [1, 0], orth2: [0, -1] },
+      ];
 
-      // Top/Up neighbor
-      if (y + 1 < rows) {
-        const topKey = getTileKey(x, y + 1);
-        const topNode = nodeGrid.get(topKey);
-        if (topNode) {
-          edges.push({
-            id: `c_edge_${edgeSeq++}`,
-            source: currNode.id,
-            target: topNode.id,
-            distanceM: cellSizeM,
-            bidirectional: true,
-          });
+      for (const dir of dirs) {
+        const nx = x + dir.dx;
+        const ny = y + dir.dy;
+        if (!isPassable(nx, ny)) continue;
+
+        if (dir.isDiag && dir.orth1 && dir.orth2) {
+          if (!isPassable(x + dir.orth1[0], y + dir.orth1[1]) || !isPassable(x + dir.orth2[0], y + dir.orth2[1])) {
+            continue;
+          }
         }
+
+        const targetNode = nodeGrid.get(getTileKey(nx, ny))!;
+        edges.push({
+          id: `c_edge_${edgeSeq++}`,
+          source: currNode.id,
+          target: targetNode.id,
+          distanceM: Math.round(cellSizeM * dir.distFactor * 100) / 100,
+          bidirectional: true,
+        });
       }
     }
   }

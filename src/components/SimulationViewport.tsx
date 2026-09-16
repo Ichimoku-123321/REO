@@ -201,10 +201,10 @@ export function SimulationViewport({
     dirLight.shadow.camera.bottom = -viewSize;
     scene.add(dirLight);
 
-    // 6. Base Floor Construction
+    // 6. Industrial CAD Floor Plane
     const floorGeo = new THREE.PlaneGeometry(topology.widthM, topology.lengthM);
     const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b, // slate-800
+      color: 0x1e293b, // slate-800 CAD floor
       roughness: 0.8,
       metalness: 0.1,
     });
@@ -214,7 +214,7 @@ export function SimulationViewport({
     floorMesh.receiveShadow = true;
     scene.add(floorMesh);
 
-    // Floor Grid Helper
+    // Clean Subtle Floor Grid Helper
     const gridHelper = new THREE.GridHelper(
       Math.max(topology.widthM, topology.lengthM),
       Math.max(10, Math.floor(Math.max(topology.widthM, topology.lengthM) / (isConstructorMode ? grid.cellSizeM : 5))),
@@ -350,30 +350,7 @@ export function SimulationViewport({
       });
     }
 
-    // 8. Transit Waypoint Paths (Graph Edges Overlay)
-    const nodeMap = new Map(topology.nodes.map((n) => [n.id, n]));
-
-    topology.edges.forEach((edge) => {
-      const src = nodeMap.get(edge.source);
-      const tgt = nodeMap.get(edge.target);
-      if (!src || !tgt) return;
-
-      const points = [
-        new THREE.Vector3(src.x, 0.1, src.y),
-        new THREE.Vector3(tgt.x, 0.1, tgt.y),
-      ];
-      const edgeGeo = new THREE.BufferGeometry().setFromPoints(points);
-      const edgeMat = new THREE.LineBasicMaterial({
-        color: 0x38bdf8,
-        transparent: true,
-        opacity: 0.6,
-        linewidth: 2,
-      });
-      const line = new THREE.Line(edgeGeo, edgeMat);
-      scene.add(line);
-    });
-
-    // 9. Node Markers
+    // 8. Infrastructure Destination Markers (Inbound, Outbound, Charging Docks)
     const getNodeColor = (type: NodeType): number => {
       switch (type) {
         case 'INBOUND_DOCK':
@@ -391,37 +368,30 @@ export function SimulationViewport({
     };
 
     topology.nodes.forEach((node) => {
-      const color = getNodeColor(node.type);
-
       if (node.type === 'WAYPOINT') {
-        const dotGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.1, 8);
-        const dotMat = new THREE.MeshStandardMaterial({
-          color,
-          roughness: 0.3,
-        });
-        const dotMesh = new THREE.Mesh(dotGeo, dotMat);
-        dotMesh.position.set(node.x, 0.05, node.y);
-        scene.add(dotMesh);
-      } else {
-        const markerGeo = new THREE.CylinderGeometry(0.8, 1.2, 0.8, 16);
-        const markerMat = new THREE.MeshStandardMaterial({
-          color,
-          roughness: 0.2,
-          metalness: 0.5,
-          emissive: color,
-          emissiveIntensity: 0.2,
-        });
-        const markerMesh = new THREE.Mesh(markerGeo, markerMat);
-        markerMesh.position.set(node.x, 0.4, node.y);
-        markerMesh.castShadow = true;
-        scene.add(markerMesh);
-
-        const capGeo = new THREE.SphereGeometry(0.5, 12, 12);
-        const capMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        const capMesh = new THREE.Mesh(capGeo, capMat);
-        capMesh.position.set(node.x, 0.9, node.y);
-        scene.add(capMesh);
+        // Debug WAYPOINT meshes completely purged for clean industrial CAD rendering
+        return;
       }
+
+      const color = getNodeColor(node.type);
+      const markerGeo = new THREE.CylinderGeometry(0.8, 1.2, 0.8, 16);
+      const markerMat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.2,
+        metalness: 0.5,
+        emissive: color,
+        emissiveIntensity: 0.2,
+      });
+      const markerMesh = new THREE.Mesh(markerGeo, markerMat);
+      markerMesh.position.set(node.x, 0.4, node.y);
+      markerMesh.castShadow = true;
+      scene.add(markerMesh);
+
+      const capGeo = new THREE.SphereGeometry(0.5, 12, 12);
+      const capMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const capMesh = new THREE.Mesh(capGeo, capMat);
+      capMesh.position.set(node.x, 0.9, node.y);
+      scene.add(capMesh);
     });
 
     // Visual Bottleneck Heatmap Overlay
@@ -456,7 +426,7 @@ export function SimulationViewport({
       });
     }
 
-    // 10. Dynamic Robot Fleet Meshes Map
+    // 9. Dynamic Robot Fleet Meshes Map
     interface AgentMeshGroup {
       group: THREE.Group;
       chassisMesh: THREE.Mesh;
@@ -569,7 +539,7 @@ export function SimulationViewport({
     const domElem = renderer.domElement;
     domElem.addEventListener('pointerdown', handleCanvasPointerDown);
 
-    // 11. Animation Loop
+    // 10. Animation Loop & Telemetry Throttle
     const clock = new THREE.Clock();
     let animationFrameId: number;
     let telemetryTimer = 0;
@@ -583,7 +553,7 @@ export function SimulationViewport({
         const dtSim = Math.min(0.1, deltaReal) * speedMultiplier;
         engineRef.current.update(dtSim);
 
-        // Update / Sync agents to 3D Scene
+        // Update / Sync agents to 3D Scene directly via transforms
         const agents = engineRef.current.agents;
 
         agents.forEach((agent) => {
@@ -593,7 +563,7 @@ export function SimulationViewport({
             agentMeshMap.set(agent.id, meshGroup);
           }
 
-          // Update position
+          // Transform mapping: x_3d = agent.x, y_3d = 0, z_3d = agent.y
           meshGroup.group.position.set(agent.x, 0, agent.y);
           meshGroup.group.rotation.y = agent.headingRad;
 
@@ -605,9 +575,9 @@ export function SimulationViewport({
           meshGroup.cargoMesh.visible = agent.cargoPayload;
         });
 
-        // Telemetry update interval (~10Hz)
+        // Telemetry update interval throttled to 300ms (3.33Hz)
         telemetryTimer += deltaReal;
-        if (telemetryTimer >= 0.1) {
+        if (telemetryTimer >= 0.3) {
           telemetryTimer = 0;
           setTelemetry(engineRef.current.getTelemetry(targetThroughputPerHour));
         }

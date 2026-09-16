@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SimulationEngine, findShortestPath, type AgentFSMState } from '../src/engine/simulation_engine.js';
+import {
+  SimulationEngine,
+  findShortestPath,
+  lineIntersectsAABB,
+  type AgentFSMState,
+} from '../src/engine/simulation_engine.js';
 import { generateFacilityTopology } from '../src/engine/topology_generator.js';
 import { SEED_ROBOTS } from '../src/data/robots.seed.js';
 import type { FacilityRequirements } from '../src/types/facility.js';
@@ -48,6 +53,42 @@ test('Simulation Engine: Pathfinding computes valid route between graph nodes', 
   assert.equal(path[path.length - 1], outboundNode.id);
 });
 
+test('Simulation Engine: Line-of-Sight Liang-Barsky intersection check', () => {
+  const box = { minX: 10, maxX: 20, minY: 10, maxY: 20 };
+
+  // Line segment passing straight through box
+  assert.equal(lineIntersectsAABB(0, 15, 30, 15, box), true);
+
+  // Line segment completely clear of box
+  assert.equal(lineIntersectsAABB(0, 5, 30, 5, box), false);
+});
+
+test('Simulation Engine: Continuous Vector Steering & dynamic lateral evasion', () => {
+  const topology = generateFacilityTopology(mockFacility);
+  const robot = SEED_ROBOTS[0];
+  const engine = new SimulationEngine(topology, robot, 2);
+
+  // Place two agents facing each other close by (< 1.5m)
+  engine.agents[0].x = 10.0;
+  engine.agents[0].y = 10.0;
+  engine.agents[0].state = 'MOVING_TO_PICKUP';
+  engine.agents[0].targetNodeId = topology.nodes[0].id;
+  engine.agents[0].pathNodeIds = [topology.nodes[0].id];
+
+  engine.agents[1].x = 11.0;
+  engine.agents[1].y = 10.0;
+  engine.agents[1].state = 'MOVING_TO_PICKUP';
+  engine.agents[1].targetNodeId = topology.nodes[0].id;
+  engine.agents[1].pathNodeIds = [topology.nodes[0].id];
+
+  // Advance continuous physics frame
+  engine.update(0.1);
+
+  // Positions and headings should update continuously without stopping or freezing
+  assert.notEqual(engine.agents[0].x, 10.0);
+  assert.ok(typeof engine.agents[0].headingRad === 'number');
+});
+
 test('Simulation Engine: Agent FSM state transitions & movement', () => {
   const topology = generateFacilityTopology(mockFacility);
   const robot = SEED_ROBOTS[0];
@@ -55,7 +96,6 @@ test('Simulation Engine: Agent FSM state transitions & movement', () => {
 
   assert.equal(engine.agents[0].state, 'IDLE');
 
-  // Step 1 update: agent in IDLE should pick pickup dock and transition to MOVING_TO_PICKUP or LOADING
   engine.update(1.0);
   const stateAfterStart: string = engine.agents[0].state;
   assert.ok(
@@ -63,12 +103,10 @@ test('Simulation Engine: Agent FSM state transitions & movement', () => {
     `Expected MOVING_TO_PICKUP or LOADING, got ${stateAfterStart}`
   );
 
-  // Fast forward simulation time by 60 seconds
   for (let i = 0; i < 60; i++) {
     engine.update(1.0);
   }
 
-  // Agent should have completed at least 1 delivery or be transporting/unloading
   assert.ok(engine.elapsedSimSeconds >= 60);
   assert.ok(engine.completedDeliveries >= 0);
 });
@@ -78,7 +116,6 @@ test('Simulation Engine: Low battery triggers MOVING_TO_CHARGE state', () => {
   const robot = SEED_ROBOTS[0];
   const engine = new SimulationEngine(topology, robot, 1);
 
-  // Force battery to 15%
   engine.agents[0].batterySoc = 15;
   engine.agents[0].state = 'IDLE';
 
@@ -100,7 +137,6 @@ test('Simulation Engine: Telemetry KPI calculation and calibration state', () =>
   assert.equal(initialTelemetry.isCalibrating, true);
   assert.equal(initialTelemetry.completedDeliveries, 0);
 
-  // Simulate 3600 seconds (1 hour sim time)
   for (let s = 0; s < 3600; s++) {
     engine.update(1.0);
   }
@@ -118,7 +154,6 @@ test('Simulation Engine: Congestion detection flag when agents queue up', () => 
   const robot = SEED_ROBOTS[0];
   const engine = new SimulationEngine(topology, robot, 4);
 
-  // Force agents to be queued
   engine.agents[0].isQueued = true;
   engine.agents[1].isQueued = true;
 

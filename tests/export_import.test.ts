@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { parseFacilityImport, downloadCsvTemplate } from '../src/engine/import_facility.js';
 import { calculateEconomics, DEFAULT_WHAT_IF_PARAMS } from '../src/engine/economics.js';
 import { generateFinancialExcel } from '../src/engine/export_excel.js';
+import { generateFeasibilityPdf } from '../src/engine/export_pdf.js';
 import { SEED_ROBOTS } from '../src/data/robots.seed.js';
 import type { FacilityRequirements } from '../src/types/facility.js';
 import * as XLSX from 'xlsx';
@@ -74,6 +75,37 @@ test('Import: Invalid JSON syntax returns JSON parse error', () => {
     result.errors[0].includes('Ошибка синтаксиса JSON:'),
     `Expected JSON syntax error message, got: ${result.errors[0]}`
   );
+});
+
+test('PDF Export: Generates feasibility report PDF without throwing errors', () => {
+  const facility: FacilityRequirements = {
+    industry: 'warehouse',
+    totalAreaSqm: 12000,
+    aisleWidthM: 2.6,
+    ceilingHeightM: 6.0,
+    operatingTempRange: { min: 5, max: 30 },
+    shiftsPerDay: 2,
+    hoursPerDay: 22,
+    requiredPayloadKg: 800,
+    targetThroughputPerHour: 85,
+    averageWorkerSalaryRub: 85000,
+  };
+
+  const ronavi = SEED_ROBOTS.find((r) => r.id === 'ronavi-h1500')!;
+  const economics = calculateEconomics(facility, ronavi, DEFAULT_WHAT_IF_PARAMS);
+
+  assert.doesNotThrow(() => {
+    generateFeasibilityPdf({
+      projectTitle: 'Test PDF Export',
+      facility,
+      selectedRobot: ronavi,
+      fleetSize: economics.fleetSize,
+      economicEvaluation: economics,
+      whatIf: DEFAULT_WHAT_IF_PARAMS,
+      generatedAt: new Date(),
+      version: 'v1.0',
+    });
+  });
 });
 
 test('Excel Export: Generates valid 3-sheet workbook structure and data matrix', () => {

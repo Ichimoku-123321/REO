@@ -77,6 +77,45 @@ test('Import: Invalid JSON syntax returns JSON parse error', () => {
   );
 });
 
+test('Import: Invalid JSON syntax with non-.json extension detects JSON content and returns JSON parse error', () => {
+  const malformedJson = '{ industry: "warehouse", invalid_json...';
+
+  const result = parseFacilityImport(malformedJson, 'data.txt');
+
+  assert.equal(result.success, false);
+  assert.equal(result.data, undefined);
+  assert.ok(result.errors.length > 0);
+  assert.ok(
+    result.errors[0].includes('Ошибка синтаксиса JSON:'),
+    `Expected JSON syntax error message, got: ${result.errors[0]}`
+  );
+});
+
+test('Import: JSON with schema validation issues returns formatted Zod validation errors', () => {
+  const invalidSchemaJson = JSON.stringify({
+    industry: 'invalid_industry',
+    totalAreaSqm: -100,
+    aisleWidthM: 2.5,
+    ceilingHeightM: 6.0,
+    operatingTempRange: { min: 5, max: 30 },
+    shiftsPerDay: 2,
+    hoursPerDay: 22,
+    requiredPayloadKg: 800,
+    targetThroughputPerHour: 85,
+    averageWorkerSalaryRub: 85000,
+  });
+
+  const result = parseFacilityImport(invalidSchemaJson, 'facility_invalid.json');
+
+  assert.equal(result.success, false);
+  assert.equal(result.data, undefined);
+  assert.ok(result.errors.length > 0);
+  assert.ok(
+    result.errors.some((e) => e.includes('Поле "totalAreaSqm":')),
+    `Expected error message for totalAreaSqm field, got: ${result.errors.join(', ')}`
+  );
+});
+
 test('PDF Export: Generates feasibility report PDF without throwing errors', () => {
   const facility: FacilityRequirements = {
     industry: 'warehouse',

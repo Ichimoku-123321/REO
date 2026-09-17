@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFacilityImport } from '../src/engine/import_facility.js';
+import { parseFacilityImport, downloadCsvTemplate } from '../src/engine/import_facility.js';
 import { calculateEconomics, DEFAULT_WHAT_IF_PARAMS } from '../src/engine/economics.js';
 import { generateFinancialExcel } from '../src/engine/export_excel.js';
 import { SEED_ROBOTS } from '../src/data/robots.seed.js';
@@ -104,4 +104,91 @@ test('Excel Export: Generates valid 3-sheet workbook structure and data matrix',
     generatedAt: new Date(),
     version: 'v1.0',
   });
+});
+
+test('CSV Template Download: Creates DOM anchor, triggers download with UTF-8 BOM, and cleans up DOM', async () => {
+  // Store original globals
+  const originalDocument = (globalThis as any).document;
+  const originalCreateObjectURL = URL.createObjectURL;
+
+  let createdBlob: any = null;
+  let clicked = false;
+  const attributes: Record<string, string> = {};
+  const appendedChildren: any[] = [];
+  const removedChildren: any[] = [];
+
+  const mockLink = {
+    setAttribute(name: string, value: string) {
+      attributes[name] = value;
+    },
+    click() {
+      clicked = true;
+    },
+  };
+
+  const mockDocument = {
+    createElement(tagName: string) {
+      assert.equal(tagName, 'a', 'Should create <a> element');
+      return mockLink;
+    },
+    body: {
+      appendChild(child: any) {
+        appendedChildren.push(child);
+        return child;
+      },
+      removeChild(child: any) {
+        removedChildren.push(child);
+        return child;
+      },
+    },
+  };
+
+  try {
+    (globalThis as any).document = mockDocument;
+    URL.createObjectURL = (blob: Blob) => {
+      createdBlob = blob;
+      return 'blob:mock-csv-template-url';
+    };
+
+    downloadCsvTemplate();
+
+    // Assert DOM operations and link parameters
+    assert.ok(createdBlob, 'Expected Blob to be created');
+    assert.equal(attributes['href'], 'blob:mock-csv-template-url', 'href attribute should be set to blob URL');
+    assert.equal(attributes['download'], 'facility_template.csv', 'download attribute should be facility_template.csv');
+    assert.equal(clicked, true, 'Link click() should be triggered');
+    assert.equal(appendedChildren.length, 1, 'One element should be appended to body');
+    assert.equal(appendedChildren[0], mockLink, 'Appended element should be mock link');
+    assert.equal(removedChildren.length, 1, 'One element should be removed from body');
+    assert.equal(removedChildren[0], mockLink, 'Removed element should be mock link');
+
+    // Assert Blob content and UTF-8 BOM byte sequence (0xEF, 0xBB, 0xBF)
+    const arrayBuffer = await (createdBlob as Blob).arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    assert.equal(buffer[0], 0xef, 'First byte of Blob should be 0xEF (UTF-8 BOM)');
+    assert.equal(buffer[1], 0xbb, 'Second byte of Blob should be 0xBB (UTF-8 BOM)');
+    assert.equal(buffer[2], 0xbf, 'Third byte of Blob should be 0xBF (UTF-8 BOM)');
+
+    const blobText = await (createdBlob as Blob).text();
+    assert.ok(blobText.includes('Отрасль;Площадь_м2;Ширина_проезда_м'), 'CSV should contain Russian headers');
+    assert.ok(blobText.includes('warehouse;12000;2.6;6.0;5;30;2;22;800;85;85000'), 'CSV should contain sample row data');
+
+    // Assert that the generated template is parseable by parseFacilityImport
+    const parseResult = parseFacilityImport(blobText, 'facility_template.csv');
+    assert.equal(parseResult.success, true, `Generated template failed to parse: ${parseResult.errors.join(', ')}`);
+    assert.ok(parseResult.data, 'Parsed template should return valid facility data');
+    assert.equal(parseResult.data.industry, 'warehouse');
+    assert.equal(parseResult.data.totalAreaSqm, 12000);
+    assert.equal(parseResult.data.aisleWidthM, 2.6);
+    assert.equal(parseResult.data.ceilingHeightM, 6.0);
+    assert.equal(parseResult.data.shiftsPerDay, 2);
+    assert.equal(parseResult.data.hoursPerDay, 22);
+    assert.equal(parseResult.data.requiredPayloadKg, 800);
+    assert.equal(parseResult.data.targetThroughputPerHour, 85);
+    assert.equal(parseResult.data.averageWorkerSalaryRub, 85000);
+  } finally {
+    // Restore original globals
+    (globalThis as any).document = originalDocument;
+    URL.createObjectURL = originalCreateObjectURL;
+  }
 });

@@ -62,6 +62,20 @@ test('Import: Valid JSON structure parsing', () => {
   assert.equal(result.data.requiredPayloadKg, 45);
 });
 
+test('Import: Invalid JSON syntax returns JSON parse error', () => {
+  const malformedJson = '{ industry: "warehouse", totalAreaSqm: ';
+
+  const result = parseFacilityImport(malformedJson, 'invalid.json');
+
+  assert.equal(result.success, false);
+  assert.equal(result.data, undefined);
+  assert.ok(result.errors.length > 0);
+  assert.ok(
+    result.errors[0].includes('Ошибка синтаксиса JSON:'),
+    `Expected JSON syntax error message, got: ${result.errors[0]}`
+  );
+});
+
 test('Excel Export: Generates valid 3-sheet workbook structure and data matrix', () => {
   const facility: FacilityRequirements = {
     industry: 'warehouse',

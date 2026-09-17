@@ -110,7 +110,7 @@ export function parseFacilityImport(content: string, filename: string): ImportRe
   const headers = lines[0].split(separator).map((h) => h.trim());
   const values = lines[1].split(separator).map((v) => v.trim());
 
-  const rawObj: Record<string, unknown> = {};
+  const rawObj: Partial<FacilityRequirements> = {};
   let tempMin = 5;
   let tempMax = 35;
 
@@ -130,11 +130,8 @@ export function parseFacilityImport(content: string, filename: string): ImportRe
       tempMax = parseFloat(valStr) || 35;
     } else {
       const numVal = parseFloat(valStr.replace(/\s/g, '').replace(',', '.'));
-      if (!isNaN(numVal)) {
-        rawObj[mappedKey] = numVal;
-      } else {
-        rawObj[mappedKey] = valStr;
-      }
+      const val = !isNaN(numVal) ? numVal : valStr;
+      (rawObj as Record<string, unknown>)[mappedKey] = val;
     }
   });
 

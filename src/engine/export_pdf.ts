@@ -1,7 +1,13 @@
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { autoTable, UserOptions } from 'jspdf-autotable';
 import type { ProjectExportData } from './export_types.js';
 import { MANDATORY_LEGAL_DISCLAIMER } from './export_types.js';
+
+interface jsPDFWithAutoTable extends jsPDF {
+  lastAutoTable?: {
+    finalY: number;
+  };
+}
 
 function formatCurrency(val: number): string {
   return new Intl.NumberFormat('ru-RU', {
@@ -78,7 +84,7 @@ export function generateFeasibilityPdf(data: ProjectExportData): void {
   doc.setFont('helvetica', 'bold');
   doc.text('2. Facility & Equipment Specifications', 14, 83);
 
-  (autoTable as unknown as (doc: jsPDF, options: Record<string, unknown>) => void)(doc, {
+  const specTableOptions: UserOptions = {
     startY: 87,
     head: [['Parameter', 'Value']],
     body: [
@@ -93,15 +99,18 @@ export function generateFeasibilityPdf(data: ProjectExportData): void {
     ],
     theme: 'striped',
     styles: { fontSize: 9 },
-  });
+  };
+  autoTable(doc, specTableOptions);
 
   // 3-Scenario Financial Table
-  const nextY1 = ((doc as unknown as Record<string, unknown>).lastAutoTable as { finalY: number }).finalY + 10;
+  const docWithAutoTable = doc as jsPDFWithAutoTable;
+  const lastY1 = docWithAutoTable.lastAutoTable?.finalY ?? 87;
+  const nextY1 = lastY1 + 10;
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.text('3. 3-Scenario Financial Comparison', 14, nextY1);
 
-  (autoTable as unknown as (doc: jsPDF, options: Record<string, unknown>) => void)(doc, {
+  const financialTableOptions: UserOptions = {
     startY: nextY1 + 4,
     head: [['Indicator', 'As-Is (Manual)', 'CAPEX (Purchase)', 'RaaS (Subscription)']],
     body: [
@@ -113,10 +122,12 @@ export function generateFeasibilityPdf(data: ProjectExportData): void {
     ],
     theme: 'grid',
     styles: { fontSize: 9 },
-  });
+  };
+  autoTable(doc, financialTableOptions);
 
   // Risk & Spectral Analysis
-  const nextY2 = ((doc as unknown as Record<string, unknown>).lastAutoTable as { finalY: number }).finalY + 10;
+  const lastY2 = docWithAutoTable.lastAutoTable?.finalY ?? (nextY1 + 4);
+  const nextY2 = lastY2 + 10;
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.text('4. Topological Risk & Spectral Assessment', 14, nextY2);

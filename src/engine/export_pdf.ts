@@ -3,10 +3,12 @@ import { autoTable, UserOptions } from 'jspdf-autotable';
 import type { ProjectExportData } from './export_types.js';
 import { MANDATORY_LEGAL_DISCLAIMER } from './export_types.js';
 
-interface jsPDFWithAutoTable extends jsPDF {
-  lastAutoTable?: {
-    finalY: number;
-  };
+declare module 'jspdf' {
+  interface jsPDF {
+    lastAutoTable?: {
+      finalY: number;
+    };
+  }
 }
 
 function formatCurrency(val: number): string {
@@ -103,8 +105,7 @@ export function generateFeasibilityPdf(data: ProjectExportData): void {
   autoTable(doc, specTableOptions);
 
   // 3-Scenario Financial Table
-  const docWithAutoTable = doc as jsPDFWithAutoTable;
-  const lastY1 = docWithAutoTable.lastAutoTable?.finalY ?? 87;
+  const lastY1 = doc.lastAutoTable?.finalY ?? 87;
   const nextY1 = lastY1 + 10;
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
@@ -126,7 +127,7 @@ export function generateFeasibilityPdf(data: ProjectExportData): void {
   autoTable(doc, financialTableOptions);
 
   // Risk & Spectral Analysis
-  const lastY2 = docWithAutoTable.lastAutoTable?.finalY ?? (nextY1 + 4);
+  const lastY2 = doc.lastAutoTable?.finalY ?? (nextY1 + 4);
   const nextY2 = lastY2 + 10;
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');

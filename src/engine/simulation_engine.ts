@@ -1,5 +1,6 @@
 import type { FacilityTopology, GraphEdge, GraphNode } from '../types/topology.js';
 import type { Robot } from '../types/robot.js';
+import type { FleetCompositionItem } from './fleet_optimizer.js';
 
 export type AgentFSMState =
   | 'IDLE'
@@ -22,6 +23,15 @@ export interface AgentState {
   isQueued: boolean;
   timerSeconds: number;
 
+  // Physical & Battery TTX
+  robotSpec: Robot;
+  robotRadius: number;
+  maxSpeed: number;
+  payloadKg: number;
+  batteryCapacityHours: number;
+  chargeRatePerSec: number;
+  dischargeRatePerSec: number;
+
   // Navigation
   currentNodeId: string;
   targetNodeId: string | null;
@@ -34,6 +44,17 @@ export interface AgentState {
   assignedInboundNodeId: string | null;
   assignedDeliveryNodeId: string | null;
   assignedChargerNodeId: string | null;
+}
+
+export interface OneHourSimulationResult {
+  simulatedSeconds: number; // 3600
+  totalTicks: number; // 7200
+  targetThroughputPerHour: number;
+  realizedThroughputPerHour: number;
+  trafficCongestionFactor: number; // eta_traffic = realized / theoretical (<= 1.0)
+  deliveriesByRobotType: Record<string, number>;
+  averageIdleTimePercent: number; // средний % времени простоя в заторах/очередях
+  deadlocksDetected: number;
 }
 
 export interface SimulationTelemetry {
@@ -167,18 +188,26 @@ export function findShortestPath(
   return path;
 }
 
+function calculateRobotRadius(robotSpec: Robot): number {
+  const robotWidth = (robotSpec.dimensionsMm?.width ?? 800) / 1000;
+  const robotLength = (robotSpec.dimensionsMm?.length ?? 1000) / 1000;
+  return Math.max(0.4, Math.hypot(robotWidth, robotLength) / 2 + 0.1);
+}
+
 export class SimulationEngine {
   private topology: FacilityTopology;
-  private robotSpec: Robot;
-  private fleetSize: number;
+  private fleetConfig: Robot | FleetCompositionItem[];
+  private legacyFleetSize: number;
 
   public agents: AgentState[] = [];
   public elapsedSimSeconds: number = 0;
   public completedDeliveries: number = 0;
+  public deliveriesByRobotType: Record<string, number> = {};
   public robotRadius: number;
 
   // Key node caches and O(1) map
   private nodeMap: Map<string, GraphNode> = new Map();
+  private adjMap: Map<string, Array<{ target: string; distance: number }>> = new Map();
   private inboundNodes: GraphNode[] = [];
   private outboundNodes: GraphNode[] = [];
   private storageNodes: GraphNode[] = [];
@@ -186,27 +215,121 @@ export class SimulationEngine {
   private waypointNodes: GraphNode[] = [];
   public obstacleBoxes: ObstacleBox[] = [];
 
-  constructor(topology: FacilityTopology, robotSpec: Robot, fleetSize: number) {
+  constructor(
+    topology: FacilityTopology,
+    fleetConfig: Robot | FleetCompositionItem[],
+    legacyFleetSize?: number
+  ) {
     this.topology = topology;
-    this.robotSpec = robotSpec;
-    this.fleetSize = Math.max(0, fleetSize);
+    this.fleetConfig = fleetConfig;
+    this.legacyFleetSize = legacyFleetSize ?? 0;
 
-    const robotWidth = (this.robotSpec.dimensionsMm?.width ?? 800) / 1000;
-    const robotLength = (this.robotSpec.dimensionsMm?.length ?? 1000) / 1000;
-    this.robotRadius = Math.max(0.4, Math.hypot(robotWidth, robotLength) / 2 + 0.1);
+    const primaryRobot = Array.isArray(fleetConfig)
+      ? (fleetConfig[0]?.robot ?? null)
+      : fleetConfig;
+
+    if (primaryRobot) {
+      this.robotRadius = calculateRobotRadius(primaryRobot);
+    } else {
+      this.robotRadius = 0.5;
+    }
 
     this.classifyNodes();
     this.extractObstacleBoxes();
     this.initializeFleet();
   }
 
+  public get fleetSize(): number {
+    if (Array.isArray(this.fleetConfig)) {
+      return this.fleetConfig.reduce((sum, item) => sum + item.count, 0);
+    }
+    return Math.max(0, this.legacyFleetSize);
+  }
+
   private classifyNodes(): void {
     this.nodeMap = new Map<string, GraphNode>(this.topology.nodes.map((n) => [n.id, n]));
+    this.adjMap = new Map();
+    this.topology.nodes.forEach((n) => this.adjMap.set(n.id, []));
+    this.topology.edges.forEach((e) => {
+      this.adjMap.get(e.source)?.push({ target: e.target, distance: e.distanceM });
+      if (e.bidirectional) {
+        this.adjMap.get(e.target)?.push({ target: e.source, distance: e.distanceM });
+      }
+    });
+
     this.inboundNodes = this.topology.nodes.filter((n) => n.type === 'INBOUND_DOCK');
     this.outboundNodes = this.topology.nodes.filter((n) => n.type === 'OUTBOUND_DOCK');
     this.storageNodes = this.topology.nodes.filter((n) => n.type === 'STORAGE_AISLE');
     this.chargingNodes = this.topology.nodes.filter((n) => n.type === 'CHARGING_HUB');
     this.waypointNodes = this.topology.nodes.filter((n) => n.type === 'WAYPOINT');
+  }
+
+  private getShortestPath(startNodeId: string, targetNodeId: string): string[] {
+    if (startNodeId === targetNodeId) return [startNodeId];
+    const startNode = this.nodeMap.get(startNodeId);
+    const targetNode = this.nodeMap.get(targetNodeId);
+    if (!startNode || !targetNode) return [];
+
+    const nodes = this.topology.nodes;
+    const numNodes = nodes.length;
+
+    const nodeIndexMap = new Map<string, number>();
+    for (let i = 0; i < numNodes; i++) {
+      nodeIndexMap.set(nodes[i].id, i);
+    }
+
+    const startIdx = nodeIndexMap.get(startNodeId)!;
+    const targetIdx = nodeIndexMap.get(targetNodeId)!;
+
+    const dist = new Float64Array(numNodes);
+    dist.fill(Infinity);
+    const prev = new Int32Array(numNodes);
+    prev.fill(-1);
+    const visited = new Uint8Array(numNodes);
+
+    dist[startIdx] = 0;
+
+    for (let step = 0; step < numNodes; step++) {
+      let u = -1;
+      let minD = Infinity;
+
+      for (let i = 0; i < numNodes; i++) {
+        if (!visited[i] && dist[i] < minD) {
+          minD = dist[i];
+          u = i;
+        }
+      }
+
+      if (u === -1 || minD === Infinity) break;
+      if (u === targetIdx) break;
+
+      visited[u] = 1;
+
+      const neighbors = this.adjMap.get(nodes[u].id) || [];
+      for (let k = 0; k < neighbors.length; k++) {
+        const edge = neighbors[k];
+        const v = nodeIndexMap.get(edge.target);
+        if (v !== undefined && !visited[v]) {
+          const alt = minD + edge.distance;
+          if (alt < dist[v]) {
+            dist[v] = alt;
+            prev[v] = u;
+          }
+        }
+      }
+    }
+
+    if (dist[targetIdx] === Infinity) return [];
+
+    const path: string[] = [];
+    let curr = targetIdx;
+    while (curr !== -1) {
+      path.push(nodes[curr].id);
+      if (curr === startIdx) break;
+      curr = prev[curr];
+    }
+    path.reverse();
+    return path;
   }
 
   /**
@@ -249,15 +372,44 @@ export class SimulationEngine {
    * Line-of-sight raycast check between two 2D points against static obstacles,
    * taking into account the robot's physical collision radius (Minkowski sum expansion).
    */
-  public hasLineOfSight(x1: number, y1: number, x2: number, y2: number): boolean {
-    for (const box of this.obstacleBoxes) {
-      const inflatedBox: ObstacleBox = {
-        minX: box.minX - this.robotRadius,
-        maxX: box.maxX + this.robotRadius,
-        minY: box.minY - this.robotRadius,
-        maxY: box.maxY + this.robotRadius,
-      };
-      if (lineIntersectsAABB(x1, y1, x2, y2, inflatedBox)) {
+  public hasLineOfSight(x1: number, y1: number, x2: number, y2: number, radius: number = this.robotRadius): boolean {
+    const numBoxes = this.obstacleBoxes.length;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+
+    for (let k = 0; k < numBoxes; k++) {
+      const box = this.obstacleBoxes[k];
+      const minX = box.minX - radius;
+      const maxX = box.maxX + radius;
+      const minY = box.minY - radius;
+      const maxY = box.maxY + radius;
+
+      let t0 = 0;
+      let t1 = 1;
+
+      if (dx === 0) {
+        if (x1 < minX || x1 > maxX) continue;
+      } else {
+        let r0 = (minX - x1) / dx;
+        let r1 = (maxX - x1) / dx;
+        if (r0 > r1) { const tmp = r0; r0 = r1; r1 = tmp; }
+        if (r0 > t0) t0 = r0;
+        if (r1 < t1) t1 = r1;
+        if (t0 > t1) continue;
+      }
+
+      if (dy === 0) {
+        if (y1 < minY || y1 > maxY) continue;
+      } else {
+        let r0 = (minY - y1) / dy;
+        let r1 = (maxY - y1) / dy;
+        if (r0 > r1) { const tmp = r0; r0 = r1; r1 = tmp; }
+        if (r0 > t0) t0 = r0;
+        if (r1 < t1) t1 = r1;
+        if (t0 > t1) continue;
+      }
+
+      if (t0 <= t1 && t1 >= 0 && t0 <= 1) {
         return false;
       }
     }
@@ -271,8 +423,10 @@ export class SimulationEngine {
     this.agents = [];
     this.elapsedSimSeconds = 0;
     this.completedDeliveries = 0;
+    this.deliveriesByRobotType = {};
 
-    if (this.fleetSize === 0 || this.topology.nodes.length === 0) return;
+    const totalFleetSize = this.fleetSize;
+    if (totalFleetSize === 0 || this.topology.nodes.length === 0) return;
 
     const spawnCandidates = [
       ...this.inboundNodes,
@@ -282,9 +436,38 @@ export class SimulationEngine {
       ...this.storageNodes,
     ];
 
-    for (let i = 0; i < this.fleetSize; i++) {
+    const fleetItems: Array<{ robot: Robot }> = [];
+    if (Array.isArray(this.fleetConfig)) {
+      for (const item of this.fleetConfig) {
+        if (item.robot && item.robot.id) {
+          this.deliveriesByRobotType[item.robot.id] = 0;
+        }
+        for (let k = 0; k < item.count; k++) {
+          fleetItems.push({ robot: item.robot });
+        }
+      }
+    } else if (this.fleetConfig) {
+      if (this.fleetConfig.id) {
+        this.deliveriesByRobotType[this.fleetConfig.id] = 0;
+      }
+      for (let k = 0; k < this.legacyFleetSize; k++) {
+        fleetItems.push({ robot: this.fleetConfig });
+      }
+    }
+
+    for (let i = 0; i < fleetItems.length; i++) {
+      const robotSpec = fleetItems[i].robot;
       const spawnNode = spawnCandidates[i % spawnCandidates.length] || this.topology.nodes[0];
       const initialSoc = 60 + ((i * 17) % 41);
+
+      const robotRadius = calculateRobotRadius(robotSpec);
+      const maxSpeed = Math.max(0.5, robotSpec.maxSpeedMps);
+      const payloadKg = robotSpec.payloadKg ?? 0;
+      const batteryCapacityHours = Math.max(1, robotSpec.batteryRuntimeHours);
+      const runtimeSec = batteryCapacityHours * 3600;
+      const chargeSec = Math.max(1, robotSpec.batteryChargeMinutes) * 60;
+      const dischargeRatePerSec = 100 / runtimeSec;
+      const chargeRatePerSec = 100 / chargeSec;
 
       const agent: AgentState = {
         id: `agent_${i + 1}`,
@@ -297,6 +480,14 @@ export class SimulationEngine {
         cargoPayload: false,
         isQueued: false,
         timerSeconds: 0,
+
+        robotSpec,
+        robotRadius,
+        maxSpeed,
+        payloadKg,
+        batteryCapacityHours,
+        chargeRatePerSec,
+        dischargeRatePerSec,
 
         currentNodeId: spawnNode.id,
         targetNodeId: null,
@@ -318,14 +509,16 @@ export class SimulationEngine {
    * Selects furthest node in agent's path with direct Line-of-Sight.
    */
   private selectLookaheadTarget(agent: AgentState): GraphNode | null {
-    if (agent.pathNodeIds.length === 0) return null;
+    const pathLen = agent.pathNodeIds.length;
+    if (pathLen === 0) return null;
 
-    for (let i = agent.pathNodeIds.length - 1; i >= 0; i--) {
+    const maxLookahead = Math.min(pathLen, 3);
+    for (let i = maxLookahead - 1; i >= 0; i--) {
       const nodeId = agent.pathNodeIds[i];
       const node = this.nodeMap.get(nodeId);
       if (!node) continue;
 
-      if (this.hasLineOfSight(agent.x, agent.y, node.x, node.y)) {
+      if (this.hasLineOfSight(agent.x, agent.y, node.x, node.y, agent.robotRadius)) {
         if (i > 0) {
           agent.pathNodeIds.splice(0, i);
         }
@@ -341,16 +534,9 @@ export class SimulationEngine {
    * Advances simulation by dtSim seconds using Continuous 360 Vector Field Steering.
    */
   public update(dtSim: number): void {
-    if (this.fleetSize === 0 || this.agents.length === 0) return;
+    if (this.agents.length === 0) return;
 
     this.elapsedSimSeconds += dtSim;
-
-    const maxSpeed = Math.max(0.5, this.robotSpec.maxSpeedMps);
-    const runtimeSec = Math.max(1, this.robotSpec.batteryRuntimeHours) * 3600;
-    const chargeSec = Math.max(1, this.robotSpec.batteryChargeMinutes) * 60;
-
-    const dischargeRatePerSec = 100 / runtimeSec;
-    const chargeRatePerSec = 100 / chargeSec;
 
     for (let i = 0; i < this.agents.length; i++) {
       const agent = this.agents[i];
@@ -361,7 +547,7 @@ export class SimulationEngine {
             const charger = this.findClosestNode(agent.currentNodeId, this.chargingNodes);
             if (charger) {
               agent.assignedChargerNodeId = charger.id;
-              agent.pathNodeIds = findShortestPath(this.topology, agent.currentNodeId, charger.id);
+              agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, charger.id);
               if (agent.pathNodeIds.length > 1) {
                 agent.pathNodeIds.shift();
                 agent.targetNodeId = agent.pathNodeIds[0];
@@ -371,7 +557,7 @@ export class SimulationEngine {
           } else if (this.inboundNodes.length > 0) {
             const pickupNode = this.inboundNodes[i % this.inboundNodes.length];
             agent.assignedInboundNodeId = pickupNode.id;
-            agent.pathNodeIds = findShortestPath(this.topology, agent.currentNodeId, pickupNode.id);
+            agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, pickupNode.id);
 
             if (agent.pathNodeIds.length > 1) {
               agent.pathNodeIds.shift();
@@ -388,28 +574,39 @@ export class SimulationEngine {
         case 'MOVING_TO_PICKUP':
         case 'TRANSPORTING':
         case 'MOVING_TO_CHARGE': {
-          agent.batterySoc = Math.max(0, agent.batterySoc - dischargeRatePerSec * dtSim);
+          agent.batterySoc = Math.max(0, agent.batterySoc - agent.dischargeRatePerSec * dtSim);
 
-          const targetNode = this.selectLookaheadTarget(agent);
-          if (!targetNode) {
-            this.handleArrival(agent);
-            break;
+          let targetNode = agent.targetNodeId ? this.nodeMap.get(agent.targetNodeId) || null : null;
+          if (!targetNode || agent.pathNodeIds.length === 0) {
+            targetNode = this.selectLookaheadTarget(agent);
+            if (!targetNode) {
+              this.handleArrival(agent);
+              break;
+            }
+            agent.targetNodeId = targetNode.id;
           }
-          agent.targetNodeId = targetNode.id;
 
           // 1. Attractive Goal Force (F_att, w_att = 1.0)
           const dx = targetNode.x - agent.x;
           const dy = targetNode.y - agent.y;
           const distToTarget = Math.hypot(dx, dy);
 
-          const arrivalThreshold = Math.max(0.85, this.robotRadius + 0.15);
+          const arrivalThreshold = Math.max(0.85, agent.robotRadius + 0.15);
           if (distToTarget <= arrivalThreshold) {
             agent.currentNodeId = targetNode.id;
             agent.pathNodeIds.shift();
 
             if (agent.pathNodeIds.length === 0) {
+              agent.targetNodeId = null;
               this.handleArrival(agent);
               break;
+            } else {
+              targetNode = this.selectLookaheadTarget(agent);
+              if (!targetNode) {
+                this.handleArrival(agent);
+                break;
+              }
+              agent.targetNodeId = targetNode.id;
             }
           }
 
@@ -426,15 +623,15 @@ export class SimulationEngine {
             let cy = Math.max(box.minY, Math.min(agent.y, box.maxY));
             let dObs = Math.hypot(agent.x - cx, agent.y - cy);
 
-            // Hard Boundary Push-out if robot penetrated the physical collision buffer
-            if (dObs < this.robotRadius) {
+            // Hard Boundary Push-out if robot penetrated physical collision buffer
+            if (dObs < agent.robotRadius) {
               let nx = 1;
               let ny = 0;
               if (dObs >= 0.001) {
                 nx = (agent.x - cx) / dObs;
                 ny = (agent.y - cy) / dObs;
               }
-              const pushDist = this.robotRadius + 0.05;
+              const pushDist = agent.robotRadius + 0.05;
               agent.x = cx + nx * pushDist;
               agent.y = cy + ny * pushDist;
 
@@ -461,37 +658,40 @@ export class SimulationEngine {
             }
           }
 
-          // 3. Dynamic Inter-Robot Avoidance (w_avoid = 1.3, detection d < 1.5m)
+          // 3. Dynamic Inter-Robot Avoidance & Minkowski Sum Repulsion
           let fAvoidX = 0;
           let fAvoidY = 0;
           let nearbyRobotCount = 0;
 
-          const vForward = { x: Math.cos(agent.headingRad), y: Math.sin(agent.headingRad) };
-          const vRight = { x: vForward.y, y: -vForward.x };
+          const headCos = Math.cos(agent.headingRad);
+          const headSin = Math.sin(agent.headingRad);
+          const vRightX = headSin;
+          const vRightY = -headCos;
 
           for (let j = 0; j < this.agents.length; j++) {
             if (i === j) continue;
             const other = this.agents[j];
+            const rSum = agent.robotRadius + other.robotRadius;
             const distOther = Math.hypot(other.x - agent.x, other.y - agent.y);
+            const dDetect = rSum + 0.5;
 
-            if (distOther < 1.5 && distOther > 0.001) {
+            if (distOther < dDetect && distOther > 0.001) {
               nearbyRobotCount++;
               const uAwayX = (agent.x - other.x) / distOther;
               const uAwayY = (agent.y - other.y) / distOther;
 
-              const vForwardOther = { x: Math.cos(other.headingRad), y: Math.sin(other.headingRad) };
-              const dotHeadings = vForward.x * vForwardOther.x + vForward.y * vForwardOther.y;
-              const approachSpeed = -(uAwayX * vForward.x + uAwayY * vForward.y);
+              const otherCos = Math.cos(other.headingRad);
+              const otherSin = Math.sin(other.headingRad);
+              const dotHeadings = headCos * otherCos + headSin * otherSin;
+              const approachSpeed = -(uAwayX * headCos + uAwayY * headSin);
 
-              const factor = (1.5 - distOther) / 1.5;
-              // Always apply radial separation
+              const factor = (dDetect - distOther) / 0.5;
               fAvoidX += factor * uAwayX * 1.0;
               fAvoidY += factor * uAwayY * 1.0;
 
-              // Add lateral rightward evasion strictly for oncoming head-on encounters
               if (dotHeadings < -0.2 && approachSpeed > 0) {
-                fAvoidX += factor * vRight.x * 1.2;
-                fAvoidY += factor * vRight.y * 1.2;
+                fAvoidX += factor * vRightX * 1.2;
+                fAvoidY += factor * vRightY * 1.2;
               }
             }
           }
@@ -507,8 +707,8 @@ export class SimulationEngine {
           let vy = 0;
 
           if (fTotalLen > 0.001) {
-            vx = maxSpeed * (fTotalX / fTotalLen);
-            vy = maxSpeed * (fTotalY / fTotalLen);
+            vx = agent.maxSpeed * (fTotalX / fTotalLen);
+            vy = agent.maxSpeed * (fTotalY / fTotalLen);
           }
 
           // Cancel inward velocity component directed toward obstacle interiors
@@ -516,7 +716,7 @@ export class SimulationEngine {
             const cx = Math.max(box.minX, Math.min(agent.x, box.maxX));
             const cy = Math.max(box.minY, Math.min(agent.y, box.maxY));
             const dObs = Math.hypot(agent.x - cx, agent.y - cy);
-            if (dObs < this.robotRadius + 0.06) {
+            if (dObs < agent.robotRadius + 0.06) {
               const nx = dObs >= 0.001 ? (agent.x - cx) / dObs : 1;
               const ny = dObs >= 0.001 ? (agent.y - cy) / dObs : 0;
               const vDotN = vx * nx + vy * ny;
@@ -544,7 +744,7 @@ export class SimulationEngine {
         }
 
         case 'LOADING': {
-          agent.batterySoc = Math.max(0, agent.batterySoc - dischargeRatePerSec * 0.2 * dtSim);
+          agent.batterySoc = Math.max(0, agent.batterySoc - agent.dischargeRatePerSec * 0.2 * dtSim);
           agent.timerSeconds -= dtSim;
 
           if (agent.timerSeconds <= 0) {
@@ -554,7 +754,7 @@ export class SimulationEngine {
             if (deliveryTargets.length > 0) {
               const target = deliveryTargets[(i * 3 + Math.floor(this.completedDeliveries)) % deliveryTargets.length];
               agent.assignedDeliveryNodeId = target.id;
-              agent.pathNodeIds = findShortestPath(this.topology, agent.currentNodeId, target.id);
+              agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, target.id);
 
               if (agent.pathNodeIds.length > 1) {
                 agent.pathNodeIds.shift();
@@ -572,18 +772,22 @@ export class SimulationEngine {
         }
 
         case 'UNLOADING': {
-          agent.batterySoc = Math.max(0, agent.batterySoc - dischargeRatePerSec * 0.2 * dtSim);
+          agent.batterySoc = Math.max(0, agent.batterySoc - agent.dischargeRatePerSec * 0.2 * dtSim);
           agent.timerSeconds -= dtSim;
 
           if (agent.timerSeconds <= 0) {
             agent.cargoPayload = false;
             this.completedDeliveries += 1;
+            if (agent.robotSpec && agent.robotSpec.id) {
+              this.deliveriesByRobotType[agent.robotSpec.id] =
+                (this.deliveriesByRobotType[agent.robotSpec.id] || 0) + 1;
+            }
 
             if (agent.batterySoc < 20 && this.chargingNodes.length > 0) {
               const charger = this.findClosestNode(agent.currentNodeId, this.chargingNodes);
               if (charger) {
                 agent.assignedChargerNodeId = charger.id;
-                agent.pathNodeIds = findShortestPath(this.topology, agent.currentNodeId, charger.id);
+                agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, charger.id);
 
                 if (agent.pathNodeIds.length > 1) {
                   agent.pathNodeIds.shift();
@@ -603,12 +807,32 @@ export class SimulationEngine {
         }
 
         case 'CHARGING': {
-          agent.batterySoc = Math.min(100, agent.batterySoc + chargeRatePerSec * dtSim);
+          agent.batterySoc = Math.min(100, agent.batterySoc + agent.chargeRatePerSec * dtSim);
 
           if (agent.batterySoc >= 98) {
             agent.state = 'IDLE';
           }
           break;
+        }
+      }
+    }
+
+    // Inter-robot hard boundary relaxation pass to guarantee d_ij >= r_i + r_j
+    for (let i = 0; i < this.agents.length; i++) {
+      for (let j = i + 1; j < this.agents.length; j++) {
+        const a1 = this.agents[i];
+        const a2 = this.agents[j];
+        const dist = Math.hypot(a1.x - a2.x, a1.y - a2.y);
+        const minDist = a1.robotRadius + a2.robotRadius;
+        if (dist < minDist) {
+          const overlap = minDist - dist;
+          const nx = dist >= 0.001 ? (a1.x - a2.x) / dist : 1;
+          const ny = dist >= 0.001 ? (a1.y - a2.y) / dist : 0;
+          const shift = overlap / 2;
+          a1.x += nx * shift;
+          a1.y += ny * shift;
+          a2.x -= nx * shift;
+          a2.y -= ny * shift;
         }
       }
     }
@@ -647,6 +871,112 @@ export class SimulationEngine {
   }
 
   /**
+   * Headless high-speed 1-hour real-time stress test (3600s, dtSim = 0.5s, 7200 ticks).
+   * Calculates throughput, topological loss factor eta_traffic, average idle percentage,
+   * deliveries breakdown by robot type, and deadlock count without storing coordinate history.
+   */
+  public runOneHourSimulation(targetHourlyQuota: number): OneHourSimulationResult {
+    this.initializeFleet();
+
+    const dtSim = 0.5;
+    const totalTicks = 7200; // 3600 seconds / 0.5s
+    const N = this.agents.length;
+
+    let totalIdleTicks = 0;
+    let deadlocksDetected = 0;
+
+    const stuckTicksPerAgent = new Uint16Array(N);
+    const prevX = new Float64Array(N);
+    const prevY = new Float64Array(N);
+
+    for (let i = 0; i < N; i++) {
+      prevX[i] = this.agents[i].x;
+      prevY[i] = this.agents[i].y;
+    }
+
+    for (let tick = 0; tick < totalTicks; tick++) {
+      this.update(dtSim);
+
+      for (let i = 0; i < N; i++) {
+        const agent = this.agents[i];
+        const distMoved = Math.hypot(agent.x - prevX[i], agent.y - prevY[i]);
+        const speedMps = distMoved / dtSim;
+
+        prevX[i] = agent.x;
+        prevY[i] = agent.y;
+
+        const hasActiveTask = agent.state !== 'IDLE' && agent.state !== 'CHARGING';
+
+        if (hasActiveTask) {
+          if (agent.isQueued || speedMps < 0.05) {
+            totalIdleTicks++;
+          }
+
+          if (speedMps < 0.05) {
+            stuckTicksPerAgent[i]++;
+            if (stuckTicksPerAgent[i] === 120) {
+              // 120 continuous ticks * 0.5s = 60s stuck
+              deadlocksDetected++;
+            }
+          } else {
+            stuckTicksPerAgent[i] = 0;
+          }
+        } else {
+          stuckTicksPerAgent[i] = 0;
+        }
+      }
+    }
+
+    const elapsedHours = this.elapsedSimSeconds / 3600;
+    const realizedThroughputPerHour =
+      elapsedHours > 0 ? Math.round((this.completedDeliveries / elapsedHours) * 10) / 10 : 0;
+
+    // Theoretical throughput Q_theoretical = sum(N_m * q_m * k_avail,m)
+    let theoreticalThroughput = 0;
+
+    if (Array.isArray(this.fleetConfig)) {
+      for (const item of this.fleetConfig) {
+        const robot = item.robot;
+        const runtime = robot.batteryRuntimeHours || 8;
+        const chargeHours = (robot.batteryChargeMinutes || 60) / 60;
+        const kAvail = runtime / (runtime + chargeHours);
+        theoreticalThroughput += item.count * (robot.throughputPerHour || 10) * kAvail;
+      }
+    } else if (this.fleetConfig) {
+      const robot = this.fleetConfig;
+      const runtime = robot.batteryRuntimeHours || 8;
+      const chargeHours = (robot.batteryChargeMinutes || 60) / 60;
+      const kAvail = runtime / (runtime + chargeHours);
+      theoreticalThroughput = this.fleetSize * (robot.throughputPerHour || 10) * kAvail;
+    }
+
+    let trafficCongestionFactor = 1.0;
+    if (theoreticalThroughput > 0) {
+      trafficCongestionFactor = Math.min(
+        1.0,
+        Math.max(0.0, realizedThroughputPerHour / theoreticalThroughput)
+      );
+      trafficCongestionFactor = Math.round(trafficCongestionFactor * 1000) / 1000;
+    }
+
+    const averageIdleTimePercent =
+      N > 0 && totalTicks > 0
+        ? Math.round((totalIdleTicks / (N * totalTicks)) * 10000) / 100
+        : 0;
+
+    return {
+      simulatedSeconds: Math.round(this.elapsedSimSeconds),
+      totalTicks,
+      targetThroughputPerHour: targetHourlyQuota,
+      realizedThroughputPerHour,
+      trafficCongestionFactor,
+      deliveriesByRobotType: { ...this.deliveriesByRobotType },
+      averageIdleTimePercent,
+      deadlocksDetected,
+    };
+  }
+
+  /**
    * Fast-forwards simulation without rendering for targetDurationSeconds (default 3600s = 1 hr).
    * Returns traffic efficiency factor eta = Q_real / Q_theor (capped at 1.0) and realized throughput.
    */
@@ -658,34 +988,10 @@ export class SimulationEngine {
     trafficEfficiencyEta: number;
     completedDeliveries: number;
   } {
-    this.initializeFleet();
-    const steps = Math.ceil(targetDurationSeconds / dtSim);
-
-    for (let step = 0; step < steps; step++) {
-      this.update(dtSim);
-    }
-
-    const elapsedHours = this.elapsedSimSeconds / 3600;
-    const realizedThroughput =
-      elapsedHours > 0 ? this.completedDeliveries / elapsedHours : 0;
-
-    const kAvail = Math.max(
-      0.01,
-      (this.robotSpec.batteryRuntimeHours || 8) /
-        ((this.robotSpec.batteryRuntimeHours || 8) +
-          (this.robotSpec.batteryChargeMinutes || 60) / 60)
-    );
-    const theoreticalFleetCapacity =
-      this.fleetSize * (this.robotSpec.throughputPerHour || 10) * kAvail;
-
-    let eta = 1.0;
-    if (theoreticalFleetCapacity > 0) {
-      eta = Math.min(1.0, Math.max(0.1, realizedThroughput / theoreticalFleetCapacity));
-    }
-
+    const res = this.runOneHourSimulation(0);
     return {
-      realizedThroughputPerHour: Math.round(realizedThroughput * 10) / 10,
-      trafficEfficiencyEta: Math.round(eta * 1000) / 1000,
+      realizedThroughputPerHour: res.realizedThroughputPerHour,
+      trafficEfficiencyEta: res.trafficCongestionFactor,
       completedDeliveries: this.completedDeliveries,
     };
   }

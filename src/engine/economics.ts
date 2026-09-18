@@ -73,6 +73,150 @@ export function calculateFleetSize(
 /**
  * Evaluates the 3 economic scenarios for a given robot and facility under optional What-If modifiers.
  */
+export function calculateCompositionEconomics(
+  facility: FacilityRequirements,
+  composition: Array<{ robot: Robot; count: number; totalCapexRub: number; totalAnnualOpexRub: number; fiveYearTcoRub: number }>,
+  whatIf: WhatIfParams = DEFAULT_WHAT_IF_PARAMS
+): EconomicEvaluation {
+  const effectiveThroughput = Math.max(
+    1,
+    facility.targetThroughputPerHour * (whatIf.throughputChangePercent / 100)
+  );
+  const effectiveSalary = Math.max(
+    0,
+    facility.averageWorkerSalaryRub * (1 + whatIf.salaryChangePercent / 100)
+  );
+
+  const totalFleetSize = composition.reduce((sum, item) => sum + item.count, 0);
+
+  // Average availability coefficient across fleet items
+  let totalKAvailWeighted = 0;
+  composition.forEach((item) => {
+    const kAvail = calculateAvailabilityCoefficient(
+      item.robot.batteryRuntimeHours,
+      item.robot.batteryChargeMinutes
+    );
+    totalKAvailWeighted += kAvail * item.count;
+  });
+  const availabilityCoeff = totalFleetSize > 0 ? totalKAvailWeighted / totalFleetSize : 1.0;
+
+  // 1. As-Is Scenario
+  const manualStaffCount = Math.max(
+    1,
+    Math.ceil(effectiveThroughput / 12) * facility.shiftsPerDay
+  );
+  const asIsAnnualOpex = manualStaffCount * effectiveSalary * 1.3 * 12;
+  const asIsFiveYearTco = asIsAnnualOpex * 5;
+
+  const asIs: ScenarioMetrics = {
+    title: 'Базовый (Как есть)',
+    capex: 0,
+    annualOpex: asIsAnnualOpex,
+    netAnnualSavings: 0,
+    paybackYears: null,
+    fiveYearRoi: null,
+    fiveYearTco: asIsFiveYearTco,
+  };
+
+  // 2. CAPEX Purchase Scenario
+  const capexPurchaseTotalCapex = composition.reduce((sum, item) => sum + item.totalCapexRub, 0);
+
+  const retainedSupervisorsCount = 1 * facility.shiftsPerDay;
+  const supervisorAnnualOpex = retainedSupervisorsCount * effectiveSalary * 1.3 * 12;
+  const fleetAnnualOpex = composition.reduce((sum, item) => sum + item.totalAnnualOpexRub, 0);
+  const capexPurchaseAnnualOpex = fleetAnnualOpex + supervisorAnnualOpex;
+
+  const capexPurchaseNetSavings = asIsAnnualOpex - capexPurchaseAnnualOpex;
+  const capexPurchaseFiveYearTco = capexPurchaseTotalCapex + capexPurchaseAnnualOpex * 5;
+
+  let capexPaybackYears: number | null = null;
+  let capexFiveYearRoi: number | null = null;
+  let verdict: FeasibilityVerdict = 'red';
+  let verdictText = 'Низкая окупаемость, ручной труд выгоднее';
+
+  if (capexPurchaseNetSavings > 0 && capexPurchaseTotalCapex > 0) {
+    capexPaybackYears = capexPurchaseTotalCapex / capexPurchaseNetSavings;
+    capexFiveYearRoi =
+      ((capexPurchaseNetSavings * 5 - capexPurchaseTotalCapex) / capexPurchaseTotalCapex) * 100;
+
+    if (capexPaybackYears <= 3.0) {
+      verdict = 'green';
+      verdictText = 'Экономически высокоэффективно';
+    } else if (capexPaybackYears <= 5.0) {
+      verdict = 'yellow';
+      verdictText = 'Умеренная окупаемость, рекомендуется рассмотреть RaaS';
+    } else {
+      verdict = 'red';
+      verdictText = 'Низкая окупаемость, ручной труд выгоднее';
+    }
+  }
+
+  const capexPurchase: ScenarioMetrics = {
+    title: 'Покупка парка (CAPEX)',
+    capex: capexPurchaseTotalCapex,
+    annualOpex: capexPurchaseAnnualOpex,
+    netAnnualSavings: capexPurchaseNetSavings,
+    paybackYears: capexPaybackYears,
+    fiveYearRoi: capexFiveYearRoi,
+    fiveYearTco: capexPurchaseFiveYearTco,
+    verdict,
+    verdictText,
+  };
+
+  // 3. RaaS Scenario
+  const raasRobotAnnualOpex = composition.reduce(
+    (sum, item) => sum + item.count * item.robot.monthlyRaasCostRub * 12,
+    0
+  );
+  const raasAnnualOpex = raasRobotAnnualOpex + supervisorAnnualOpex;
+  const raasNetSavings = asIsAnnualOpex - raasAnnualOpex;
+  const raasFiveYearTco = raasAnnualOpex * 5;
+
+  const raas: ScenarioMetrics = {
+    title: 'Сервисная модель (RaaS)',
+    capex: 0,
+    annualOpex: raasAnnualOpex,
+    netAnnualSavings: raasNetSavings,
+    paybackYears: null,
+    fiveYearRoi: null,
+    fiveYearTco: raasFiveYearTco,
+  };
+
+  let recommendedScenario: 'asIs' | 'capexPurchase' | 'raas' = 'asIs';
+  const validCapex = capexPurchase.paybackYears !== null && capexPurchase.paybackYears <= 5.0;
+  const validRaas = raas.netAnnualSavings > 0;
+
+  if (validCapex && validRaas) {
+    if (capexPurchase.fiveYearTco <= raas.fiveYearTco && capexPurchase.fiveYearTco < asIs.fiveYearTco) {
+      recommendedScenario = 'capexPurchase';
+    } else if (raas.fiveYearTco < asIs.fiveYearTco) {
+      recommendedScenario = 'raas';
+    } else {
+      recommendedScenario = 'asIs';
+    }
+  } else if (validCapex) {
+    recommendedScenario = capexPurchase.fiveYearTco < asIs.fiveYearTco ? 'capexPurchase' : 'asIs';
+  } else if (validRaas) {
+    recommendedScenario = raas.fiveYearTco < asIs.fiveYearTco ? 'raas' : 'asIs';
+  } else {
+    recommendedScenario = 'asIs';
+  }
+
+  return {
+    fleetSize: totalFleetSize,
+    availabilityCoeff,
+    effectiveThroughput,
+    effectiveSalary,
+    manualStaffCount,
+    retainedSupervisorsCount,
+    trafficEfficiencyEta: 1.0,
+    asIs,
+    capexPurchase,
+    raas,
+    recommendedScenario,
+  };
+}
+
 export function calculateEconomics(
   facility: FacilityRequirements,
   robot: Robot,

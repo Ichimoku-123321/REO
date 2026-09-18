@@ -12,6 +12,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   Network,
+  Volume2,
+  VolumeX,
+  Maximize,
 } from 'lucide-react';
 
 interface SimulationControlsProps {
@@ -20,6 +23,14 @@ interface SimulationControlsProps {
   onReset: () => void;
   speedMultiplier: number;
   onSpeedChange: (speed: number) => void;
+  currentTimestampSec: number;
+  totalDurationSec?: number;
+  onSeek: (seconds: number) => void;
+  volume: number;
+  onVolumeChange: (level: number) => void;
+  isMuted: boolean;
+  onToggleMute: () => void;
+  onToggleFullscreen: () => void;
   telemetry: SimulationTelemetry;
   targetThroughputPerHour: number;
   fleetSize: number;
@@ -33,6 +44,14 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   onReset,
   speedMultiplier,
   onSpeedChange,
+  currentTimestampSec,
+  totalDurationSec = 3600,
+  onSeek,
+  volume,
+  onVolumeChange,
+  isMuted,
+  onToggleMute,
+  onToggleFullscreen,
   telemetry,
   targetThroughputPerHour,
   fleetSize,
@@ -42,12 +61,20 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   const isDisabled = fleetSize === 0 || !selectedRobotName;
   const speedOptions = [1, 2, 5, 10];
 
+  const formatTime = (totalSeconds: number): string => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = Math.floor(totalSeconds % 60);
+    const mm = mins.toString().padStart(2, '0');
+    const ss = secs.toString().padStart(2, '0');
+    return `${mm}:${ss}`;
+  };
+
   const getConnectivityBadge = () => {
     if (!spectralAnalysis) return null;
     const { algebraicConnectivity } = spectralAnalysis;
 
-    // Show bottleneck alert only when spectral connectivity is critical AND physical congestion/queue is detected
-    const isBottleneck = algebraicConnectivity < 0.05 && (telemetry.queuedCount >= 2 || telemetry.congestionDetected);
+    const isBottleneck =
+      algebraicConnectivity < 0.05 && (telemetry.queuedCount >= 2 || telemetry.congestionDetected);
 
     if (isBottleneck) {
       return {
@@ -78,8 +105,31 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   const connectivityBadge = getConnectivityBadge();
 
   return (
-    <div className="bg-slate-900/90 border-b border-slate-700/80 p-4">
-      {/* Top Playback Control Row */}
+    <div className="bg-slate-900/95 border-b border-slate-700/80 p-4">
+      {/* 1. Timeline Scrubber HUD Bar */}
+      <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 mb-4">
+        <div className="flex items-center justify-between text-xs font-bold text-slate-300 mb-2">
+          <span className="text-blue-400 font-mono text-sm">
+            {formatTime(currentTimestampSec)}
+          </span>
+          <span className="text-slate-400 text-[11px]">Воспроизведение реплея</span>
+          <span className="text-slate-400 font-mono text-xs">
+            {formatTime(totalDurationSec)}
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max={totalDurationSec}
+          step="1"
+          value={Math.round(currentTimestampSec)}
+          onChange={(e) => onSeek(parseFloat(e.target.value))}
+          disabled={isDisabled}
+          className="w-full accent-blue-500 bg-slate-700 h-2 rounded-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        />
+      </div>
+
+      {/* 2. Top Playback & HUD Control Row */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
         {/* Play/Pause & Reset Buttons */}
         <div className="flex items-center gap-3">
@@ -148,13 +198,49 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
           </div>
         </div>
 
+        {/* Volume & Audio Synth Control */}
+        <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg p-1.5 px-3">
+          <button
+            type="button"
+            onClick={onToggleMute}
+            className="text-slate-300 hover:text-white transition-colors"
+            title={isMuted ? 'Включить звук' : 'Выключить звук'}
+          >
+            {isMuted || volume === 0 ? (
+              <VolumeX className="w-4 h-4 text-red-400" />
+            ) : (
+              <Volume2 className="w-4 h-4 text-blue-400" />
+            )}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={isMuted ? 0 : volume}
+            onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+            className="w-16 accent-blue-500 bg-slate-700 h-1.5 rounded cursor-pointer"
+          />
+        </div>
+
+        {/* Fullscreen Button */}
+        <button
+          type="button"
+          onClick={onToggleFullscreen}
+          className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+          title="Полноэкранный режим"
+        >
+          <Maximize className="w-4 h-4 text-slate-400" />
+          <span>Fullscreen</span>
+        </button>
+
         {/* Selected Robot & Fleet Size Badge */}
         <div className="flex items-center gap-2 text-xs text-slate-300 bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-lg">
           <Bot className="w-4 h-4 text-blue-400" />
           <span>
             {selectedRobotName ? (
               <>
-                <strong>{selectedRobotName}</strong> ({fleetSize} ед. в симуляции)
+                <strong>{selectedRobotName}</strong> ({fleetSize} ед.)
               </>
             ) : (
               <span className="text-amber-400">Робот не выбран</span>
@@ -249,7 +335,11 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
 
         {/* 5. Spectral Graph Connectivity Card */}
         <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
-          <div className={`p-2.5 rounded-lg border shrink-0 ${connectivityBadge?.bgClass || 'bg-slate-700/50 border-slate-600'}`}>
+          <div
+            className={`p-2.5 rounded-lg border shrink-0 ${
+              connectivityBadge?.bgClass || 'bg-slate-700/50 border-slate-600'
+            }`}
+          >
             <Network className={`w-5 h-5 ${connectivityBadge?.colorClass || 'text-slate-400'}`} />
           </div>
           <div>

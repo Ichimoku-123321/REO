@@ -1,10 +1,21 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { SEED_ROBOTS } from './data/robots.seed.js';
 import { FACILITY_PRESETS } from './data/presets.js';
 import { evaluateEligibility } from './engine/dss.js';
-import { calculateEconomics, DEFAULT_WHAT_IF_PARAMS } from './engine/economics.js';
+import {
+  calculateEconomics,
+  calculateCompositionEconomics,
+  calculateAvailabilityCoefficient,
+  DEFAULT_WHAT_IF_PARAMS,
+} from './engine/economics.js';
 import { generateFacilityTopology } from './engine/topology_generator.js';
 import { analyzeTopologyBottlenecks } from './engine/spectral_analyzer.js';
+import {
+  optimizeFleetComposition,
+  type FleetCompositionItem,
+  type HeterogeneousOptimizationResult,
+} from './engine/fleet_optimizer.js';
+import { SimulationEngine, type SimulationReplayFrame } from './engine/simulation_engine.js';
 import type { FacilityRequirements } from './types/facility.js';
 import type { WhatIfParams } from './engine/economics.js';
 import { FacilityForm } from './components/FacilityForm.js';
@@ -16,6 +27,8 @@ import { WhatIfPanel } from './components/WhatIfPanel.js';
 import { FormulaModal } from './components/FormulaModal.js';
 import { SimulationViewport } from './components/SimulationViewport.js';
 import { ExportToolbar } from './components/ExportToolbar.js';
+import { FleetConfigPanel, type FleetConfigMode } from './components/FleetConfigPanel.js';
+import { CalculationProgressModal } from './components/CalculationProgressModal.js';
 import {
   Cpu,
   CheckCircle2,
@@ -33,6 +46,15 @@ export default function App() {
   const [selectedRobotId, setSelectedRobotId] = useState<string>('');
   const [whatIf, setWhatIf] = useState<WhatIfParams>(DEFAULT_WHAT_IF_PARAMS);
   const [isFormulaModalOpen, setIsFormulaModalOpen] = useState<boolean>(false);
+
+  // Fleet Configuration State: Mode 1 (AI Optimum) vs Mode 2 (Manual Choice)
+  const [fleetMode, setFleetMode] = useState<FleetConfigMode>('ai');
+  const [manualFleetCounts, setManualFleetCounts] = useState<Record<string, number>>({});
+
+  // Simulation Replay State & Calculation Progress
+  const [replayFrames, setReplayFrames] = useState<SimulationReplayFrame[]>([]);
+  const [isCalculating, setIsCalculating] = useState<boolean>(false);
+  const [calculationStep, setCalculationStep] = useState<number>(0);
 
   const handlePresetSelect = (presetId: string) => {
     const preset = FACILITY_PRESETS.find((p) => p.id === presetId);
@@ -59,13 +81,28 @@ export default function App() {
     return evaluatedRobots.filter((r) => !r.result.isEligible);
   }, [evaluatedRobots]);
 
-  // Set default selected robot when eligibleRobots change
+  // Set default selected robot and default manual counts when eligibleRobots change
   useEffect(() => {
     if (eligibleRobots.length > 0) {
       const isCurrentValid = eligibleRobots.some((r) => r.robot.id === selectedRobotId);
       if (!isCurrentValid) {
         setSelectedRobotId(eligibleRobots[0].robot.id);
       }
+
+      setManualFleetCounts((prev) => {
+        const next = { ...prev };
+        eligibleRobots.forEach(({ robot }) => {
+          if (!(robot.id in next)) {
+            next[robot.id] = 0;
+          }
+        });
+        // Default first eligible robot to 1 unit if all are 0
+        const totalSelected = Object.values(next).reduce((sum, c) => sum + c, 0);
+        if (totalSelected === 0 && eligibleRobots[0]) {
+          next[eligibleRobots[0].robot.id] = 2;
+        }
+        return next;
+      });
     } else {
       setSelectedRobotId('');
     }
@@ -75,10 +112,59 @@ export default function App() {
     return eligibleRobots.find((r) => r.robot.id === selectedRobotId)?.robot ?? null;
   }, [eligibleRobots, selectedRobotId]);
 
-  const selectedRobotEconomics = useMemo(() => {
-    if (!selectedRobot) return null;
-    return calculateEconomics(facility, selectedRobot, whatIf);
-  }, [facility, selectedRobot, whatIf]);
+  // AI Fleet Optimization Result
+  const aiOptimizationResult: HeterogeneousOptimizationResult = useMemo(() => {
+    const eligibleRobotSpecs = eligibleRobots.map((e) => e.robot);
+    return optimizeFleetComposition(facility, eligibleRobotSpecs, whatIf);
+  }, [facility, eligibleRobots, whatIf]);
+
+  // Active Fleet Composition Items (Mode 1 vs Mode 2)
+  const activeComposition: FleetCompositionItem[] = useMemo(() => {
+    if (fleetMode === 'ai') {
+      return aiOptimizationResult.composition;
+    }
+
+    // Mode 2: Manual Choice Composition Items
+    const items: FleetCompositionItem[] = [];
+    const capexDiscountPercent = whatIf?.capexDiscountPercent ?? 0;
+    const capexDiscountFactor = Math.max(0, 1 - capexDiscountPercent / 100);
+
+    eligibleRobots.forEach(({ robot }) => {
+      const count = manualFleetCounts[robot.id] || 0;
+      if (count > 0) {
+        const kAvail = calculateAvailabilityCoefficient(
+          robot.batteryRuntimeHours,
+          robot.batteryChargeMinutes
+        );
+        const totalThroughputPerHour = count * robot.throughputPerHour * kAvail;
+        const totalCapexRub = count * robot.capexCostRub * 1.15 * capexDiscountFactor;
+        const totalAnnualOpexRub = count * robot.annualOpexCostRub;
+        const fiveYearTcoRub = totalCapexRub + 5 * totalAnnualOpexRub;
+
+        items.push({
+          robot,
+          count,
+          totalThroughputPerHour,
+          totalCapexRub,
+          totalAnnualOpexRub,
+          fiveYearTcoRub,
+        });
+      }
+    });
+
+    return items;
+  }, [fleetMode, aiOptimizationResult, eligibleRobots, manualFleetCounts, whatIf]);
+
+  // Economic Evaluation (updates dynamically for AI or Manual fleet selection)
+  const activeEconomics = useMemo(() => {
+    if (activeComposition.length > 0) {
+      return calculateCompositionEconomics(facility, activeComposition, whatIf);
+    }
+    if (selectedRobot) {
+      return calculateEconomics(facility, selectedRobot, whatIf);
+    }
+    return null;
+  }, [facility, activeComposition, selectedRobot, whatIf]);
 
   const spectralResult = useMemo(() => {
     const topology = generateFacilityTopology(facility);
@@ -98,6 +184,44 @@ export default function App() {
       maximumFractionDigits: 0,
     }).format(lowestCapex);
   }, [eligibleRobots, lowestCapex]);
+
+  const handleManualCountChange = (robotId: string, count: number) => {
+    setManualFleetCounts((prev) => ({
+      ...prev,
+      [robotId]: Math.max(0, count),
+    }));
+  };
+
+  // Button Action: "Запустить моделирование и расчет"
+  const handleRunSimulationAndCalculation = useCallback(() => {
+    setIsCalculating(true);
+    setCalculationStep(1);
+
+    setTimeout(() => {
+      // Step 2: Simulation (7200 ticks)
+      setCalculationStep(2);
+
+      setTimeout(() => {
+        const topology = generateFacilityTopology(facility);
+        const engine = new SimulationEngine(topology, activeComposition);
+
+        // Run 7200 ticks simulation and record replay frames
+        engine.runOneHourSimulation(facility.targetThroughputPerHour, true);
+
+        // Step 3: Timeline Replay Generation
+        setCalculationStep(3);
+
+        setTimeout(() => {
+          setReplayFrames([...engine.replayFrames]);
+          setCalculationStep(4);
+          setIsCalculating(false);
+          setCalculationStep(0);
+        }, 150);
+      }, 200);
+    }, 200);
+  }, [facility, activeComposition]);
+
+  const activeFleetSize = activeComposition.reduce((sum, item) => sum + item.count, 0);
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 pb-16">
@@ -125,8 +249,8 @@ export default function App() {
           <ExportToolbar
             facility={facility}
             selectedRobot={selectedRobot}
-            fleetSize={selectedRobotEconomics?.fleetSize ?? 0}
-            economicEvaluation={selectedRobotEconomics}
+            fleetSize={activeFleetSize}
+            economicEvaluation={activeEconomics}
             spectralResult={spectralResult}
             whatIf={whatIf}
             onFacilityImport={handleFacilityChange}
@@ -141,6 +265,24 @@ export default function App() {
           onChange={handleFacilityChange}
           onPresetSelect={handlePresetSelect}
           activePresetId={activePresetId}
+        />
+
+        {/* Fleet Composition & Simulation Launch Panel */}
+        <FleetConfigPanel
+          mode={fleetMode}
+          onModeChange={setFleetMode}
+          aiOptimizationResult={aiOptimizationResult}
+          manualFleetCounts={manualFleetCounts}
+          onManualCountChange={handleManualCountChange}
+          eligibleRobots={eligibleRobots.map((e) => e.robot)}
+          onRunSimulation={handleRunSimulationAndCalculation}
+          isCalculating={isCalculating}
+        />
+
+        {/* Calculation Progress Overlay Modal */}
+        <CalculationProgressModal
+          isOpen={isCalculating}
+          currentStep={calculationStep}
         />
 
         {/* Live Summary Bar */}
@@ -198,9 +340,9 @@ export default function App() {
         )}
 
         {/* Step 5: 3-Scenario Financial Table */}
-        {selectedRobot && selectedRobotEconomics && (
+        {selectedRobot && activeEconomics && (
           <ScenarioMatrix
-            evaluation={selectedRobotEconomics}
+            evaluation={activeEconomics}
             robot={selectedRobot}
             facility={facility}
             whatIf={whatIf}
@@ -217,14 +359,16 @@ export default function App() {
           />
         )}
 
-        {/* Step 7: 2.5D Topology Viewport & Fleet Simulation */}
+        {/* Step 7: 2.5D Topology Viewport & Fleet Simulation (Interactive Timeline Replay) */}
         <SimulationViewport
           facility={facility}
-          selectedRobot={selectedRobot}
-          fleetSize={selectedRobotEconomics?.fleetSize ?? 0}
+          fleetConfig={activeComposition.length > 0 ? activeComposition : selectedRobot}
+          fleetSize={activeFleetSize || (activeEconomics?.fleetSize ?? 0)}
           targetThroughputPerHour={
-            selectedRobotEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour
+            activeEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour
           }
+          replayFrames={replayFrames}
+          onResetReplay={() => setReplayFrames([])}
         />
 
         {/* Formula Assumptions Modal */}

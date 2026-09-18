@@ -5,7 +5,13 @@ import type { FacilityRequirements } from '../types/facility.js';
 import type { Robot } from '../types/robot.js';
 import { generateFacilityTopology, calculateFacilityDimensions } from '../engine/topology_generator.js';
 import type { FacilityTopology, NodeType } from '../types/topology.js';
-import { SimulationEngine, type SimulationTelemetry, type AgentFSMState } from '../engine/simulation_engine.js';
+import {
+  SimulationEngine,
+  type SimulationTelemetry,
+  type AgentFSMState,
+  type SimulationReplayFrame,
+} from '../engine/simulation_engine.js';
+import type { FleetCompositionItem } from '../engine/fleet_optimizer.js';
 import { analyzeTopologyBottlenecks, type SpectralAnalysisResult } from '../engine/spectral_analyzer.js';
 import {
   createInitialConstructorGrid,
@@ -17,13 +23,16 @@ import {
 } from '../engine/constructor_engine.js';
 import { SimulationControls } from './SimulationControls.js';
 import { ConstructorToolbar } from './ConstructorToolbar.js';
+import { audioEngine } from '../engine/audio_synth.js';
 import { Layers, MapPin, Navigation, Maximize2, AlertCircle, Wrench, Building2, AlertTriangle } from 'lucide-react';
 
 interface SimulationViewportProps {
   facility: FacilityRequirements;
-  selectedRobot: Robot | null;
+  fleetConfig: Robot | FleetCompositionItem[] | null;
   fleetSize: number;
   targetThroughputPerHour: number;
+  replayFrames?: SimulationReplayFrame[];
+  onResetReplay?: () => void;
 }
 
 const DEFAULT_TELEMETRY: SimulationTelemetry = {
@@ -39,12 +48,24 @@ const DEFAULT_TELEMETRY: SimulationTelemetry = {
   isCalibrating: true,
 };
 
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+function angleLerp(a: number, b: number, t: number): number {
+  const diff = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+  return a + diff * t;
+}
+
 export function SimulationViewport({
   facility,
-  selectedRobot,
+  fleetConfig,
   fleetSize,
   targetThroughputPerHour,
+  replayFrames = [],
+  onResetReplay,
 }: SimulationViewportProps) {
+  const outerContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // Viewport mode: Automatic vs Interactive Constructor
@@ -55,7 +76,12 @@ export function SimulationViewport({
   // Playback & Simulation state
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [speedMultiplier, setSpeedMultiplier] = useState<number>(2);
+  const [currentTimeSec, setCurrentTimeSec] = useState<number>(0);
+  const [volume, setVolume] = useState<number>(0.5);
+  const [isMuted, setIsMuted] = useState<boolean>(false);
   const [telemetry, setTelemetry] = useState<SimulationTelemetry>(DEFAULT_TELEMETRY);
+
+  const lastProcessedFrameIndexRef = useRef<number>(-1);
 
   // Facility dimensions
   const facilityDims = useMemo(() => {
@@ -101,27 +127,66 @@ export function SimulationViewport({
   // Simulation Engine Instance ref
   const engineRef = useRef<SimulationEngine | null>(null);
 
-  // Initialize/Re-initialize Engine on topology, robot or fleetSize change
+  // Initialize/Re-initialize Engine on topology or fleetConfig change
   useEffect(() => {
-    if (selectedRobot && fleetSize > 0) {
-      engineRef.current = new SimulationEngine(topology, selectedRobot, fleetSize);
+    if (fleetConfig && fleetSize > 0) {
+      engineRef.current = new SimulationEngine(topology, fleetConfig);
     } else {
       engineRef.current = null;
     }
+    setCurrentTimeSec(0);
+    lastProcessedFrameIndexRef.current = -1;
     setTelemetry(DEFAULT_TELEMETRY);
-  }, [topology, selectedRobot, fleetSize]);
+  }, [topology, fleetConfig, fleetSize]);
+
+  // Reset timeline when replayFrames change
+  useEffect(() => {
+    setCurrentTimeSec(0);
+    lastProcessedFrameIndexRef.current = -1;
+  }, [replayFrames]);
 
   const handleReset = useCallback(() => {
+    setCurrentTimeSec(0);
+    lastProcessedFrameIndexRef.current = -1;
     if (engineRef.current) {
       engineRef.current.initializeFleet();
       setTelemetry(engineRef.current.getTelemetry(targetThroughputPerHour));
     }
-  }, [targetThroughputPerHour]);
+    if (onResetReplay) {
+      onResetReplay();
+    }
+  }, [targetThroughputPerHour, onResetReplay]);
 
   const handleResetGrid = useCallback(() => {
     const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
     setGrid(createInitialConstructorGrid(facilityDims.widthM, facilityDims.lengthM, cellSize));
   }, [facilityDims, facility.totalAreaSqm]);
+
+  const handleVolumeChange = useCallback((newVol: number) => {
+    setVolume(newVol);
+    audioEngine.setVolume(newVol);
+    if (newVol > 0 && isMuted) {
+      setIsMuted(false);
+      audioEngine.toggleMute(false);
+    }
+  }, [isMuted]);
+
+  const handleToggleMute = useCallback(() => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    audioEngine.toggleMute(nextMuted);
+  }, [isMuted]);
+
+  const handleToggleFullscreen = useCallback(() => {
+    if (!outerContainerRef.current) return;
+    if (!document.fullscreenElement) {
+      outerContainerRef.current.requestFullscreen().catch((err) => {
+        console.error('Fullscreen request failed:', err);
+      });
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -403,7 +468,6 @@ export function SimulationViewport({
 
     topology.nodes.forEach((node) => {
       if (node.type === 'WAYPOINT') {
-        // Debug WAYPOINT meshes completely purged for clean industrial CAD rendering
         return;
       }
 
@@ -492,7 +556,6 @@ export function SimulationViewport({
     const createRobotMeshGroup = (): AgentMeshGroup => {
       const group = new THREE.Group();
 
-      // Chassis: rounded box body
       const chassisGeo = new THREE.BoxGeometry(1.2, 0.4, 1.2);
       const chassisMat = new THREE.MeshStandardMaterial({
         color: 0x2563eb, // blue-600 AMR chassis
@@ -505,14 +568,12 @@ export function SimulationViewport({
       chassisMesh.receiveShadow = true;
       group.add(chassisMesh);
 
-      // Heading indicator nose / headlight
       const noseGeo = new THREE.BoxGeometry(0.3, 0.2, 0.3);
       const noseMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0 });
       const noseMesh = new THREE.Mesh(noseGeo, noseMat);
       noseMesh.position.set(0.5, 0.3, 0);
       group.add(noseMesh);
 
-      // Halo / Status Ring under chassis
       const haloGeo = new THREE.RingGeometry(0.8, 1.1, 24);
       const haloMat = new THREE.MeshBasicMaterial({
         color: 0x10b981,
@@ -525,7 +586,6 @@ export function SimulationViewport({
       haloMesh.position.y = 0.03;
       group.add(haloMesh);
 
-      // Cargo Payload Crate
       const cargoGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
       const cargoMat = new THREE.MeshStandardMaterial({
         color: 0x0284c7, // Sky blue cargo crate
@@ -573,7 +633,7 @@ export function SimulationViewport({
     const domElem = renderer.domElement;
     domElem.addEventListener('pointerdown', handleCanvasPointerDown);
 
-    // 10. Animation Loop & Telemetry Throttle
+    // 10. Animation Loop: Interpolates from replayFrames or runs real-time physics fallback
     const clock = new THREE.Clock();
     let animationFrameId: number;
     let telemetryTimer = 0;
@@ -583,41 +643,115 @@ export function SimulationViewport({
 
       const deltaReal = clock.getDelta();
 
-      if (isPlaying && engineRef.current) {
-        const dtSim = Math.min(0.1, deltaReal) * speedMultiplier;
-        engineRef.current.update(dtSim);
-
-        // Update / Sync agents to 3D Scene directly via transforms
-        const agents = engineRef.current.agents;
-
-        agents.forEach((agent) => {
-          let meshGroup = agentMeshMap.get(agent.id);
-          if (!meshGroup) {
-            meshGroup = createRobotMeshGroup();
-            agentMeshMap.set(agent.id, meshGroup);
+      if (isPlaying) {
+        setCurrentTimeSec((prevTime) => {
+          let nextTime = prevTime + deltaReal * speedMultiplier;
+          if (nextTime >= 3600) {
+            nextTime = 0; // Loop back to start
           }
 
-          // Transform mapping with finite guards: x_3d = agent.x, y_3d = 0, z_3d = agent.y
-          if (Number.isFinite(agent.x) && Number.isFinite(agent.y)) {
-            meshGroup.group.position.set(agent.x, 0, agent.y);
-          }
-          if (Number.isFinite(agent.headingRad)) {
-            meshGroup.group.rotation.y = -agent.headingRad + Math.PI / 2;
+          // Replay Frames Interpolation Logic
+          if (replayFrames && replayFrames.length > 0) {
+            const frameIndex = Math.min(
+              replayFrames.length - 2,
+              Math.max(0, Math.floor(nextTime * 2))
+            );
+
+            const frame0 = replayFrames[frameIndex];
+            const frame1 = replayFrames[frameIndex + 1] || frame0;
+
+            const alpha = Math.max(0, Math.min(1, (nextTime - frame0.timestampSec) / 0.5));
+
+            // Trigger audio events on frame index transition
+            if (frameIndex !== lastProcessedFrameIndexRef.current) {
+              lastProcessedFrameIndexRef.current = frameIndex;
+
+              if (frame0.events && frame0.events.length > 0) {
+                frame0.events.forEach((evt) => {
+                  switch (evt) {
+                    case 'CHARGE_START':
+                      audioEngine.playChargeStart();
+                      break;
+                    case 'CHARGE_END':
+                      audioEngine.playChargeEnd();
+                      break;
+                    case 'PICKUP':
+                      audioEngine.playBoxPick();
+                      break;
+                    case 'DROPOFF':
+                      audioEngine.playBoxDrop();
+                      break;
+                    case 'BRAKE':
+                      audioEngine.playBrake();
+                      break;
+                  }
+                });
+              }
+            }
+
+            // Interpolate agent positions & headings
+            const numAgents = Math.min(frame0.agents.length, frame1.agents.length);
+            for (let i = 0; i < numAgents; i++) {
+              const a0 = frame0.agents[i];
+              const a1 = frame1.agents[i];
+
+              let meshGroup = agentMeshMap.get(a0.id);
+              if (!meshGroup) {
+                meshGroup = createRobotMeshGroup();
+                agentMeshMap.set(a0.id, meshGroup);
+              }
+
+              const interpX = lerp(a0.x, a1.x, alpha);
+              const interpY = lerp(a0.y, a1.y, alpha);
+              const interpHeading = angleLerp(a0.headingRad, a1.headingRad, alpha);
+
+              if (Number.isFinite(interpX) && Number.isFinite(interpY)) {
+                meshGroup.group.position.set(interpX, 0, interpY);
+              }
+              if (Number.isFinite(interpHeading)) {
+                meshGroup.group.rotation.y = -interpHeading + Math.PI / 2;
+              }
+
+              const colorHex = getHaloColor(a0.state, false);
+              meshGroup.haloMat.color.setHex(colorHex);
+              meshGroup.cargoMesh.visible = a0.cargoPayload;
+            }
+          } else if (engineRef.current) {
+            // Real-time Physics Fallback if replayFrames not yet generated
+            const dtSim = Math.min(0.1, deltaReal) * speedMultiplier;
+            engineRef.current.update(dtSim);
+
+            const agents = engineRef.current.agents;
+            agents.forEach((agent) => {
+              let meshGroup = agentMeshMap.get(agent.id);
+              if (!meshGroup) {
+                meshGroup = createRobotMeshGroup();
+                agentMeshMap.set(agent.id, meshGroup);
+              }
+
+              if (Number.isFinite(agent.x) && Number.isFinite(agent.y)) {
+                meshGroup.group.position.set(agent.x, 0, agent.y);
+              }
+              if (Number.isFinite(agent.headingRad)) {
+                meshGroup.group.rotation.y = -agent.headingRad + Math.PI / 2;
+              }
+
+              const colorHex = getHaloColor(agent.state, agent.isQueued);
+              meshGroup.haloMat.color.setHex(colorHex);
+              meshGroup.cargoMesh.visible = agent.cargoPayload;
+            });
           }
 
-          // Update Halo color
-          const colorHex = getHaloColor(agent.state, agent.isQueued);
-          meshGroup.haloMat.color.setHex(colorHex);
-
-          // Update Cargo payload visibility
-          meshGroup.cargoMesh.visible = agent.cargoPayload;
+          return nextTime;
         });
 
         // Telemetry update interval throttled to 300ms (3.33Hz)
         telemetryTimer += deltaReal;
         if (telemetryTimer >= 0.3) {
           telemetryTimer = 0;
-          setTelemetry(engineRef.current.getTelemetry(targetThroughputPerHour));
+          if (engineRef.current) {
+            setTelemetry(engineRef.current.getTelemetry(targetThroughputPerHour));
+          }
         }
       }
 
@@ -666,36 +800,32 @@ export function SimulationViewport({
     selectedTileType,
     showBottleneckHeatmap,
     spectralAnalysis,
+    replayFrames,
   ]);
 
-  const getFacilityTypeNameRu = (type: string) => {
-    switch (type) {
-      case 'warehouse':
-        return 'Складской комплекс';
-      case 'airport':
-        return 'Аэропортовый терминал';
-      case 'hospital':
-        return 'Больничный комплекс';
-      case 'custom':
-      default:
-        return 'Производственный объект';
-    }
-  };
+  const isFleetEmpty = fleetSize === 0 || !fleetConfig;
 
-  const isFleetEmpty = fleetSize === 0 || !selectedRobot;
-  const selectedRobotFullName = selectedRobot
-    ? `${selectedRobot.vendor} ${selectedRobot.model}`
-    : null;
+  let selectedRobotFullName: string | null = null;
+  if (Array.isArray(fleetConfig)) {
+    if (fleetConfig.length > 0) {
+      selectedRobotFullName = fleetConfig.map((item) => `${item.robot.model} (${item.count} ед.)`).join(' + ');
+    }
+  } else if (fleetConfig) {
+    selectedRobotFullName = `${fleetConfig.vendor} ${fleetConfig.model}`;
+  }
 
   return (
-    <div className="bg-slate-800/90 border border-slate-700/80 rounded-xl overflow-hidden shadow-xl mb-8">
+    <div
+      ref={outerContainerRef}
+      className="bg-slate-800/90 border border-slate-700/80 rounded-xl overflow-hidden shadow-xl mb-8"
+    >
       {/* Viewport Header with Mode Switcher */}
       <div className="bg-slate-900/95 border-b border-slate-700/80 px-6 py-3 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <Layers className="w-5 h-5 text-blue-400" />
             <h3 className="text-base font-bold text-slate-100">
-              2.5D Интерактивная модель симуляции
+              2.5D Интерактивный плеер симуляции (Timeline Replay)
             </h3>
           </div>
 
@@ -771,10 +901,24 @@ export function SimulationViewport({
       {/* Simulation HUD Controls Bar */}
       <SimulationControls
         isPlaying={isPlaying}
-        onTogglePlayPause={() => setIsPlaying((prev) => !prev)}
+        onTogglePlayPause={() => {
+          audioEngine.initAudioContext();
+          setIsPlaying((prev) => !prev);
+        }}
         onReset={handleReset}
         speedMultiplier={speedMultiplier}
         onSpeedChange={setSpeedMultiplier}
+        currentTimestampSec={currentTimeSec}
+        totalDurationSec={3600}
+        onSeek={(sec) => {
+          setCurrentTimeSec(sec);
+          lastProcessedFrameIndexRef.current = -1;
+        }}
+        volume={volume}
+        onVolumeChange={handleVolumeChange}
+        isMuted={isMuted}
+        onToggleMute={handleToggleMute}
+        onToggleFullscreen={handleToggleFullscreen}
         telemetry={telemetry}
         targetThroughputPerHour={targetThroughputPerHour}
         fleetSize={fleetSize}
@@ -808,7 +952,7 @@ export function SimulationViewport({
                 Парк не сформирован
               </h4>
               <p className="text-sm text-slate-400">
-                Выберите подходящее роботизированное решение в каталоге выше для запуска циклической симуляции парка.
+                Выберите подходящее роботизированное решение или нажмите «Запустить моделирование и расчет» выше.
               </p>
             </div>
           </div>

@@ -19,6 +19,10 @@ function formatCurrency(val: number): string {
   }).format(val);
 }
 
+function getLastAutoTableFinalY(doc: jsPDF, fallbackY: number): number {
+  return doc.lastAutoTable?.finalY ?? fallbackY;
+}
+
 function translateIndustry(ind: string): string {
   switch (ind) {
     case 'warehouse':
@@ -105,7 +109,7 @@ export function generateFeasibilityPdf(data: ProjectExportData): void {
   autoTable(doc, specTableOptions);
 
   // 3-Scenario Financial Table
-  const lastY1 = doc.lastAutoTable?.finalY ?? 87;
+  const lastY1 = getLastAutoTableFinalY(doc, 87);
   const nextY1 = lastY1 + 10;
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
@@ -127,7 +131,7 @@ export function generateFeasibilityPdf(data: ProjectExportData): void {
   autoTable(doc, financialTableOptions);
 
   // Risk & Spectral Analysis
-  const lastY2 = doc.lastAutoTable?.finalY ?? (nextY1 + 4);
+  const lastY2 = getLastAutoTableFinalY(doc, nextY1 + 4);
   const nextY2 = lastY2 + 10;
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');

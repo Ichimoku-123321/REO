@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { SEED_ROBOTS } from './data/robots.seed.js';
 import { FACILITY_PRESETS } from './data/presets.js';
-import { evaluateEligibility } from './engine/dss.js';
+import { evaluateEligibility, isRobotEligible } from './engine/dss.js';
 import {
   calculateEconomics,
   calculateCompositionEconomics,
-  calculateAvailabilityCoefficient,
   DEFAULT_WHAT_IF_PARAMS,
+  type WhatIfParams,
+  type EconomicEvaluation,
 } from './engine/economics.js';
 import { generateFacilityTopology } from './engine/topology_generator.js';
 import { analyzeTopologyBottlenecks } from './engine/spectral_analyzer.js';
@@ -17,58 +18,96 @@ import {
 } from './engine/fleet_optimizer.js';
 import { SimulationEngine, type SimulationReplayFrame } from './engine/simulation_engine.js';
 import type { FacilityRequirements } from './types/facility.js';
-import type { WhatIfParams } from './engine/economics.js';
-import { FacilityForm } from './components/FacilityForm.js';
-import { RobotCard } from './components/RobotCard.js';
-import { ExcludedRobotsAccordion } from './components/ExcludedRobotsAccordion.js';
+import { generateFeasibilityPdf } from './engine/export_pdf.js';
+import { exportFeasibilityToExcel } from './engine/export_excel.js';
+
+import { SimulationParamsPanel, type SimulationParams } from './components/SimulationParamsPanel.js';
+import { FleetConfigPanel, type FleetConfigMode } from './components/FleetConfigPanel.js';
+import { SimulationViewport } from './components/SimulationViewport.js';
 import { RobotComparisonTable } from './components/RobotComparisonTable.js';
 import { ScenarioMatrix } from './components/ScenarioMatrix.js';
 import { WhatIfPanel } from './components/WhatIfPanel.js';
 import { FormulaModal } from './components/FormulaModal.js';
-import { SimulationViewport } from './components/SimulationViewport.js';
-import { ExportToolbar } from './components/ExportToolbar.js';
-import { FleetConfigPanel, type FleetConfigMode } from './components/FleetConfigPanel.js';
+import { ExcludedRobotsAccordion } from './components/ExcludedRobotsAccordion.js';
 import { CalculationProgressModal } from './components/CalculationProgressModal.js';
+
 import {
-  Cpu,
-  CheckCircle2,
-  XCircle,
-  Coins,
   Bot,
   SlidersHorizontal,
+  FileSpreadsheet,
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+  TrendingUp,
+  Cpu,
+  Layers,
+  Activity,
+  CheckCircle2,
+  AlertTriangle,
+  Info,
+  DollarSign,
+  PieChart,
 } from 'lucide-react';
 
 export default function App() {
+  // 1. Facility & Preset State
   const [activePresetId, setActivePresetId] = useState<string>('warehouse');
   const [facility, setFacility] = useState<FacilityRequirements>(
     FACILITY_PRESETS[0].requirements
   );
-  const [selectedRobotId, setSelectedRobotId] = useState<string>('');
+
+  // 2. What-If & Selected Robot State
   const [whatIf, setWhatIf] = useState<WhatIfParams>(DEFAULT_WHAT_IF_PARAMS);
-  const [isFormulaModalOpen, setIsFormulaModalOpen] = useState<boolean>(false);
+  const [selectedRobotId, setSelectedRobotId] = useState<string>('ronavi-h1500');
 
-  // Fleet Configuration State: Mode 1 (AI Optimum) vs Mode 2 (Manual Choice)
+  // 3. Simulation Parameters (Quota, Duration T, Frame Buffer Size)
+  const [simulationParams, setSimulationParams] = useState<SimulationParams>({
+    targetHourlyQuota: FACILITY_PRESETS[0].requirements.targetThroughputPerHour,
+    durationHours: 1,
+    targetReplayFramesCount: 7200,
+  });
+
+  // Sync simulationParams.targetHourlyQuota when facility quota changes
+  useEffect(() => {
+    setSimulationParams((prev) => ({
+      ...prev,
+      targetHourlyQuota: facility.targetThroughputPerHour,
+    }));
+  }, [facility.targetThroughputPerHour]);
+
+  // 4. Fleet Configuration Mode (AI vs Manual 9 Sandbox)
   const [fleetMode, setFleetMode] = useState<FleetConfigMode>('ai');
-  const [manualFleetCounts, setManualFleetCounts] = useState<Record<string, number>>({});
+  const [manualFleetCounts, setManualFleetCounts] = useState<Record<string, number>>({
+    'ronavi-h1500': 2,
+  });
 
-  // Simulation Replay State & Calculation Progress
+  // 5. Layout Toggles & Analytics Tab Switcher
+  const [isLeftOpen, setIsLeftOpen] = useState<boolean>(true);
+  const [isRightOpen, setIsRightOpen] = useState<boolean>(true);
+  const [rightTab, setRightTab] = useState<'economics' | 'xai' | 'whatif'>('economics');
+
+  // 6. Simulation & Calculation Progress State
   const [replayFrames, setReplayFrames] = useState<SimulationReplayFrame[]>([]);
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
   const [calculationStep, setCalculationStep] = useState<number>(0);
+  const [isFormulaModalOpen, setIsFormulaModalOpen] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   const handlePresetSelect = (presetId: string) => {
     const preset = FACILITY_PRESETS.find((p) => p.id === presetId);
     if (preset) {
       setActivePresetId(preset.id);
       setFacility(preset.requirements);
+      showToast(`Применен пресет объекта «${preset.name}»`);
     }
   };
 
-  const handleFacilityChange = (updated: FacilityRequirements) => {
-    setActivePresetId('');
-    setFacility(updated);
-  };
-
+  // Eligibility Evaluation
   const evaluatedRobots = useMemo(() => {
     return evaluateEligibility(facility, SEED_ROBOTS);
   }, [facility]);
@@ -81,35 +120,20 @@ export default function App() {
     return evaluatedRobots.filter((r) => !r.result.isEligible);
   }, [evaluatedRobots]);
 
-  // Set default selected robot and default manual counts when eligibleRobots change
   useEffect(() => {
     if (eligibleRobots.length > 0) {
-      const isCurrentValid = eligibleRobots.some((r) => r.robot.id === selectedRobotId);
-      if (!isCurrentValid) {
+      if (!eligibleRobots.some((r) => r.robot.id === selectedRobotId)) {
         setSelectedRobotId(eligibleRobots[0].robot.id);
       }
-
-      setManualFleetCounts((prev) => {
-        const next = { ...prev };
-        eligibleRobots.forEach(({ robot }) => {
-          if (!(robot.id in next)) {
-            next[robot.id] = 0;
-          }
-        });
-        // Default first eligible robot to 1 unit if all are 0
-        const totalSelected = Object.values(next).reduce((sum, c) => sum + c, 0);
-        if (totalSelected === 0 && eligibleRobots[0]) {
-          next[eligibleRobots[0].robot.id] = 2;
-        }
-        return next;
-      });
-    } else {
-      setSelectedRobotId('');
     }
   }, [eligibleRobots, selectedRobotId]);
 
   const selectedRobot = useMemo(() => {
-    return eligibleRobots.find((r) => r.robot.id === selectedRobotId)?.robot ?? null;
+    return (
+      eligibleRobots.find((r) => r.robot.id === selectedRobotId)?.robot ??
+      SEED_ROBOTS.find((r) => r.id === selectedRobotId) ??
+      SEED_ROBOTS[0]
+    );
   }, [eligibleRobots, selectedRobotId]);
 
   // AI Fleet Optimization Result
@@ -118,24 +142,23 @@ export default function App() {
     return optimizeFleetComposition(facility, eligibleRobotSpecs, whatIf);
   }, [facility, eligibleRobots, whatIf]);
 
-  // Active Fleet Composition Items (Mode 1 vs Mode 2)
+  // Active Fleet Composition (AI vs Manual)
   const activeComposition: FleetCompositionItem[] = useMemo(() => {
     if (fleetMode === 'ai') {
       return aiOptimizationResult.composition;
     }
 
-    // Mode 2: Manual Choice Composition Items
     const items: FleetCompositionItem[] = [];
     const capexDiscountPercent = whatIf?.capexDiscountPercent ?? 0;
     const capexDiscountFactor = Math.max(0, 1 - capexDiscountPercent / 100);
 
-    eligibleRobots.forEach(({ robot }) => {
+    SEED_ROBOTS.forEach((robot) => {
       const count = manualFleetCounts[robot.id] || 0;
       if (count > 0) {
-        const kAvail = calculateAvailabilityCoefficient(
-          robot.batteryRuntimeHours,
-          robot.batteryChargeMinutes
-        );
+        const runtime = robot.batteryRuntimeHours || 8;
+        const chargeHours = (robot.batteryChargeMinutes || 60) / 60;
+        const kAvail = runtime / (runtime + chargeHours);
+
         const totalThroughputPerHour = count * robot.throughputPerHour * kAvail;
         const totalCapexRub = count * robot.capexCostRub * 1.15 * capexDiscountFactor;
         const totalAnnualOpexRub = count * robot.annualOpexCostRub;
@@ -153,10 +176,14 @@ export default function App() {
     });
 
     return items;
-  }, [fleetMode, aiOptimizationResult, eligibleRobots, manualFleetCounts, whatIf]);
+  }, [fleetMode, aiOptimizationResult, manualFleetCounts, whatIf]);
 
-  // Economic Evaluation (updates dynamically for AI or Manual fleet selection)
-  const activeEconomics = useMemo(() => {
+  const activeFleetSize = useMemo(() => {
+    return activeComposition.reduce((sum, item) => sum + item.count, 0);
+  }, [activeComposition]);
+
+  // Economic Evaluation
+  const activeEconomics: EconomicEvaluation | null = useMemo(() => {
     if (activeComposition.length > 0) {
       return calculateCompositionEconomics(facility, activeComposition, whatIf);
     }
@@ -171,20 +198,6 @@ export default function App() {
     return analyzeTopologyBottlenecks(topology);
   }, [facility]);
 
-  const lowestCapex = useMemo(() => {
-    if (eligibleRobots.length === 0) return 0;
-    return Math.min(...eligibleRobots.map((r) => r.robot.capexCostRub));
-  }, [eligibleRobots]);
-
-  const formattedLowestCapex = useMemo(() => {
-    if (eligibleRobots.length === 0) return '—';
-    return new Intl.NumberFormat('ru-RU', {
-      style: 'currency',
-      currency: 'RUB',
-      maximumFractionDigits: 0,
-    }).format(lowestCapex);
-  }, [eligibleRobots, lowestCapex]);
-
   const handleManualCountChange = (robotId: string, count: number) => {
     setManualFleetCounts((prev) => ({
       ...prev,
@@ -192,23 +205,33 @@ export default function App() {
     }));
   };
 
-  // Button Action: "Запустить моделирование и расчет"
-  const handleRunSimulationAndCalculation = useCallback(() => {
+  // Run Simulation & Calculation Handler
+  const handleRunSimulation = useCallback(() => {
     setIsCalculating(true);
     setCalculationStep(1);
 
     setTimeout(() => {
-      // Step 2: Simulation (7200 ticks)
       setCalculationStep(2);
 
       setTimeout(() => {
         const topology = generateFacilityTopology(facility);
-        const engine = new SimulationEngine(topology, activeComposition);
+        const engine = new SimulationEngine(
+          topology,
+          activeComposition.length > 0
+            ? activeComposition
+            : selectedRobot
+            ? [{ robot: selectedRobot, count: 1, totalThroughputPerHour: 10, totalCapexRub: 1000, totalAnnualOpexRub: 100, fiveYearTcoRub: 1500 }]
+            : SEED_ROBOTS[0],
+          activeFleetSize || 1
+        );
 
-        // Run 7200 ticks simulation and record replay frames
-        engine.runOneHourSimulation(facility.targetThroughputPerHour, true);
+        engine.runSimulation({
+          targetHourlyQuota: simulationParams.targetHourlyQuota,
+          durationHours: simulationParams.durationHours,
+          recordReplay: true,
+          targetReplayFramesCount: simulationParams.targetReplayFramesCount,
+        });
 
-        // Step 3: Timeline Replay Generation
         setCalculationStep(3);
 
         setTimeout(() => {
@@ -216,196 +239,395 @@ export default function App() {
           setCalculationStep(4);
           setIsCalculating(false);
           setCalculationStep(0);
+          showToast('Моделирование завершено. Кадры загружены во вьюпорт.');
         }, 150);
       }, 200);
     }, 200);
-  }, [facility, activeComposition]);
+  }, [facility, activeComposition, selectedRobot, activeFleetSize, simulationParams]);
 
-  const activeFleetSize = activeComposition.reduce((sum, item) => sum + item.count, 0);
+  // Export Handlers
+  const handleExportPdf = () => {
+    if (!selectedRobot || !activeEconomics) return;
+    generateFeasibilityPdf({
+      projectTitle: `ТЭО Роботизации - ${facility.industry.toUpperCase()}`,
+      facility,
+      selectedRobot,
+      fleetSize: activeFleetSize || activeEconomics.fleetSize,
+      economicEvaluation: activeEconomics,
+      spectralResult,
+      whatIf,
+      generatedAt: new Date(),
+      version: 'СППР v1.0',
+    });
+    showToast('ТЭО сгенерировано и выгружено в PDF');
+  };
+
+  const handleExportExcel = () => {
+    if (!activeEconomics) return;
+    exportFeasibilityToExcel(
+      facility,
+      activeComposition.length > 0 ? activeComposition : selectedRobot,
+      activeEconomics,
+      whatIf
+    );
+    showToast('Финансовая модель выгружена в Excel (.xlsx)');
+  };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 pb-16">
-      {/* Top Navigation Header */}
-      <header className="border-b border-slate-800 bg-slate-900/95 sticky top-0 z-50 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-600 rounded-lg text-white shadow-lg shadow-blue-500/20">
-              <Bot className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-                Платформа подбора роботизированных решений
-                <span className="text-xs bg-blue-500/20 text-blue-400 font-semibold px-2 py-0.5 rounded border border-blue-500/30">
-                  СППР v1.0
-                </span>
+    <div className="h-screen w-screen overflow-hidden text-slate-100 bg-slate-950 font-sans select-none flex flex-col">
+      {/* ================= HEADER BAR ================= */}
+      <header className="h-13 bg-slate-900 border-b border-slate-800 px-4 flex items-center justify-between z-30 shrink-0 shadow-md">
+        {/* REO Logo & СППР v1.0 Badge */}
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-amber-400 text-slate-950 font-extrabold flex items-center justify-center border border-amber-500 rounded text-xs tracking-tighter">
+            REO
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="font-bold text-xs uppercase tracking-tight text-white">
+                REO Platform
               </h1>
-              <p className="text-xs text-slate-400">
-                Автоматизированная экспертиза и технико-экономическое обоснование
-              </p>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-amber-400/15 text-amber-300 border border-amber-400/30 uppercase font-semibold rounded">
+                СППР v1.0
+              </span>
             </div>
+            <p className="text-[10px] text-slate-400 -mt-0.5">
+              Robotic Economic Optimizer • Предынвестиционный аудит ФЦ БАС
+            </p>
+          </div>
+        </div>
+
+        {/* 1-Click Industry Presets */}
+        <div className="hidden md:flex items-center border border-slate-700 bg-slate-950 rounded-lg overflow-hidden">
+          {FACILITY_PRESETS.map((p) => {
+            const isActive = activePresetId === p.id;
+            return (
+              <button
+                key={p.id}
+                onClick={() => handlePresetSelect(p.id)}
+                className={`px-3 py-1.5 text-xs font-semibold transition cursor-pointer border-r last:border-r-0 border-slate-800 ${
+                  isActive
+                    ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                {p.name}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Column Toggles & Export Actions */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center border border-slate-700 bg-slate-900 p-0.5 rounded text-xs font-mono">
+            <button
+              onClick={() => setIsLeftOpen(!isLeftOpen)}
+              title="Показать / скрыть панель ввода условий"
+              className={`px-2 py-1 text-[11px] font-bold rounded transition ${
+                isLeftOpen ? 'bg-amber-400 text-slate-950' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {isLeftOpen ? '◀ Ввод' : '▶ Ввод'}
+            </button>
+            <div className="w-px h-3 bg-slate-700 mx-0.5"></div>
+            <button
+              onClick={() => setIsRightOpen(!isRightOpen)}
+              title="Показать / скрыть панель аналитики"
+              className={`px-2 py-1 text-[11px] font-bold rounded transition ${
+                isRightOpen ? 'bg-amber-400 text-slate-950' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {isRightOpen ? 'Вывод ▶' : '◀ Вывод'}
+            </button>
           </div>
 
-          {/* Export & Import Header Controls */}
-          <ExportToolbar
-            facility={facility}
-            selectedRobot={selectedRobot}
-            fleetSize={activeFleetSize}
-            economicEvaluation={activeEconomics}
-            spectralResult={spectralResult}
-            whatIf={whatIf}
-            onFacilityImport={handleFacilityChange}
-          />
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="px-3 py-1.5 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-700/60 text-xs font-semibold uppercase tracking-tight rounded transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Excel (.xlsx)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white border border-blue-500 text-xs font-semibold uppercase tracking-tight rounded transition flex items-center gap-1.5 cursor-pointer shadow-blue-600/20"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>ТЭО (PDF)</span>
+          </button>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        {/* Facility Form */}
-        <FacilityForm
-          facility={facility}
-          onChange={handleFacilityChange}
-          onPresetSelect={handlePresetSelect}
-          activePresetId={activePresetId}
-        />
+      {/* ================= MAIN 3-ZONE DASHBOARD WORKSPACE ================= */}
+      <div className="flex-1 flex overflow-hidden relative">
 
-        {/* Fleet Composition & Simulation Launch Panel */}
-        <FleetConfigPanel
-          mode={fleetMode}
-          onModeChange={setFleetMode}
-          aiOptimizationResult={aiOptimizationResult}
-          manualFleetCounts={manualFleetCounts}
-          onManualCountChange={handleManualCountChange}
-          eligibleRobots={eligibleRobots.map((e) => e.robot)}
-          onRunSimulation={handleRunSimulationAndCalculation}
-          isCalculating={isCalculating}
-        />
-
-        {/* Calculation Progress Overlay Modal */}
-        <CalculationProgressModal
-          isOpen={isCalculating}
-          currentStep={calculationStep}
-        />
-
-        {/* Live Summary Bar */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 flex items-center gap-4 shadow-md">
-            <div className="p-3 bg-blue-500/10 text-blue-400 rounded-lg border border-blue-500/20">
-              <Cpu className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">Всего решений в базе</p>
-              <p className="text-2xl font-bold text-slate-100">{SEED_ROBOTS.length}</p>
-            </div>
-          </div>
-
-          <div className="bg-slate-800/80 border border-emerald-500/30 rounded-xl p-4 flex items-center gap-4 shadow-md">
-            <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20">
-              <CheckCircle2 className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">Подходят под объект</p>
-              <p className="text-2xl font-bold text-emerald-400">{eligibleRobots.length}</p>
-            </div>
-          </div>
-
-          <div className="bg-slate-800/80 border border-amber-500/30 rounded-xl p-4 flex items-center gap-4 shadow-md">
-            <div className="p-3 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20">
-              <XCircle className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">Отклонено фильтрами</p>
-              <p className="text-2xl font-bold text-amber-400">{ineligibleRobots.length}</p>
-            </div>
-          </div>
-
-          <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 flex items-center gap-4 shadow-md">
-            <div className="p-3 bg-purple-500/10 text-purple-400 rounded-lg border border-purple-500/20">
-              <Coins className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-400">Мин. CAPEX единицы</p>
-              <p className="text-lg font-bold text-slate-100">{formattedLowestCapex}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Step 4: Unified Robot Comparison Table */}
-        {eligibleRobots.length > 0 && (
-          <RobotComparisonTable
-            robots={eligibleRobots.map((e) => e.robot)}
-            facility={facility}
-            whatIf={whatIf}
-            selectedRobotId={selectedRobotId}
-            onSelectRobot={setSelectedRobotId}
-          />
-        )}
-
-        {/* Step 5: 3-Scenario Financial Table */}
-        {selectedRobot && activeEconomics && (
-          <ScenarioMatrix
-            evaluation={activeEconomics}
-            robot={selectedRobot}
-            facility={facility}
-            whatIf={whatIf}
-            spectralResult={spectralResult}
-          />
-        )}
-
-        {/* Step 6: Interactive What-If Control Panel */}
-        {eligibleRobots.length > 0 && (
-          <WhatIfPanel
-            whatIf={whatIf}
-            onChange={setWhatIf}
-            onOpenFormulaModal={() => setIsFormulaModalOpen(true)}
-          />
-        )}
-
-        {/* Step 7: 2.5D Topology Viewport & Fleet Simulation (Interactive Timeline Replay) */}
-        <SimulationViewport
-          facility={facility}
-          fleetConfig={activeComposition.length > 0 ? activeComposition : selectedRobot}
-          fleetSize={activeFleetSize || (activeEconomics?.fleetSize ?? 0)}
-          targetThroughputPerHour={
-            activeEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour
-          }
-          replayFrames={replayFrames}
-        />
-
-        {/* Formula Assumptions Modal */}
-        <FormulaModal
-          isOpen={isFormulaModalOpen}
-          onClose={() => setIsFormulaModalOpen(false)}
-        />
-
-        {/* Recommended Solutions Section */}
-        <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <SlidersHorizontal className="w-5 h-5 text-emerald-400" />
-              Рекомендованные решения ({eligibleRobots.length})
-            </h2>
-            <span className="text-xs text-slate-400">
-              Отсортированы по возрастанию CAPEX стоимости
+        {/* ================= ZONE 1: LEFT COLUMN (INPUT & CONDITIONS) ================= */}
+        <aside
+          className={`transition-all duration-300 shrink-0 z-20 flex flex-col bg-slate-900/95 border-r border-slate-800 overflow-hidden ${
+            isLeftOpen ? 'w-80 sm:w-96' : 'w-0 border-r-0'
+          }`}
+        >
+          <div className="p-3 bg-slate-800/80 border-b border-slate-700/80 flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+              <SlidersHorizontal className="w-4 h-4 text-amber-400" />
+              Входные параметры и флот
             </span>
+            <span className="text-[10px] font-mono font-bold text-amber-400">ZONE 1</span>
           </div>
 
-          {eligibleRobots.length === 0 ? (
-            <div className="bg-slate-800/40 border border-dashed border-slate-700 rounded-xl p-8 text-center text-slate-400">
-              Ни один робот не удовлетворяет заданным параметрам объекта. Попробуйте скорректировать габариты или требуемую нагрузку.
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs text-slate-200">
+            {/* Facility Geometry & Requirements Card */}
+            <div className="p-3.5 bg-slate-900/90 border border-slate-800 rounded-xl space-y-3">
+              <h4 className="font-semibold text-xs uppercase tracking-wider text-slate-200 border-b border-slate-800 pb-1.5">
+                Параметры объекта
+              </h4>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold">Площадь (м²)</span>
+                  <input
+                    type="number"
+                    value={facility.totalAreaSqm}
+                    onChange={(e) =>
+                      setFacility({ ...facility, totalAreaSqm: Number(e.target.value) || 100 })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-xs text-white focus:border-amber-400"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold">Проезд (м)</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={facility.aisleWidthM}
+                    onChange={(e) =>
+                      setFacility({ ...facility, aisleWidthM: Number(e.target.value) || 1 })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-xs text-white focus:border-amber-400"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold">Груз (кг)</span>
+                  <input
+                    type="number"
+                    value={facility.requiredPayloadKg}
+                    onChange={(e) =>
+                      setFacility({ ...facility, requiredPayloadKg: Number(e.target.value) || 1 })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-xs text-white focus:border-amber-400"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold">Сменность</span>
+                  <select
+                    value={facility.shiftsPerDay}
+                    onChange={(e) =>
+                      setFacility({ ...facility, shiftsPerDay: Number(e.target.value) })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded px-1.5 py-1 font-mono text-xs text-white focus:border-amber-400"
+                  >
+                    <option value={1}>1 смена (8ч)</option>
+                    <option value={2}>2 смены (16ч)</option>
+                    <option value={3}>3 смены (24ч)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-400 block font-semibold">ФОТ оператора (руб/мес)</span>
+                <input
+                  type="number"
+                  step="5000"
+                  value={facility.averageWorkerSalaryRub}
+                  onChange={(e) =>
+                    setFacility({
+                      ...facility,
+                      averageWorkerSalaryRub: Number(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-xs text-white focus:border-amber-400"
+                />
+              </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {eligibleRobots.map(({ robot }) => (
-                <RobotCard key={robot.id} robot={robot} />
-              ))}
+
+            {/* Simulation Calculation Parameters Panel */}
+            <SimulationParamsPanel
+              params={simulationParams}
+              onChange={setSimulationParams}
+              fleetSize={activeFleetSize}
+            />
+
+            {/* Fleet Configurator Panel (Sandbox for all 9 robots) */}
+            <FleetConfigPanel
+              mode={fleetMode}
+              onModeChange={setFleetMode}
+              aiOptimizationResult={aiOptimizationResult}
+              manualFleetCounts={manualFleetCounts}
+              onManualCountChange={handleManualCountChange}
+              facility={facility}
+              allRobots={SEED_ROBOTS}
+              onRunSimulation={handleRunSimulation}
+              isCalculating={isCalculating}
+            />
+          </div>
+        </aside>
+
+        {/* ================= ZONE 2: CENTER COLUMN (DIGITAL TWIN VIEWPORT) ================= */}
+        <section className="flex-1 flex flex-col bg-slate-950 overflow-hidden relative">
+
+          {/* Telemetry Header Strip */}
+          <div className="h-10 bg-slate-900 border-b border-slate-800 px-4 flex items-center justify-between text-xs font-mono shrink-0 shadow-sm">
+            <div className="flex items-center gap-4">
+              <span className="flex items-center gap-1.5 font-semibold text-white">
+                <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                ФАКТ КВОТЫ: <span className="text-amber-400 font-bold">{activeEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour} шт/ч</span>
+              </span>
+              <span className="text-slate-700">|</span>
+              <span className="text-slate-300">
+                ПАРК: <strong className="text-white font-bold">{activeFleetSize} ед.</strong>
+              </span>
+              <span className="text-slate-700">|</span>
+              <span className="text-slate-300">
+                СВЯЗНОСТЬ (λ₂):{' '}
+                <strong
+                  className={`font-bold ${
+                    spectralResult.algebraicConnectivity < 0.15
+                      ? 'text-red-400'
+                      : spectralResult.algebraicConnectivity < 0.35
+                      ? 'text-amber-400'
+                      : 'text-emerald-400'
+                  }`}
+                >
+                  {spectralResult.algebraicConnectivity.toFixed(3)}
+                </strong>
+              </span>
             </div>
-          )}
+
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] font-semibold text-slate-300 uppercase">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                ЦВЕТНОЙ CAD 2.5D
+              </span>
+            </div>
+          </div>
+
+          {/* Interactive Simulation Viewport Stage */}
+          <div className="flex-1 overflow-hidden relative">
+            <SimulationViewport
+              facility={facility}
+              fleetConfig={activeComposition.length > 0 ? activeComposition : selectedRobot}
+              fleetSize={activeFleetSize || (activeEconomics?.fleetSize ?? 0)}
+              targetThroughputPerHour={
+                activeEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour
+              }
+              replayFrames={replayFrames}
+            />
+          </div>
         </section>
 
-        {/* Excluded Solutions Section */}
-        <section>
-          <ExcludedRobotsAccordion excludedRobots={ineligibleRobots} />
-        </section>
-      </main>
+        {/* ================= ZONE 3: RIGHT COLUMN (ANALYTICS & FEASIBILITY) ================= */}
+        <aside
+          className={`transition-all duration-300 shrink-0 z-20 flex flex-col bg-slate-900/95 border-l border-slate-800 overflow-hidden ${
+            isRightOpen ? 'w-96 sm:w-[440px]' : 'w-0 border-l-0'
+          }`}
+        >
+          {/* Tab Switcher Header */}
+          <div className="border-b border-slate-800 bg-slate-900 p-1 flex items-center text-xs font-mono">
+            <button
+              onClick={() => setRightTab('economics')}
+              className={`flex-1 py-1.5 font-bold uppercase text-[11px] rounded transition ${
+                rightTab === 'economics'
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              3 Сценария
+            </button>
+            <button
+              onClick={() => setRightTab('xai')}
+              className={`flex-1 py-1.5 font-bold uppercase text-[11px] rounded transition ${
+                rightTab === 'xai'
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Side-by-Side и XAI
+            </button>
+            <button
+              onClick={() => setRightTab('whatif')}
+              className={`flex-1 py-1.5 font-bold uppercase text-[11px] rounded transition ${
+                rightTab === 'whatif'
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              What-If
+            </button>
+          </div>
+
+          {/* Tab Contents */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs text-slate-200">
+            {rightTab === 'economics' && selectedRobot && activeEconomics && (
+              <div className="space-y-4">
+                {/* 3-Scenario Financial Matrix */}
+                <ScenarioMatrix
+                  evaluation={activeEconomics}
+                  robot={selectedRobot}
+                  facility={facility}
+                  whatIf={whatIf}
+                  spectralResult={spectralResult}
+                />
+              </div>
+            )}
+
+            {rightTab === 'xai' && (
+              <div className="space-y-4">
+                {eligibleRobots.length > 0 && (
+                  <RobotComparisonTable
+                    robots={eligibleRobots.map((e) => e.robot)}
+                    facility={facility}
+                    whatIf={whatIf}
+                    selectedRobotId={selectedRobotId}
+                    onSelectRobot={setSelectedRobotId}
+                  />
+                )}
+
+                <ExcludedRobotsAccordion excludedRobots={ineligibleRobots} />
+              </div>
+            )}
+
+            {rightTab === 'whatif' && (
+              <div className="space-y-4">
+                <WhatIfPanel
+                  whatIf={whatIf}
+                  onChange={setWhatIf}
+                  onOpenFormulaModal={() => setIsFormulaModalOpen(true)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Legal Disclaimer Footer */}
+          <div className="p-3 border-t border-slate-800 bg-slate-950 text-[10px] text-slate-500 font-mono text-center">
+            Расчет носит предварительный индикативный характер и не является публичной офертой (п. 3.7.5 ТЗ).
+          </div>
+        </aside>
+      </div>
+
+      {/* Progress & Formula Modals */}
+      <CalculationProgressModal isOpen={isCalculating} currentStep={calculationStep} />
+      <FormulaModal isOpen={isFormulaModalOpen} onClose={() => setIsFormulaModalOpen(false)} />
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-4 right-4 z-50 bg-slate-900 border-2 border-amber-400 text-white px-4 py-2.5 text-xs font-mono rounded-lg shadow-2xl flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span className="font-bold">{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }

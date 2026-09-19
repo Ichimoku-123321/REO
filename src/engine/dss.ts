@@ -17,14 +17,14 @@ export function evaluateEligibility(
     const aisleWidthMm = facility.aisleWidthM * 1000;
     if (aisleWidthMm < robot.minAisleWidthMm) {
       reasons.push(
-        `Ширина проезда объекта (${facility.aisleWidthM} м) меньше минимального габарита робота (${robot.minAisleWidthMm} мм)`
+        `Ширина проезда ${facility.aisleWidthM} м < ${(robot.minAisleWidthMm / 1000).toFixed(1)} м`
       );
     }
 
     // 3. Грузоподъемность
     if (facility.requiredPayloadKg > robot.payloadKg) {
       reasons.push(
-        `Требуемая нагрузка (${facility.requiredPayloadKg} кг) превышает грузоподъемность робота (${robot.payloadKg} кг)`
+        `Нагрузка ${facility.requiredPayloadKg} кг > ${robot.payloadKg} кг`
       );
     }
 
@@ -36,7 +36,7 @@ export function evaluateEligibility(
       facilityMax > robot.operatingTempRange.max
     ) {
       reasons.push(
-        `Рабочая температура объекта выйдет за допустимый диапазон эксплуатации (${robot.operatingTempRange.min}°C .. ${robot.operatingTempRange.max}°C)`
+        `Температура [${facilityMin}..${facilityMax}°C] вне [${robot.operatingTempRange.min}..${robot.operatingTempRange.max}°C]`
       );
     }
 
@@ -58,4 +58,12 @@ export function evaluateEligibility(
     }
     return a.robot.capexCostRub - b.robot.capexCostRub;
   });
+}
+
+export function isRobotEligible(
+  facility: FacilityRequirements,
+  robot: Robot
+): { isEligible: boolean; exclusionReasons: string[] } {
+  const evaluated = evaluateEligibility(facility, [robot]);
+  return evaluated[0].result;
 }

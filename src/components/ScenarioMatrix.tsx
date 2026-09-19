@@ -47,39 +47,25 @@ export const ScenarioMatrix: React.FC<ScenarioMatrixProps> = ({
   };
 
   return (
-    <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-6 shadow-md mb-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-emerald-400" />
-            3-Сценарная финансовая матрица (Шаг 5)
+    <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 shadow-md mb-4 space-y-4">
+      <div className="flex flex-col gap-2 border-b border-slate-700/80 pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            3-Сценарная финансовая матрица
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Детальное сравнение моделей для выбранного робота: <strong className="text-slate-200">{robot.model}</strong> ({robot.vendor}) — Парк: <strong className="text-blue-400">{evaluation.fleetSize} шт.</strong>
-          </p>
+          <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-semibold px-2 py-0.5 rounded">
+            {recommendedScenario === 'capexPurchase' ? 'Покупка (CAPEX)' : recommendedScenario === 'raas' ? 'RaaS Подписка' : 'As-Is'}
+          </span>
         </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-emerald-400 text-xs font-semibold">
-            <Award className="w-4 h-4 text-emerald-400" />
-            <span>
-              Рекомендация: {recommendedScenario === 'capexPurchase' ? 'Покупка парка (CAPEX)' : recommendedScenario === 'raas' ? 'Сервисная модель (RaaS)' : 'Базовый (Как есть)'}
-            </span>
-          </div>
-
-          <button
-            onClick={handleDownloadPdf}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-blue-500/20 transition"
-          >
-            <FileText className="w-4 h-4" />
-            <span>📄 Скачать ТЭО (PDF)</span>
-          </button>
-        </div>
+        <p className="text-[11px] text-slate-400">
+          Выбранный модель: <strong className="text-slate-200">{robot.model}</strong> — Флот: <strong className="text-amber-400">{evaluation.fleetSize} ед.</strong>
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-3.5">
         {/* Scenario 1: As-Is */}
-        <div className={`p-5 rounded-xl border flex flex-col justify-between ${
+        <div className={`p-3.5 rounded-xl border flex flex-col justify-between ${
           recommendedScenario === 'asIs'
             ? 'bg-blue-950/30 border-blue-500 shadow-lg shadow-blue-500/10 ring-1 ring-blue-500'
             : 'bg-slate-900/60 border-slate-700/80'

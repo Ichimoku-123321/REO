@@ -1,6 +1,9 @@
 import React from 'react';
 import type { Robot } from '../types/robot.js';
+import type { FacilityRequirements } from '../types/facility.js';
 import type { FleetCompositionItem, HeterogeneousOptimizationResult } from '../engine/fleet_optimizer.js';
+import { SEED_ROBOTS } from '../data/robots.seed.js';
+import { isRobotEligible } from '../engine/dss.js';
 import {
   Sparkles,
   Sliders,
@@ -10,6 +13,7 @@ import {
   Minus,
   Bot,
   Percent,
+  AlertTriangle,
 } from 'lucide-react';
 
 export type FleetConfigMode = 'ai' | 'manual';
@@ -20,7 +24,9 @@ interface FleetConfigPanelProps {
   aiOptimizationResult: HeterogeneousOptimizationResult;
   manualFleetCounts: Record<string, number>;
   onManualCountChange: (robotId: string, count: number) => void;
-  eligibleRobots: Robot[];
+  facility: FacilityRequirements;
+  allRobots?: Robot[];
+  eligibleRobots?: Robot[];
   onRunSimulation: () => void;
   isCalculating: boolean;
 }
@@ -31,7 +37,8 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
   aiOptimizationResult,
   manualFleetCounts,
   onManualCountChange,
-  eligibleRobots,
+  facility,
+  allRobots = SEED_ROBOTS,
   onRunSimulation,
   isCalculating,
 }) => {
@@ -120,35 +127,38 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
         </div>
       )}
 
-      {/* Mode 2: Manual Selection Grid */}
+      {/* Mode 2: Manual Selection Grid (All 9 Sandbox Robots) */}
       {mode === 'manual' && (
         <div className="bg-slate-900/80 border border-slate-700/80 rounded-xl p-4 mb-5">
           <p className="text-xs font-bold text-slate-300 mb-3">
-            Выберите модели роботов из каталога и укажите их количество:
+            Песочница моделей (все 9 роботов из базы):
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {eligibleRobots.map((robot) => {
+          <div className="grid grid-cols-1 gap-2.5">
+            {allRobots.map((robot) => {
               const currentCount = manualFleetCounts[robot.id] || 0;
               const isSelected = currentCount > 0;
+              const { isEligible, exclusionReasons } = isRobotEligible(facility, robot);
 
               return (
                 <div
                   key={robot.id}
                   className={`border rounded-xl p-3 transition-all ${
-                    isSelected
+                    !isEligible
+                      ? 'bg-amber-950/20 border-amber-500/70'
+                      : isSelected
                       ? 'bg-blue-950/40 border-blue-500/60 shadow-md'
                       : 'bg-slate-800/60 border-slate-700 hover:border-slate-600'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-2 overflow-hidden">
                       <button
                         type="button"
                         onClick={() =>
                           onManualCountChange(robot.id, isSelected ? 0 : 1)
                         }
-                        className={`w-5 h-5 rounded flex items-center justify-center border transition-all ${
+                        className={`w-5 h-5 rounded shrink-0 flex items-center justify-center border transition-all ${
                           isSelected
                             ? 'bg-blue-600 border-blue-500 text-white'
                             : 'border-slate-600 bg-slate-800'
@@ -156,20 +166,30 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
                       >
                         {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                       </button>
-                      <div>
-                        <p className="text-xs font-bold text-slate-100 leading-tight">
+                      <div className="truncate">
+                        <p className="text-xs font-bold text-slate-100 leading-tight truncate">
                           {robot.model}
                         </p>
-                        <p className="text-[10px] text-slate-400">{robot.vendor}</p>
+                        <p className="text-[10px] text-slate-400 truncate">{robot.vendor}</p>
                       </div>
                     </div>
 
-                    <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
+                    <span className="text-[10px] shrink-0 bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
                       до {robot.payloadKg} кг
                     </span>
                   </div>
 
-                  {/* Count Stepper Control */}
+                  {/* Warning Badge if Ineligible */}
+                  {!isEligible && (
+                    <div className="mb-2 p-1.5 bg-amber-500/10 border border-amber-500/30 rounded text-[10px] text-amber-300 font-medium leading-tight flex items-start gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                      <span>
+                        ⚠️ Ограничение: {exclusionReasons[0]}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Count Stepper Control (unblocked) */}
                   <div className="flex items-center justify-between pt-2 border-t border-slate-700/60">
                     <span className="text-[11px] text-slate-400">Количество:</span>
                     <div className="flex items-center gap-1.5">

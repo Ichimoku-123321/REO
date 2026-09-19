@@ -4,7 +4,6 @@ import type { SpectralAnalysisResult } from '../engine/spectral_analyzer.js';
 import {
   Play,
   Pause,
-  RotateCcw,
   Zap,
   Activity,
   Gauge,
@@ -20,7 +19,6 @@ import {
 interface SimulationControlsProps {
   isPlaying: boolean;
   onTogglePlayPause: () => void;
-  onReset: () => void;
   speedMultiplier: number;
   onSpeedChange: (speed: number) => void;
   currentTimestampSec: number;
@@ -41,7 +39,6 @@ interface SimulationControlsProps {
 export const SimulationControls: React.FC<SimulationControlsProps> = ({
   isPlaying,
   onTogglePlayPause,
-  onReset,
   speedMultiplier,
   onSpeedChange,
   currentTimestampSec,
@@ -62,10 +59,15 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   const speedOptions = [1, 2, 5, 10];
 
   const formatTime = (totalSeconds: number): string => {
-    const mins = Math.floor(totalSeconds / 60);
+    const hrs = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
     const secs = Math.floor(totalSeconds % 60);
     const mm = mins.toString().padStart(2, '0');
     const ss = secs.toString().padStart(2, '0');
+    if (totalDurationSec > 3600 || hrs > 0) {
+      const hh = hrs.toString().padStart(2, '0');
+      return `${hh}:${mm}:${ss}`;
+    }
     return `${mm}:${ss}`;
   };
 
@@ -131,7 +133,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
 
       {/* 2. Top Playback & HUD Control Row */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-        {/* Play/Pause & Reset Buttons */}
+        {/* Play/Pause Button */}
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -156,20 +158,6 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                 <span>Старт</span>
               </>
             )}
-          </button>
-
-          <button
-            type="button"
-            onClick={onReset}
-            disabled={isDisabled}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold text-xs border transition-all ${
-              isDisabled
-                ? 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
-                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
-            }`}
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Сброс</span>
           </button>
         </div>
 

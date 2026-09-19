@@ -32,7 +32,6 @@ interface SimulationViewportProps {
   fleetSize: number;
   targetThroughputPerHour: number;
   replayFrames?: SimulationReplayFrame[];
-  onResetReplay?: () => void;
 }
 
 const DEFAULT_TELEMETRY: SimulationTelemetry = {
@@ -63,7 +62,6 @@ export function SimulationViewport({
   fleetSize,
   targetThroughputPerHour,
   replayFrames = [],
-  onResetReplay,
 }: SimulationViewportProps) {
   const outerContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -145,17 +143,6 @@ export function SimulationViewport({
     lastProcessedFrameIndexRef.current = -1;
   }, [replayFrames]);
 
-  const handleReset = useCallback(() => {
-    setCurrentTimeSec(0);
-    lastProcessedFrameIndexRef.current = -1;
-    if (engineRef.current) {
-      engineRef.current.initializeFleet();
-      setTelemetry(engineRef.current.getTelemetry(targetThroughputPerHour));
-    }
-    if (onResetReplay) {
-      onResetReplay();
-    }
-  }, [targetThroughputPerHour, onResetReplay]);
 
   const handleResetGrid = useCallback(() => {
     const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
@@ -535,12 +522,24 @@ export function SimulationViewport({
 
     const agentMeshMap = new Map<string, AgentMeshGroup>();
 
-    const getHaloColor = (state: AgentFSMState, isQueued: boolean): number => {
-      if (isQueued) return 0xf59e0b; // Amber for queued
-      switch (state) {
+    const getHaloColorFromSnapshot = (a0: {
+      state: AgentFSMState;
+      isQueued?: boolean;
+      isDeadlocked?: boolean;
+      speedMps?: number;
+    }): number => {
+      if (a0.isDeadlocked) {
+        return 0xef4444; // Red for deadlock
+      }
+      const hasActiveTask = a0.state !== 'IDLE' && a0.state !== 'CHARGING';
+      const isSlowMoving = hasActiveTask && typeof a0.speedMps === 'number' && a0.speedMps < 0.05;
+      if (a0.isQueued || isSlowMoving) {
+        return 0xf59e0b; // Yellow/Amber for queue or slow movement
+      }
+      switch (a0.state) {
         case 'TRANSPORTING':
         case 'MOVING_TO_PICKUP':
-          return 0x10b981; // Green
+          return 0x10b981; // Green for normal moving
         case 'LOADING':
         case 'UNLOADING':
           return 0xf59e0b; // Amber
@@ -712,34 +711,10 @@ export function SimulationViewport({
                 meshGroup.group.rotation.y = -interpHeading + Math.PI / 2;
               }
 
-              const colorHex = getHaloColor(a0.state, false);
+              const colorHex = getHaloColorFromSnapshot(a0);
               meshGroup.haloMat.color.setHex(colorHex);
               meshGroup.cargoMesh.visible = a0.cargoPayload;
             }
-          } else if (engineRef.current) {
-            // Real-time Physics Fallback if replayFrames not yet generated
-            const dtSim = Math.min(0.1, deltaReal) * speedMultiplier;
-            engineRef.current.update(dtSim);
-
-            const agents = engineRef.current.agents;
-            agents.forEach((agent) => {
-              let meshGroup = agentMeshMap.get(agent.id);
-              if (!meshGroup) {
-                meshGroup = createRobotMeshGroup();
-                agentMeshMap.set(agent.id, meshGroup);
-              }
-
-              if (Number.isFinite(agent.x) && Number.isFinite(agent.y)) {
-                meshGroup.group.position.set(agent.x, 0, agent.y);
-              }
-              if (Number.isFinite(agent.headingRad)) {
-                meshGroup.group.rotation.y = -agent.headingRad + Math.PI / 2;
-              }
-
-              const colorHex = getHaloColor(agent.state, agent.isQueued);
-              meshGroup.haloMat.color.setHex(colorHex);
-              meshGroup.cargoMesh.visible = agent.cargoPayload;
-            });
           }
 
           return nextTime;
@@ -905,7 +880,6 @@ export function SimulationViewport({
           audioEngine.initAudioContext();
           setIsPlaying((prev) => !prev);
         }}
-        onReset={handleReset}
         speedMultiplier={speedMultiplier}
         onSpeedChange={setSpeedMultiplier}
         currentTimestampSec={currentTimeSec}

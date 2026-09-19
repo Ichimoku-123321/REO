@@ -368,7 +368,6 @@ export default function App() {
             activeEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour
           }
           replayFrames={replayFrames}
-          onResetReplay={() => setReplayFrames([])}
         />
 
         {/* Formula Assumptions Modal */}

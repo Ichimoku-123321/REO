@@ -85,16 +85,24 @@ export const ScenarioMatrix: React.FC<ScenarioMatrixProps> = ({
           <div className="p-2 grid grid-cols-3 gap-1 items-center bg-[#D4AF37]/10">
             <span className="text-[#1A1A1A] font-bold text-[10px] truncate">Окупаемость</span>
             <span className="text-[#4F4F47] text-center truncate">—</span>
-            <span className="font-bold text-[#8A6826] text-right truncate">
-              {capexPurchase.paybackYears !== null ? `${capexPurchase.paybackYears.toFixed(1)} г.` : '>5 лет'}
+            <span className={`font-bold text-right truncate ${evaluation.isQuotaDeficit ? 'text-rose-700 text-[10px]' : 'text-[#8A6826]'}`}>
+              {evaluation.isQuotaDeficit
+                ? 'План сорван'
+                : capexPurchase.paybackYears !== null
+                ? `${capexPurchase.paybackYears.toFixed(1)} г.`
+                : '>5 лет'}
             </span>
           </div>
 
           <div className="p-2 grid grid-cols-3 gap-1 items-center">
             <span className="text-[#4F4F47] text-[10px] truncate">5-летний ROI</span>
             <span className="text-[#4F4F47] text-center truncate">—</span>
-            <span className="font-bold text-emerald-800 text-right truncate">
-              {capexPurchase.fiveYearRoi !== null ? `${capexPurchase.fiveYearRoi.toFixed(0)}%` : '—'}
+            <span className={`font-bold text-right truncate ${evaluation.isQuotaDeficit ? 'text-rose-700 text-[10px]' : 'text-emerald-800'}`}>
+              {evaluation.isQuotaDeficit
+                ? 'План сорван'
+                : capexPurchase.fiveYearRoi !== null
+                ? `${capexPurchase.fiveYearRoi.toFixed(0)}%`
+                : '—'}
             </span>
           </div>
 

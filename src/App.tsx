@@ -51,6 +51,16 @@ export default function App() {
     targetReplayFramesCount: 7200,
   });
 
+  const handleSimulationParamsChange = useCallback((updated: SimulationParams) => {
+    setSimulationParams(updated);
+    setFacility((prev) => {
+      if (prev.targetThroughputPerHour !== updated.targetHourlyQuota) {
+        return { ...prev, targetThroughputPerHour: updated.targetHourlyQuota };
+      }
+      return prev;
+    });
+  }, []);
+
   useEffect(() => {
     setSimulationParams((prev) => ({
       ...prev,
@@ -86,6 +96,7 @@ export default function App() {
     if (preset) {
       setActivePresetId(preset.id);
       setFacility(preset.requirements);
+      setReplayFrames([]);
       showToast(`Применен пресет объекта «${preset.name}»`);
     }
   };
@@ -257,7 +268,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen w-screen overflow-hidden text-[#1A1A1A] bg-[#F9F9F6] font-sans select-none flex flex-col rounded-none">
+    <div className="h-screen w-screen overflow-hidden text-[#1A1A1A] bg-[#F9F9F6] font-sans flex flex-col rounded-none">
       {/* ================= HEADER BAR (docs/reo.html style) ================= */}
       <header className="h-12 bg-[#FFFFFF] border-b border-[#D4AF37]/40 px-4 flex items-center justify-between z-30 shrink-0 shadow-xs rounded-none">
 
@@ -440,7 +451,7 @@ export default function App() {
             {/* Simulation Calculation Parameters Panel */}
             <SimulationParamsPanel
               params={simulationParams}
-              onChange={setSimulationParams}
+              onChange={handleSimulationParamsChange}
               fleetSize={activeFleetSize}
             />
 
@@ -596,7 +607,7 @@ export default function App() {
 
           {/* Legal Disclaimer Footer */}
           <div className="p-3 border-t border-[#D4AF37]/30 bg-[#FFFFFF] text-[10px] text-[#4F4F47] font-mono text-center rounded-none">
-            Расчет носит предварительный индикативный характер и не является публичной офертой (п. 3.7.5 ТЗ).
+            Расчет носит предварительный индикативный характер и не является публичной офертой.
           </div>
         </aside>
       </div>

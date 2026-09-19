@@ -37,6 +37,9 @@ export interface EconomicEvaluation {
   manualStaffCount: number;
   retainedSupervisorsCount: number;
   trafficEfficiencyEta?: number;
+  totalFleetThroughput?: number;
+  quotaFulfilledPercent?: number;
+  isQuotaDeficit?: boolean;
   asIs: ScenarioMetrics;
   capexPurchase: ScenarioMetrics;
   raas: ScenarioMetrics;
@@ -75,7 +78,7 @@ export function calculateFleetSize(
  */
 export function calculateCompositionEconomics(
   facility: FacilityRequirements,
-  composition: Array<{ robot: Robot; count: number; totalCapexRub: number; totalAnnualOpexRub: number; fiveYearTcoRub: number }>,
+  composition: Array<{ robot: Robot; count: number; totalThroughputPerHour: number; totalCapexRub: number; totalAnnualOpexRub: number; fiveYearTcoRub: number }>,
   whatIf: WhatIfParams = DEFAULT_WHAT_IF_PARAMS
 ): EconomicEvaluation {
   const effectiveThroughput = Math.max(
@@ -118,6 +121,16 @@ export function calculateCompositionEconomics(
     fiveYearTco: asIsFiveYearTco,
   };
 
+  // Calculate total fleet throughput and quota fulfillment
+  const totalFleetThroughput = composition.reduce(
+    (sum, item) => sum + item.totalThroughputPerHour,
+    0
+  );
+  const quotaFulfilledPercent = Math.round(
+    (totalFleetThroughput / effectiveThroughput) * 100
+  );
+  const isQuotaDeficit = quotaFulfilledPercent < 90;
+
   // 2. CAPEX Purchase Scenario
   const capexPurchaseTotalCapex = composition.reduce((sum, item) => sum + item.totalCapexRub, 0);
 
@@ -134,7 +147,11 @@ export function calculateCompositionEconomics(
   let verdict: FeasibilityVerdict = 'red';
   let verdictText = 'Низкая окупаемость, ручной труд выгоднее';
 
-  if (capexPurchaseNetSavings > 0 && capexPurchaseTotalCapex > 0) {
+  if (isQuotaDeficit) {
+    verdict = 'red';
+    const deficitAmount = Math.max(0, Math.round(effectiveThroughput - totalFleetThroughput));
+    verdictText = `⚠️ Критический дефицит мощности: выбранный парк закрывает лишь ${quotaFulfilledPercent}% от плановой квоты (дефицит ${deficitAmount} шт/ч). Требуется увеличить парк или снизить квоту.`;
+  } else if (capexPurchaseNetSavings > 0 && capexPurchaseTotalCapex > 0) {
     capexPaybackYears = capexPurchaseTotalCapex / capexPurchaseNetSavings;
     capexFiveYearRoi =
       ((capexPurchaseNetSavings * 5 - capexPurchaseTotalCapex) / capexPurchaseTotalCapex) * 100;
@@ -210,6 +227,9 @@ export function calculateCompositionEconomics(
     manualStaffCount,
     retainedSupervisorsCount,
     trafficEfficiencyEta: 1.0,
+    totalFleetThroughput,
+    quotaFulfilledPercent,
+    isQuotaDeficit,
     asIs,
     capexPurchase,
     raas,

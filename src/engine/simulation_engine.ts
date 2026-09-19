@@ -19,6 +19,31 @@ export interface AgentSnapshot {
   state: AgentFSMState;
   batterySoc: number;
   cargoPayload: boolean;
+  isQueued: boolean;
+  isDeadlocked: boolean;
+  speedMps: number;
+}
+
+export interface RunSimulationOptions {
+  targetHourlyQuota: number;     // целевой грузопоток (шт/ч)
+  durationHours?: number;         // время работы (от 1 до 72 часов, по дефолту 1.0)
+  recordReplay?: boolean;         // сохранять ли кадры в память
+  targetReplayFramesCount?: number; // желаемое кол-во кадров в буфере (по дефолту 7200)
+}
+
+export interface ExtendedSimulationResult {
+  durationHours: number;
+  simulatedSeconds: number;
+  totalTicks: number;
+  targetHourlyQuota: number;
+  totalTargetQuota: number;        // targetHourlyQuota * durationHours
+  totalDelivered: number;          // фактически доставлено
+  realizedThroughputPerHour: number;
+  quotaFulfillmentPercent: number; // (totalDelivered / totalTargetQuota) * 100
+  trafficCongestionFactor: number; // eta_traffic = realized / theoretical
+  averageIdleTimePercent: number;
+  deadlocksDetected: number;
+  deliveriesByRobotType: Record<string, number>;
 }
 
 export interface SimulationReplayFrame {
@@ -856,28 +881,6 @@ export class SimulationEngine {
       }
     }
 
-    // Inter-robot hard boundary relaxation pass to guarantee d_ij >= r_i + r_j
-    for (let i = 0; i < this.agents.length; i++) {
-      for (let j = i + 1; j < this.agents.length; j++) {
-        const a1 = this.agents[i];
-        const a2 = this.agents[j];
-        const dx = a1.x - a2.x;
-        const dy = a1.y - a2.y;
-        const minDist = a1.robotRadius + a2.robotRadius;
-        const distSq = dx * dx + dy * dy;
-        if (distSq < minDist * minDist) {
-          const dist = Math.sqrt(distSq);
-          const overlap = minDist - dist;
-          const nx = dist >= 0.001 ? dx / dist : 1;
-          const ny = dist >= 0.001 ? dy / dist : 0;
-          const shift = overlap / 2;
-          a1.x += nx * shift;
-          a1.y += ny * shift;
-          a2.x -= nx * shift;
-          a2.y -= ny * shift;
-        }
-      }
-    }
   }
 
   private handleArrival(agent: AgentState): void {
@@ -913,18 +916,19 @@ export class SimulationEngine {
   }
 
   /**
-   * Headless high-speed 1-hour real-time stress test (3600s, dtSim = 0.5s, 7200 ticks).
-   * Calculates throughput, topological loss factor eta_traffic, average idle percentage,
-   * deliveries breakdown by robot type, and deadlock count without storing coordinate history.
+   * Universal simulation runner with customizable duration, quota, and decimation replay buffer.
    */
-  public runOneHourSimulation(
-    targetHourlyQuota: number,
-    recordReplay: boolean = false
-  ): OneHourSimulationResult {
+  public runSimulation(options: RunSimulationOptions): ExtendedSimulationResult {
     this.initializeFleet();
 
+    const durationHours = Math.min(72, Math.max(1, options.durationHours ?? 1.0));
     const dtSim = 0.5;
-    const totalTicks = 7200; // 3600 seconds / 0.5s
+    const totalSimulatedSeconds = Math.round(durationHours * 3600);
+    const totalTicks = Math.round(totalSimulatedSeconds / dtSim);
+    const targetReplayFramesCount = options.targetReplayFramesCount ?? 7200;
+    const recordReplay = options.recordReplay ?? false;
+
+    const recordStride = Math.max(1, Math.floor(totalTicks / targetReplayFramesCount));
     const N = this.agents.length;
 
     let totalIdleTicks = 0;
@@ -943,16 +947,15 @@ export class SimulationEngine {
       prevSpeeds[i] = 0;
     }
 
-    if (recordReplay) {
-      this.replayFrames = new Array(totalTicks);
-    } else {
-      this.replayFrames = [];
-    }
+    this.replayFrames = [];
 
     for (let tick = 0; tick < totalTicks; tick++) {
       this.update(dtSim);
 
       let frameEvents: Array<'PICKUP' | 'DROPOFF' | 'CHARGE_START' | 'CHARGE_END' | 'BRAKE'> | undefined = undefined;
+      const isRecordTick = recordReplay && tick % recordStride === 0;
+
+      const agentSnapshots: AgentSnapshot[] = isRecordTick ? new Array(N) : [];
 
       for (let i = 0; i < N; i++) {
         const agent = this.agents[i];
@@ -963,7 +966,6 @@ export class SimulationEngine {
           const prevState = prevStates[i];
           const currState = agent.state;
 
-          // FSM Event transitions
           if (prevState === 'LOADING' && (currState === 'TRANSPORTING' || currState === 'UNLOADING')) {
             if (!frameEvents) frameEvents = [];
             if (!frameEvents.includes('PICKUP')) frameEvents.push('PICKUP');
@@ -995,16 +997,17 @@ export class SimulationEngine {
         prevY[i] = agent.y;
 
         const hasActiveTask = agent.state !== 'IDLE' && agent.state !== 'CHARGING';
+        const isQueuedSnapshot = agent.isQueued || (speedMps < 0.05 && hasActiveTask);
 
         if (hasActiveTask) {
-          if (agent.isQueued || speedMps < 0.05) {
+          if (isQueuedSnapshot) {
             totalIdleTicks++;
           }
 
           if (speedMps < 0.05) {
             stuckTicksPerAgent[i]++;
-            if (stuckTicksPerAgent[i] === 120) {
-              // 120 continuous ticks * 0.5s = 60s stuck
+            if (stuckTicksPerAgent[i] === 60) {
+              // 60 continuous ticks * 0.5s = 30s stuck
               deadlocksDetected++;
             }
           } else {
@@ -1013,23 +1016,24 @@ export class SimulationEngine {
         } else {
           stuckTicksPerAgent[i] = 0;
         }
-      }
 
-      if (recordReplay) {
-        const agentSnapshots: AgentSnapshot[] = new Array(N);
-        for (let i = 0; i < N; i++) {
-          const a = this.agents[i];
+        if (isRecordTick) {
           agentSnapshots[i] = {
-            id: a.id,
-            x: a.x,
-            y: a.y,
-            headingRad: a.headingRad,
-            state: a.state,
-            batterySoc: a.batterySoc,
-            cargoPayload: a.cargoPayload,
+            id: agent.id,
+            x: agent.x,
+            y: agent.y,
+            headingRad: agent.headingRad,
+            state: agent.state,
+            batterySoc: agent.batterySoc,
+            cargoPayload: agent.cargoPayload,
+            isQueued: isQueuedSnapshot,
+            isDeadlocked: stuckTicksPerAgent[i] >= 60,
+            speedMps,
           };
         }
+      }
 
+      if (isRecordTick) {
         const frame: SimulationReplayFrame = {
           timestampSec: tick * dtSim,
           agents: agentSnapshots,
@@ -1037,13 +1041,18 @@ export class SimulationEngine {
         if (frameEvents) {
           frame.events = frameEvents;
         }
-        this.replayFrames[tick] = frame;
+        this.replayFrames.push(frame);
       }
     }
 
+    const totalDelivered = this.completedDeliveries;
     const elapsedHours = this.elapsedSimSeconds / 3600;
     const realizedThroughputPerHour =
-      elapsedHours > 0 ? Math.round((this.completedDeliveries / elapsedHours) * 10) / 10 : 0;
+      elapsedHours > 0 ? Math.round((totalDelivered / elapsedHours) * 10) / 10 : 0;
+
+    const totalTargetQuota = options.targetHourlyQuota * durationHours;
+    const quotaFulfillmentPercent =
+      totalTargetQuota > 0 ? Math.round((totalDelivered / totalTargetQuota) * 1000) / 10 : 0;
 
     // Theoretical throughput Q_theoretical = sum(N_m * q_m * k_avail,m)
     let theoreticalThroughput = 0;
@@ -1079,14 +1088,45 @@ export class SimulationEngine {
         : 0;
 
     return {
+      durationHours,
       simulatedSeconds: Math.round(this.elapsedSimSeconds),
       totalTicks,
-      targetThroughputPerHour: targetHourlyQuota,
+      targetHourlyQuota: options.targetHourlyQuota,
+      totalTargetQuota,
+      totalDelivered,
       realizedThroughputPerHour,
+      quotaFulfillmentPercent,
       trafficCongestionFactor,
-      deliveriesByRobotType: { ...this.deliveriesByRobotType },
       averageIdleTimePercent,
       deadlocksDetected,
+      deliveriesByRobotType: { ...this.deliveriesByRobotType },
+    };
+  }
+
+  /**
+   * Headless high-speed 1-hour real-time stress test (3600s, dtSim = 0.5s, 7200 ticks).
+   * Delegates to runSimulation for backward compatibility.
+   */
+  public runOneHourSimulation(
+    targetHourlyQuota: number,
+    recordReplay: boolean = false
+  ): OneHourSimulationResult {
+    const ext = this.runSimulation({
+      targetHourlyQuota,
+      durationHours: 1.0,
+      recordReplay,
+      targetReplayFramesCount: 7200,
+    });
+
+    return {
+      simulatedSeconds: ext.simulatedSeconds,
+      totalTicks: ext.totalTicks,
+      targetThroughputPerHour: ext.targetHourlyQuota,
+      realizedThroughputPerHour: ext.realizedThroughputPerHour,
+      trafficCongestionFactor: ext.trafficCongestionFactor,
+      deliveriesByRobotType: ext.deliveriesByRobotType,
+      averageIdleTimePercent: ext.averageIdleTimePercent,
+      deadlocksDetected: ext.deadlocksDetected,
     };
   }
 

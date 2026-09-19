@@ -203,3 +203,39 @@ test('Simulation Engine: Congestion detection flag when agents queue up', () => 
   assert.equal(telemetry.congestionDetected, true);
   assert.equal(telemetry.queuedCount, 2);
 });
+
+test('Simulation Engine: runSimulation with custom duration, quota and frame decimation', () => {
+  const topology = generateFacilityTopology(mockFacility);
+  const robot = SEED_ROBOTS[0];
+  const engine = new SimulationEngine(topology, robot, 3);
+
+  const options = {
+    targetHourlyQuota: 50,
+    durationHours: 2.0,
+    recordReplay: true,
+    targetReplayFramesCount: 7200,
+  };
+
+  const res = engine.runSimulation(options);
+
+  assert.equal(res.durationHours, 2.0);
+  assert.equal(res.simulatedSeconds, 7200);
+  assert.equal(res.totalTicks, 14400);
+  assert.equal(res.targetHourlyQuota, 50);
+  assert.equal(res.totalTargetQuota, 100);
+  assert.ok(res.totalDelivered >= 0);
+  assert.ok(res.realizedThroughputPerHour >= 0);
+  assert.ok(res.quotaFulfillmentPercent >= 0);
+  assert.ok(res.trafficCongestionFactor >= 0 && res.trafficCongestionFactor <= 1.0);
+
+  // Decimation check: 14400 ticks with target 7200 frames => stride = 2 => exactly 7200 frames recorded
+  assert.equal(engine.replayFrames.length, 7200);
+  assert.equal(engine.replayFrames[0].timestampSec, 0);
+  assert.equal(engine.replayFrames[1].timestampSec, 1.0);
+
+  // Verify AgentSnapshot extended fields
+  const sampleAgent = engine.replayFrames[0].agents[0];
+  assert.ok(typeof sampleAgent.isQueued === 'boolean');
+  assert.ok(typeof sampleAgent.isDeadlocked === 'boolean');
+  assert.ok(typeof sampleAgent.speedMps === 'number');
+});

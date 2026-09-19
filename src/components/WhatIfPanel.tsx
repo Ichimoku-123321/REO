@@ -1,6 +1,6 @@
 import React from 'react';
 import type { WhatIfParams } from '../engine/economics.js';
-import { Sliders, RotateCcw, Info } from 'lucide-react';
+import { Sliders, RotateCcw } from 'lucide-react';
 
 interface WhatIfPanelProps {
   whatIf: WhatIfParams;
@@ -34,57 +34,30 @@ export const WhatIfPanel: React.FC<WhatIfPanelProps> = ({
   };
 
   return (
-    <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-6 shadow-md mb-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <Sliders className="w-5 h-5 text-purple-400" />
-            Интерактивный Что-Если Анализ (Шаг 6)
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Моделирование сценариев с изменением внешних макроэкономических факторов
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onOpenFormulaModal}
-            className="flex items-center gap-2 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-          >
-            <Info className="w-4 h-4" />
-            <span>Исходные предпосылки и формулы</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleReset}
-            className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Сброс</span>
-          </button>
-        </div>
+    <div className="bg-[#FFFFFF] border border-[#D4AF37]/30 p-3 space-y-3 rounded-none text-xs text-[#1A1A1A]">
+      <div className="flex items-center justify-between border-b border-[#D4AF37]/20 pb-1.5 rounded-none">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#8A6826] flex items-center gap-1.5">
+          <Sliders className="w-3.5 h-3.5 text-[#8A6826]" />
+          Анализ чувствительности (What-If)
+        </h3>
+        <button
+          type="button"
+          onClick={handleReset}
+          className="flex items-center gap-1 text-[10px] text-[#8A6826] hover:text-[#1A1A1A] font-mono cursor-pointer"
+        >
+          <RotateCcw className="w-3 h-3" />
+          <span>Сброс</span>
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="space-y-3 rounded-none">
         {/* Slider 1: Salary modifier */}
-        <div className="bg-slate-900/60 p-4 rounded-lg border border-slate-700/50">
-          <div className="flex justify-between items-center mb-2">
-            <label className="text-xs font-semibold text-slate-300">
-              Изменение ФОТ оператора
-            </label>
-            <span
-              className={`text-xs font-bold px-2 py-0.5 rounded ${
-                whatIf.salaryChangePercent > 0
-                  ? 'bg-rose-500/20 text-rose-400'
-                  : whatIf.salaryChangePercent < 0
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : 'bg-slate-700 text-slate-300'
-              }`}
-            >
+        <div className="p-2.5 bg-[#F4F4F0] border border-[#D4AF37]/20 rounded-none">
+          <div className="flex justify-between items-center mb-1 font-mono text-[11px]">
+            <span className="text-[#4F4F47]">Индексация зарплат ФОТ:</span>
+            <strong className="text-[#8A6826] font-bold">
               {whatIf.salaryChangePercent > 0 ? `+${whatIf.salaryChangePercent}%` : `${whatIf.salaryChangePercent}%`}
-            </span>
+            </strong>
           </div>
           <input
             type="range"
@@ -93,24 +66,15 @@ export const WhatIfPanel: React.FC<WhatIfPanelProps> = ({
             step="5"
             value={whatIf.salaryChangePercent}
             onChange={handleSalaryChange}
-            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+            className="w-full accent-[#D4AF37] cursor-pointer"
           />
-          <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-            <span>-30%</span>
-            <span>0%</span>
-            <span>+50%</span>
-          </div>
         </div>
 
         {/* Slider 2: Target Throughput modifier */}
-        <div className="bg-slate-900/60 p-4 rounded-lg border border-slate-700/50">
-          <div className="flex justify-between items-center mb-2">
-            <label className="text-xs font-semibold text-slate-300">
-              Изменение целевого объема
-            </label>
-            <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-400">
-              {whatIf.throughputChangePercent}%
-            </span>
+        <div className="p-2.5 bg-[#F4F4F0] border border-[#D4AF37]/20 rounded-none">
+          <div className="flex justify-between items-center mb-1 font-mono text-[11px]">
+            <span className="text-[#4F4F47]">Масштаб грузопотока:</span>
+            <strong className="text-[#8A6826] font-bold">{whatIf.throughputChangePercent}%</strong>
           </div>
           <input
             type="range"
@@ -119,24 +83,15 @@ export const WhatIfPanel: React.FC<WhatIfPanelProps> = ({
             step="10"
             value={whatIf.throughputChangePercent}
             onChange={handleThroughputChange}
-            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            className="w-full accent-[#D4AF37] cursor-pointer"
           />
-          <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-            <span>50%</span>
-            <span>100%</span>
-            <span>200%</span>
-          </div>
         </div>
 
         {/* Slider 3: CAPEX Discount */}
-        <div className="bg-slate-900/60 p-4 rounded-lg border border-slate-700/50">
-          <div className="flex justify-between items-center mb-2">
-            <label className="text-xs font-semibold text-slate-300">
-              Скидка / Субсидия на CAPEX
-            </label>
-            <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
-              {whatIf.capexDiscountPercent}%
-            </span>
+        <div className="p-2.5 bg-[#F4F4F0] border border-[#D4AF37]/20 rounded-none">
+          <div className="flex justify-between items-center mb-1 font-mono text-[11px]">
+            <span className="text-[#4F4F47]">Субсидия / Скидка CAPEX:</span>
+            <strong className="text-[#8A6826] font-bold">{whatIf.capexDiscountPercent}%</strong>
           </div>
           <input
             type="range"
@@ -145,15 +100,18 @@ export const WhatIfPanel: React.FC<WhatIfPanelProps> = ({
             step="5"
             value={whatIf.capexDiscountPercent}
             onChange={handleCapexDiscountChange}
-            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+            className="w-full accent-[#D4AF37] cursor-pointer"
           />
-          <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-            <span>0%</span>
-            <span>15%</span>
-            <span>30%</span>
-          </div>
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={onOpenFormulaModal}
+        className="w-full py-2 bg-[#FFFFFF] border border-[#D4AF37]/40 hover:bg-[#F4F4F0] font-mono text-xs text-[#8A6826] font-bold cursor-pointer rounded-none"
+      >
+        Показать формулы расчета (XAI)
+      </button>
     </div>
   );
 };

@@ -31,23 +31,7 @@ import { FormulaModal } from './components/FormulaModal.js';
 import { ExcludedRobotsAccordion } from './components/ExcludedRobotsAccordion.js';
 import { CalculationProgressModal } from './components/CalculationProgressModal.js';
 
-import {
-  Bot,
-  SlidersHorizontal,
-  FileSpreadsheet,
-  FileText,
-  ChevronLeft,
-  ChevronRight,
-  TrendingUp,
-  Cpu,
-  Layers,
-  Activity,
-  CheckCircle2,
-  AlertTriangle,
-  Info,
-  DollarSign,
-  PieChart,
-} from 'lucide-react';
+import { SlidersHorizontal, FileSpreadsheet, FileText } from 'lucide-react';
 
 export default function App() {
   // 1. Facility & Preset State
@@ -60,14 +44,13 @@ export default function App() {
   const [whatIf, setWhatIf] = useState<WhatIfParams>(DEFAULT_WHAT_IF_PARAMS);
   const [selectedRobotId, setSelectedRobotId] = useState<string>('ronavi-h1500');
 
-  // 3. Simulation Parameters (Quota, Duration T, Frame Buffer Size)
+  // 3. Simulation Parameters
   const [simulationParams, setSimulationParams] = useState<SimulationParams>({
     targetHourlyQuota: FACILITY_PRESETS[0].requirements.targetThroughputPerHour,
     durationHours: 1,
     targetReplayFramesCount: 7200,
   });
 
-  // Sync simulationParams.targetHourlyQuota when facility quota changes
   useEffect(() => {
     setSimulationParams((prev) => ({
       ...prev,
@@ -75,7 +58,7 @@ export default function App() {
     }));
   }, [facility.targetThroughputPerHour]);
 
-  // 4. Fleet Configuration Mode (AI vs Manual 9 Sandbox)
+  // 4. Fleet Configuration Mode
   const [fleetMode, setFleetMode] = useState<FleetConfigMode>('ai');
   const [manualFleetCounts, setManualFleetCounts] = useState<Record<string, number>>({
     'ronavi-h1500': 2,
@@ -142,7 +125,7 @@ export default function App() {
     return optimizeFleetComposition(facility, eligibleRobotSpecs, whatIf);
   }, [facility, eligibleRobots, whatIf]);
 
-  // Active Fleet Composition (AI vs Manual)
+  // Active Fleet Composition
   const activeComposition: FleetCompositionItem[] = useMemo(() => {
     if (fleetMode === 'ai') {
       return aiOptimizationResult.composition;
@@ -205,7 +188,7 @@ export default function App() {
     }));
   };
 
-  // Run Simulation & Calculation Handler
+  // Run Simulation Handler
   const handleRunSimulation = useCallback(() => {
     setIsCalculating(true);
     setCalculationStep(1);
@@ -239,7 +222,7 @@ export default function App() {
           setCalculationStep(4);
           setIsCalculating(false);
           setCalculationStep(0);
-          showToast('Моделирование завершено. Кадры загружены во вьюпорт.');
+          showToast('REO: Моделирование завершено. Экспресс-ТЭО обновлено.');
         }, 150);
       }, 200);
     }, 200);
@@ -259,7 +242,7 @@ export default function App() {
       generatedAt: new Date(),
       version: 'СППР v1.0',
     });
-    showToast('ТЭО сгенерировано и выгружено в PDF');
+    showToast('REO: ТЭО сформировано и выгружено в PDF');
   };
 
   const handleExportExcel = () => {
@@ -270,45 +253,46 @@ export default function App() {
       activeEconomics,
       whatIf
     );
-    showToast('Финансовая модель выгружена в Excel (.xlsx)');
+    showToast('REO: Финансовая модель выгружена в Excel (.xlsx)');
   };
 
   return (
-    <div className="h-screen w-screen overflow-hidden text-slate-100 bg-slate-950 font-sans select-none flex flex-col">
-      {/* ================= HEADER BAR ================= */}
-      <header className="h-13 bg-slate-900 border-b border-slate-800 px-4 flex items-center justify-between z-30 shrink-0 shadow-md">
+    <div className="h-screen w-screen overflow-hidden text-[#1A1A1A] bg-[#F9F9F6] font-sans select-none flex flex-col rounded-none">
+      {/* ================= HEADER BAR (docs/reo.html style) ================= */}
+      <header className="h-12 bg-[#FFFFFF] border-b border-[#D4AF37]/40 px-4 flex items-center justify-between z-30 shrink-0 shadow-xs rounded-none">
+
         {/* REO Logo & СППР v1.0 Badge */}
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-amber-400 text-slate-950 font-extrabold flex items-center justify-center border border-amber-500 rounded text-xs tracking-tighter">
+          <div className="w-8 h-8 bg-[#D4AF37] text-[#1A1A1A] font-extrabold flex items-center justify-center border border-[#BFA02E] text-xs tracking-tighter rounded-none">
             REO
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-bold text-xs uppercase tracking-tight text-white">
+              <h1 className="font-semibold text-xs uppercase tracking-tight text-[#1A1A1A]">
                 REO Platform
               </h1>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-amber-400/15 text-amber-300 border border-amber-400/30 uppercase font-semibold rounded">
+              <span className="text-[10px] font-mono px-1.5 py-0.2 bg-[#D4AF37]/15 text-[#8A6826] border border-[#D4AF37]/40 uppercase font-semibold rounded-none">
                 СППР v1.0
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 -mt-0.5">
+            <p className="text-[10px] text-[#4F4F47] -mt-0.5">
               Robotic Economic Optimizer • Предынвестиционный аудит ФЦ БАС
             </p>
           </div>
         </div>
 
         {/* 1-Click Industry Presets */}
-        <div className="hidden md:flex items-center border border-slate-700 bg-slate-950 rounded-lg overflow-hidden">
+        <div className="hidden md:flex items-center border border-[#D4AF37]/40 bg-[#FFFFFF] rounded-none">
           {FACILITY_PRESETS.map((p) => {
             const isActive = activePresetId === p.id;
             return (
               <button
                 key={p.id}
                 onClick={() => handlePresetSelect(p.id)}
-                className={`px-3 py-1.5 text-xs font-semibold transition cursor-pointer border-r last:border-r-0 border-slate-800 ${
+                className={`px-3 py-1 text-xs font-semibold uppercase tracking-tight transition cursor-pointer border-r last:border-r-0 border-[#D4AF37]/30 rounded-none ${
                   isActive
-                    ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    ? 'bg-[#D4AF37] text-[#1A1A1A] font-bold shadow-xs'
+                    : 'text-[#4F4F47] hover:text-[#1A1A1A] hover:bg-[#F4F4F0]'
                 }`}
               >
                 {p.name}
@@ -319,22 +303,22 @@ export default function App() {
 
         {/* Column Toggles & Export Actions */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center border border-slate-700 bg-slate-900 p-0.5 rounded text-xs font-mono">
+          <div className="flex items-center border border-[#D4AF37]/40 bg-[#FFFFFF] p-0.5 text-xs font-mono rounded-none">
             <button
               onClick={() => setIsLeftOpen(!isLeftOpen)}
               title="Показать / скрыть панель ввода условий"
-              className={`px-2 py-1 text-[11px] font-bold rounded transition ${
-                isLeftOpen ? 'bg-amber-400 text-slate-950' : 'text-slate-400 hover:text-white'
+              className={`px-2 py-1 text-[11px] font-bold transition rounded-none ${
+                isLeftOpen ? 'bg-[#D4AF37] text-[#1A1A1A]' : 'text-[#4F4F47] hover:text-[#1A1A1A]'
               }`}
             >
               {isLeftOpen ? '◀ Ввод' : '▶ Ввод'}
             </button>
-            <div className="w-px h-3 bg-slate-700 mx-0.5"></div>
+            <div className="w-px h-3 bg-[#D4AF37]/40 mx-0.5"></div>
             <button
               onClick={() => setIsRightOpen(!isRightOpen)}
               title="Показать / скрыть панель аналитики"
-              className={`px-2 py-1 text-[11px] font-bold rounded transition ${
-                isRightOpen ? 'bg-amber-400 text-slate-950' : 'text-slate-400 hover:text-white'
+              className={`px-2 py-1 text-[11px] font-bold transition rounded-none ${
+                isRightOpen ? 'bg-[#D4AF37] text-[#1A1A1A]' : 'text-[#4F4F47] hover:text-[#1A1A1A]'
               }`}
             >
               {isRightOpen ? 'Вывод ▶' : '◀ Вывод'}
@@ -344,61 +328,61 @@ export default function App() {
           <button
             type="button"
             onClick={handleExportExcel}
-            className="px-3 py-1.5 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-700/60 text-xs font-semibold uppercase tracking-tight rounded transition flex items-center gap-1.5 cursor-pointer"
+            className="px-3 py-1.5 bg-[#FFFFFF] hover:bg-[#F4F4F0] text-[#8A6826] border border-[#D4AF37]/50 text-xs font-semibold uppercase tracking-tight rounded-none transition flex items-center gap-1.5 cursor-pointer font-mono"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+            <FileSpreadsheet className="w-3.5 h-3.5 text-[#8A6826]" />
             <span>Excel (.xlsx)</span>
           </button>
 
           <button
             type="button"
             onClick={handleExportPdf}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white border border-blue-500 text-xs font-semibold uppercase tracking-tight rounded transition flex items-center gap-1.5 cursor-pointer shadow-blue-600/20"
+            className="px-3.5 py-1.5 bg-[#58111A] hover:bg-[#4A0E17] text-[#F9F9F6] border border-[#4A0E17] text-xs font-semibold uppercase tracking-tight rounded-none transition flex items-center gap-1.5 cursor-pointer"
           >
-            <FileText className="w-3.5 h-3.5" />
-            <span>ТЭО (PDF)</span>
+            <span className="w-1.5 h-1.5 bg-[#D4AF37]"></span>
+            <span>Экспорт ТЭО (PDF)</span>
           </button>
         </div>
       </header>
 
       {/* ================= MAIN 3-ZONE DASHBOARD WORKSPACE ================= */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex overflow-hidden relative rounded-none">
 
         {/* ================= ZONE 1: LEFT COLUMN (INPUT & CONDITIONS) ================= */}
         <aside
-          className={`transition-all duration-300 shrink-0 z-20 flex flex-col bg-slate-900/95 border-r border-slate-800 overflow-hidden ${
+          className={`transition-all duration-300 shrink-0 z-20 flex flex-col bg-[#F4F4F0] border-r border-[#D4AF37]/40 overflow-hidden rounded-none ${
             isLeftOpen ? 'w-80 sm:w-96' : 'w-0 border-r-0'
           }`}
         >
-          <div className="p-3 bg-slate-800/80 border-b border-slate-700/80 flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-              <SlidersHorizontal className="w-4 h-4 text-amber-400" />
-              Входные параметры и флот
+          <div className="p-3 bg-[#EAEAE5] border-b border-[#D4AF37]/40 flex items-center justify-between rounded-none">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#1A1A1A] flex items-center gap-1.5">
+              <span className="w-2 h-2 bg-[#D4AF37]"></span>
+              Входные условия объекта
             </span>
-            <span className="text-[10px] font-mono font-bold text-amber-400">ZONE 1</span>
+            <span className="text-[10px] font-mono font-bold text-[#8A6826]">REO • ZONE 1</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs text-slate-200">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs text-[#1A1A1A] rounded-none">
             {/* Facility Geometry & Requirements Card */}
-            <div className="p-3.5 bg-slate-900/90 border border-slate-800 rounded-xl space-y-3">
-              <h4 className="font-semibold text-xs uppercase tracking-wider text-slate-200 border-b border-slate-800 pb-1.5">
-                Параметры объекта
+            <div className="p-3 bg-[#FFFFFF] border border-[#D4AF37]/30 rounded-none space-y-2.5">
+              <h4 className="font-semibold text-[11px] uppercase tracking-wider text-[#1A1A1A] border-b border-[#D4AF37]/20 pb-1">
+                Геометрия и тех. коридоры
               </h4>
 
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <span className="text-[10px] text-slate-400 block font-semibold">Площадь (м²)</span>
+                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Площадь (м²)</span>
                   <input
                     type="number"
                     value={facility.totalAreaSqm}
                     onChange={(e) =>
                       setFacility({ ...facility, totalAreaSqm: Number(e.target.value) || 100 })
                     }
-                    className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-xs text-white focus:border-amber-400"
+                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block font-semibold">Проезд (м)</span>
+                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Ширина проезда (м)</span>
                   <input
                     type="number"
                     step="0.1"
@@ -406,28 +390,28 @@ export default function App() {
                     onChange={(e) =>
                       setFacility({ ...facility, aisleWidthM: Number(e.target.value) || 1 })
                     }
-                    className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-xs text-white focus:border-amber-400"
+                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block font-semibold">Груз (кг)</span>
+                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Груз (кг)</span>
                   <input
                     type="number"
                     value={facility.requiredPayloadKg}
                     onChange={(e) =>
                       setFacility({ ...facility, requiredPayloadKg: Number(e.target.value) || 1 })
                     }
-                    className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-xs text-white focus:border-amber-400"
+                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block font-semibold">Сменность</span>
+                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Сменность</span>
                   <select
                     value={facility.shiftsPerDay}
                     onChange={(e) =>
                       setFacility({ ...facility, shiftsPerDay: Number(e.target.value) })
                     }
-                    className="w-full bg-slate-950 border border-slate-700 rounded px-1.5 py-1 font-mono text-xs text-white focus:border-amber-400"
+                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-1 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
                   >
                     <option value={1}>1 смена (8ч)</option>
                     <option value={2}>2 смены (16ч)</option>
@@ -437,7 +421,7 @@ export default function App() {
               </div>
 
               <div>
-                <span className="text-[10px] text-slate-400 block font-semibold">ФОТ оператора (руб/мес)</span>
+                <span className="text-[10px] text-[#4F4F47] font-semibold block">ФОТ оператора (руб/мес)</span>
                 <input
                   type="number"
                   step="5000"
@@ -448,7 +432,7 @@ export default function App() {
                       averageWorkerSalaryRub: Number(e.target.value) || 0,
                     })
                   }
-                  className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-xs text-white focus:border-amber-400"
+                  className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
                 />
               </div>
             </div>
@@ -476,29 +460,29 @@ export default function App() {
         </aside>
 
         {/* ================= ZONE 2: CENTER COLUMN (DIGITAL TWIN VIEWPORT) ================= */}
-        <section className="flex-1 flex flex-col bg-slate-950 overflow-hidden relative">
+        <section className="flex-1 flex flex-col bg-[#EAEAE6] overflow-hidden relative border-r border-[#D4AF37]/40 rounded-none">
 
           {/* Telemetry Header Strip */}
-          <div className="h-10 bg-slate-900 border-b border-slate-800 px-4 flex items-center justify-between text-xs font-mono shrink-0 shadow-sm">
+          <div className="h-10 bg-[#FFFFFF] border-b border-[#D4AF37]/40 px-4 flex items-center justify-between text-xs font-mono shrink-0 shadow-xs rounded-none">
             <div className="flex items-center gap-4">
-              <span className="flex items-center gap-1.5 font-semibold text-white">
-                <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                ФАКТ КВОТЫ: <span className="text-amber-400 font-bold">{activeEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour} шт/ч</span>
+              <span className="flex items-center gap-1.5 font-semibold text-[#1A1A1A]">
+                <span className="w-2 h-2 bg-[#D4AF37]"></span>
+                ФАКТ КВОТЫ: <span className="text-[#8A6826] font-bold tabular-nums">{activeEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour} шт/ч</span>
               </span>
-              <span className="text-slate-700">|</span>
-              <span className="text-slate-300">
-                ПАРК: <strong className="text-white font-bold">{activeFleetSize} ед.</strong>
+              <span className="text-[#DFDFD8]">|</span>
+              <span className="text-[#4F4F47]">
+                ПАРК: <strong className="text-[#1A1A1A] font-bold tabular-nums">{activeFleetSize} ед.</strong>
               </span>
-              <span className="text-slate-700">|</span>
-              <span className="text-slate-300">
+              <span className="text-[#DFDFD8]">|</span>
+              <span className="text-[#4F4F47]">
                 СВЯЗНОСТЬ (λ₂):{' '}
                 <strong
-                  className={`font-bold ${
+                  className={`font-bold tabular-nums ${
                     spectralResult.algebraicConnectivity < 0.15
-                      ? 'text-red-400'
+                      ? 'text-rose-800'
                       : spectralResult.algebraicConnectivity < 0.35
-                      ? 'text-amber-400'
-                      : 'text-emerald-400'
+                      ? 'text-[#8A6826]'
+                      : 'text-emerald-800'
                   }`}
                 >
                   {spectralResult.algebraicConnectivity.toFixed(3)}
@@ -507,15 +491,15 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] font-semibold text-slate-300 uppercase">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                ЦВЕТНОЙ CAD 2.5D
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F4F4F0] border border-[#D4AF37]/30 text-[10px] font-semibold text-[#4F4F47] uppercase rounded-none">
+                <span className="w-1.5 h-1.5 bg-emerald-600"></span>
+                CAD ВЬЮПОРТ ГОТОВ
               </span>
             </div>
           </div>
 
           {/* Interactive Simulation Viewport Stage */}
-          <div className="flex-1 overflow-hidden relative">
+          <div className="flex-1 overflow-hidden relative rounded-none">
             <SimulationViewport
               facility={facility}
               fleetConfig={activeComposition.length > 0 ? activeComposition : selectedRobot}
@@ -530,38 +514,38 @@ export default function App() {
 
         {/* ================= ZONE 3: RIGHT COLUMN (ANALYTICS & FEASIBILITY) ================= */}
         <aside
-          className={`transition-all duration-300 shrink-0 z-20 flex flex-col bg-slate-900/95 border-l border-slate-800 overflow-hidden ${
+          className={`transition-all duration-300 shrink-0 z-20 flex flex-col bg-[#F9F9F6] border-l border-[#D4AF37]/40 overflow-hidden rounded-none ${
             isRightOpen ? 'w-96 sm:w-[440px]' : 'w-0 border-l-0'
           }`}
         >
           {/* Tab Switcher Header */}
-          <div className="border-b border-slate-800 bg-slate-900 p-1 flex items-center text-xs font-mono">
+          <div className="border-b border-[#D4AF37]/40 bg-[#FFFFFF] p-1 flex items-center text-xs font-mono rounded-none">
             <button
               onClick={() => setRightTab('economics')}
-              className={`flex-1 py-1.5 font-bold uppercase text-[11px] rounded transition ${
+              className={`flex-1 py-1.5 font-bold uppercase text-[11px] transition rounded-none ${
                 rightTab === 'economics'
-                  ? 'bg-amber-400 text-slate-950'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#D4AF37] text-[#1A1A1A]'
+                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
               }`}
             >
               3 Сценария
             </button>
             <button
               onClick={() => setRightTab('xai')}
-              className={`flex-1 py-1.5 font-bold uppercase text-[11px] rounded transition ${
+              className={`flex-1 py-1.5 font-bold uppercase text-[11px] transition rounded-none ${
                 rightTab === 'xai'
-                  ? 'bg-amber-400 text-slate-950'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#D4AF37] text-[#1A1A1A]'
+                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
               }`}
             >
               Side-by-Side и XAI
             </button>
             <button
               onClick={() => setRightTab('whatif')}
-              className={`flex-1 py-1.5 font-bold uppercase text-[11px] rounded transition ${
+              className={`flex-1 py-1.5 font-bold uppercase text-[11px] transition rounded-none ${
                 rightTab === 'whatif'
-                  ? 'bg-amber-400 text-slate-950'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#D4AF37] text-[#1A1A1A]'
+                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
               }`}
             >
               What-If
@@ -569,9 +553,9 @@ export default function App() {
           </div>
 
           {/* Tab Contents */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs text-slate-200">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs text-[#1A1A1A] rounded-none">
             {rightTab === 'economics' && selectedRobot && activeEconomics && (
-              <div className="space-y-4">
+              <div className="space-y-3.5">
                 {/* 3-Scenario Financial Matrix */}
                 <ScenarioMatrix
                   evaluation={activeEconomics}
@@ -584,7 +568,7 @@ export default function App() {
             )}
 
             {rightTab === 'xai' && (
-              <div className="space-y-4">
+              <div className="space-y-3.5">
                 {eligibleRobots.length > 0 && (
                   <RobotComparisonTable
                     robots={eligibleRobots.map((e) => e.robot)}
@@ -600,7 +584,7 @@ export default function App() {
             )}
 
             {rightTab === 'whatif' && (
-              <div className="space-y-4">
+              <div className="space-y-3.5">
                 <WhatIfPanel
                   whatIf={whatIf}
                   onChange={setWhatIf}
@@ -611,7 +595,7 @@ export default function App() {
           </div>
 
           {/* Legal Disclaimer Footer */}
-          <div className="p-3 border-t border-slate-800 bg-slate-950 text-[10px] text-slate-500 font-mono text-center">
+          <div className="p-3 border-t border-[#D4AF37]/30 bg-[#FFFFFF] text-[10px] text-[#4F4F47] font-mono text-center rounded-none">
             Расчет носит предварительный индикативный характер и не является публичной офертой (п. 3.7.5 ТЗ).
           </div>
         </aside>
@@ -623,8 +607,8 @@ export default function App() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-4 right-4 z-50 bg-slate-900 border-2 border-amber-400 text-white px-4 py-2.5 text-xs font-mono rounded-lg shadow-2xl flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        <div className="fixed bottom-4 right-4 z-50 bg-[#FFFFFF] border-2 border-[#D4AF37] text-[#1A1A1A] px-4 py-2.5 text-xs font-mono shadow-lg flex items-center gap-2 rounded-none">
+          <span className="w-2 h-2 bg-[#D4AF37]"></span>
           <span className="font-bold">{toastMessage}</span>
         </div>
       )}

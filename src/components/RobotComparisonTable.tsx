@@ -4,7 +4,6 @@ import type { FacilityRequirements } from '../types/facility.js';
 import type { WhatIfParams } from '../engine/economics.js';
 import {
   calculateAvailabilityCoefficient,
-  calculateFleetSize,
   calculateEconomics,
 } from '../engine/economics.js';
 import { Table, CheckCircle2 } from 'lucide-react';
@@ -37,41 +36,30 @@ export const RobotComparisonTable: React.FC<RobotComparisonTableProps> = ({
   }
 
   return (
-    <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-6 shadow-md mb-8">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <Table className="w-5 h-5 text-blue-400" />
-            Сравнительный анализ допустимых роботов (Шаг 4)
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Выберите модель для детального финансового моделирования и оценки окупаемости
-          </p>
-        </div>
+    <div className="bg-[#FFFFFF] border border-[#D4AF37]/30 p-3 space-y-3 rounded-none text-xs text-[#1A1A1A]">
+      <div className="flex items-center justify-between border-b border-[#D4AF37]/20 pb-1.5 rounded-none">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#8A6826] flex items-center gap-1.5">
+          <Table className="w-3.5 h-3.5 text-[#8A6826]" />
+          Сравнительный ТТХ анализ
+        </h3>
+        <span className="text-[10px] font-mono text-[#4F4F47]">Совместимо: {robots.length}</span>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm text-slate-300">
-          <thead className="bg-slate-900/80 text-xs uppercase text-slate-400 border-b border-slate-700">
+      <div className="overflow-x-auto rounded-none">
+        <table className="w-full text-left text-xs text-[#1A1A1A] font-mono">
+          <thead className="bg-[#F4F4F0] text-[10px] uppercase text-[#8A6826] border-b border-[#D4AF37]/30">
             <tr>
-              <th className="py-3 px-4">Выбор</th>
-              <th className="py-3 px-4">Модель / Производитель</th>
-              <th className="py-3 px-4 text-right">Грузоподъемность</th>
-              <th className="py-3 px-4 text-right">Скорость</th>
-              <th className="py-3 px-4 text-right">Автономность (k_avail)</th>
-              <th className="py-3 px-4 text-right">Мин. проезд</th>
-              <th className="py-3 px-4 text-right">Размер парка (N)</th>
-              <th className="py-3 px-4 text-right">CAPEX парка</th>
-              <th className="py-3 px-4 text-right">Срок окупаемости</th>
+              <th className="py-2 px-2">Модель</th>
+              <th className="py-2 px-2 text-right">Нагрузка</th>
+              <th className="py-2 px-2 text-right">Проезд</th>
+              <th className="py-2 px-2 text-right">Парк N</th>
+              <th className="py-2 px-2 text-right">CAPEX</th>
+              <th className="py-2 px-2 text-right">Окупаемость</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-700/50">
+          <tbody className="divide-y divide-[#D4AF37]/20 rounded-none">
             {robots.map((robot) => {
               const isSelected = robot.id === selectedRobotId;
-              const kAvail = calculateAvailabilityCoefficient(
-                robot.batteryRuntimeHours,
-                robot.batteryChargeMinutes
-              );
               const econ = calculateEconomics(facility, robot, whatIf);
 
               let paybackLabel = '—';
@@ -85,49 +73,31 @@ export const RobotComparisonTable: React.FC<RobotComparisonTableProps> = ({
                 <tr
                   key={robot.id}
                   onClick={() => onSelectRobot(robot.id)}
-                  className={`cursor-pointer transition-colors ${
+                  className={`cursor-pointer transition-colors rounded-none ${
                     isSelected
-                      ? 'bg-blue-950/40 border-l-4 border-l-blue-500'
-                      : 'hover:bg-slate-700/30'
+                      ? 'bg-[#D4AF37]/20 font-bold'
+                      : 'hover:bg-[#F4F4F0]'
                   }`}
                 >
-                  <td className="py-3 px-4 text-center">
-                    <div className="flex justify-center">
-                      <div
-                        className={`w-5 h-5 rounded-full border flex items-center justify-center ${
-                          isSelected
-                            ? 'border-blue-500 bg-blue-500 text-white'
-                            : 'border-slate-500'
-                        }`}
-                      >
-                        {isSelected && <CheckCircle2 className="w-4 h-4" />}
-                      </div>
-                    </div>
+                  <td className="py-2 px-2 font-semibold text-[#1A1A1A]">
+                    {robot.vendor} {robot.model}
                   </td>
-                  <td className="py-3 px-4 font-semibold text-slate-100">
-                    {robot.model}
-                    <div className="text-xs text-slate-400 font-normal">{robot.vendor}</div>
+                  <td className="py-2 px-2 text-right font-medium">{robot.payloadKg} кг</td>
+                  <td className="py-2 px-2 text-right font-medium">{robot.minAisleWidthMm} мм</td>
+                  <td className="py-2 px-2 text-right font-bold text-[#8A6826]">
+                    {econ.fleetSize}
                   </td>
-                  <td className="py-3 px-4 text-right font-medium">{robot.payloadKg} кг</td>
-                  <td className="py-3 px-4 text-right font-medium">{robot.maxSpeedMps} м/с</td>
-                  <td className="py-3 px-4 text-right font-medium">
-                    {robot.batteryRuntimeHours}ч ({Math.round(kAvail * 100)}%)
-                  </td>
-                  <td className="py-3 px-4 text-right font-medium">{robot.minAisleWidthMm} мм</td>
-                  <td className="py-3 px-4 text-right font-bold text-blue-400">
-                    {econ.fleetSize} шт.
-                  </td>
-                  <td className="py-3 px-4 text-right font-semibold text-slate-100">
+                  <td className="py-2 px-2 text-right font-semibold text-[#1A1A1A]">
                     {formatMoney(econ.capexPurchase.capex)}
                   </td>
-                  <td className="py-3 px-4 text-right font-semibold">
+                  <td className="py-2 px-2 text-right font-semibold">
                     <span
-                      className={`px-2 py-0.5 rounded text-xs ${
+                      className={`px-1 py-0.5 text-[10px] rounded-none ${
                         econ.capexPurchase.verdict === 'green'
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                           : econ.capexPurchase.verdict === 'yellow'
-                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                          : 'bg-rose-100 text-rose-800 border border-rose-300'
                       }`}
                     >
                       {paybackLabel}

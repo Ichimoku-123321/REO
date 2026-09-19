@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>REO — Robotic Economic Optimizer (Инженерно-экономический пульт)</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono / Intel One Mono fallback -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+
+  <!-- React 18 & ReactDOM 18 -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel Standalone for in-browser JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', '"Intel One Mono"', 'monospace'],
+          },
+          colors: {
+            reoDark: {
+              950: '#140E0A',
+              900: '#1C1510',
+              850: '#251C15',
+              800: '#32261E',
+              700: '#46372C',
+            },
+            milk: {
+              0: '#FFFFFF',
+              50: '#FAF9F6',
+              100: '#F4F4F0',
+              200: '#EAEAE5',
+              300: '#DFDFD8',
+              400: '#C8C8BF',
+              500: '#949489',
+              700: '#4F4F47',
+              900: '#1A1A1A',
+            },
+            gold: {
+              200: '#FAF0D4',
+              300: '#F2DFAB',
+              400: '#E5C158',
+              500: '#D4AF37',
+              600: '#BFA02E',
+              700: '#8A6826',
+              800: '#644A17',
+              900: '#42300D',
+            },
+            wine: {
+              600: '#7A1C29',
+              700: '#681520',
+              800: '#58111A',
+              900: '#4A0E17',
+              950: '#26040A',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* 1. Глобальная геометрия и углы (Убираем «мыло»): строго 0px */
+    *, *::before, *::after {
+      border-radius: 0px !important;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, sans-serif;
+      letter-spacing: -0.02em;
+      background-color: #F9F9F6;
+      color: #1A1A1A;
+      overflow-x: hidden;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    /* 5. Шрифтовая сетка: моноширинные табличные цифры для телеметрии */
+    .font-mono {
+      font-family: 'JetBrains Mono', 'Intel One Mono', monospace;
+      font-feature-settings: "tnum" 1, "zero" 1;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+
+    /* 3. Дозирование Золота: тонкие прецизионные границы 1px */
+    .gold-border {
+      border: 1px solid rgba(212, 175, 55, 0.3) !important;
+    }
+
+    .gold-border-b {
+      border-bottom: 1px solid rgba(212, 175, 55, 0.3) !important;
+    }
+
+    .gold-border-r {
+      border-right: 1px solid rgba(212, 175, 55, 0.3) !important;
+    }
+
+    /* 2. Цветовая работа с фоном: чистый матовый алебастр */
+    .panel-left-clean {
+      background-color: #F4F4F0;
+      border-right: 1px solid rgba(212, 175, 55, 0.3);
+    }
+
+    .panel-right-clean {
+      background-color: #F9F9F6;
+      border-left: 1px solid rgba(212, 175, 55, 0.3);
+    }
+
+    .card-clean {
+      background-color: #FFFFFF;
+      border: 1px solid rgba(212, 175, 55, 0.3);
+    }
+
+    /* Центральный фон под CAD: нейтральный светло-серый / алебастровый */
+    .cad-stage-neutral {
+      background-color: #EAEAE6;
+      background-image: 
+        linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+        linear-gradient(to right, rgba(212, 175, 55, 0.12) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(212, 175, 55, 0.12) 1px, transparent 1px);
+      background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
+      background-position: center center;
+    }
+
+    /* Эффект выковки цифр телеметрии */
+    @keyframes runeForging {
+      0% {
+        color: #1A1A1A;
+        background-color: #D4AF37;
+        box-shadow: 0 0 14px rgba(212, 175, 55, 0.7);
+        transform: scale(1.04);
+      }
+      30% {
+        color: #58111A;
+        background-color: rgba(212, 175, 55, 0.35);
+      }
+      100% {
+        color: inherit;
+        background-color: transparent;
+        box-shadow: none;
+        transform: scale(1.0);
+      }
+    }
+
+    .forging-glow {
+      animation: runeForging 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      display: inline-block;
+      padding: 0 2px;
+    }
+
+    /* Прецизионный тонкий скроллбар */
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #EAEAE5;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #D4AF37;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #8A6826;
+    }
+  </style>
+</head>
+<body class="min-h-screen text-[#1A1A1A] antialiased bg-[#F9F9F6]">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useCallback, useRef } = React;
+
+    // 9 Certified Robotic Solutions (Catalog verified with official benchmarks)
+    const SEED_ROBOTS = [
+      {
+        id: 'ronavi-h1500',
+        vendor: 'Ronavi Robotics',
+        model: 'H1500',
+        supportedIndustries: ['warehouse'],
+        operationType: 'Транспортировка паллет',
+        payloadKg: 1500,
+        maxSpeedMps: 1.5,
+        dimensionsMm: { length: 1100, width: 850, height: 280 },
+        minAisleWidthMm: 1800,
+        batteryRuntimeHours: 8,
+        batteryChargeMinutes: 45,
+        operatingTempRange: { min: 0, max: 40 },
+        throughputPerHour: 18,
+        capexCostRub: 3800000,
+        annualOpexCostRub: 456000,
+        monthlyRaasCostRub: 133000,
+      },
+      {
+        id: 'dmr-carrier-p',
+        vendor: 'Dikom-Service',
+        model: 'DMR Carrier P',
+        supportedIndustries: ['warehouse'],
+        operationType: 'Штабелирование',
+        payloadKg: 1500,
+        maxSpeedMps: 1.5,
+        dimensionsMm: { length: 2050, width: 1975, height: 1000 },
+        minAisleWidthMm: 2200,
+        batteryRuntimeHours: 10,
+        batteryChargeMinutes: 60,
+        operatingTempRange: { min: 5, max: 35 },
+        throughputPerHour: 16,
+        capexCostRub: 4300000,
+        annualOpexCostRub: 516000,
+        monthlyRaasCostRub: 150500,
+      },
+      {
+        id: 'mark-2-se',
+        vendor: 'R2B',
+        model: 'MARK 2 SE Scrubber',
+        supportedIndustries: ['warehouse', 'airport', 'hospital'],
+        operationType: 'Промышленный клининг',
+        payloadKg: 120,
+        maxSpeedMps: 1.2,
+        dimensionsMm: { length: 860, width: 610, height: 980 },
+        minAisleWidthMm: 1000,
+        batteryRuntimeHours: 3,
+        batteryChargeMinutes: 120,
+        operatingTempRange: { min: 5, max: 40 },
+        throughputPerHour: 25,
+        capexCostRub: 1900000,
+        annualOpexCostRub: 228000,
+        monthlyRaasCostRub: 66500,
+      },
+      {
+        id: 'stelcon-pallet-shuttle',
+        vendor: 'Stelcon',
+        model: 'Pallet Shuttle Cold',
+        supportedIndustries: ['warehouse'],
+        operationType: 'Шаттл глубинный',
+        payloadKg: 1500,
+        maxSpeedMps: 1.0,
+        dimensionsMm: { length: 1200, width: 800, height: 200 },
+        minAisleWidthMm: 1100,
+        batteryRuntimeHours: 10,
+        batteryChargeMinutes: 90,
+        operatingTempRange: { min: -30, max: 30 },
+        throughputPerHour: 22,
+        capexCostRub: 7000000,
+        annualOpexCostRub: 840000,
+        monthlyRaasCostRub: 245000,
+      },
+      {
+        id: 'cognitive-baggage-tractor',
+        vendor: 'Cognitive Pilot',
+        model: 'Baggage Tractor AV',
+        supportedIndustries: ['airport'],
+        operationType: 'Перронный тягач',
+        payloadKg: 3000,
+        maxSpeedMps: 4.5,
+        dimensionsMm: { length: 2300, width: 1400, height: 1500 },
+        minAisleWidthMm: 3000,
+        batteryRuntimeHours: 24,
+        batteryChargeMinutes: 120,
+        operatingTempRange: { min: -40, max: 50 },
+        throughputPerHour: 35,
+        capexCostRub: 4000000,
+        annualOpexCostRub: 480000,
+        monthlyRaasCostRub: 140000,
+      },
+      {
+        id: 'evocargo-n1',
+        vendor: 'Evocargo',
+        model: 'N1 Heavy Truck',
+        supportedIndustries: ['warehouse', 'airport'],
+        operationType: 'Магистральный транспорт',
+        payloadKg: 2000,
+        maxSpeedMps: 6.9,
+        dimensionsMm: { length: 5000, width: 1800, height: 2200 },
+        minAisleWidthMm: 3200,
+        batteryRuntimeHours: 16,
+        batteryChargeMinutes: 80,
+        operatingTempRange: { min: -40, max: 50 },
+        throughputPerHour: 40,
+        capexCostRub: 6000000,
+        annualOpexCostRub: 720000,
+        monthlyRaasCostRub: 210000,
+      },
+      {
+        id: 'moros-amr-100',
+        vendor: 'Moros',
+        model: 'AMR 100 Compact',
+        supportedIndustries: ['warehouse', 'hospital'],
+        operationType: 'Транспорт контейнеров',
+        payloadKg: 100,
+        maxSpeedMps: 1.4,
+        dimensionsMm: { length: 1100, width: 600, height: 230 },
+        minAisleWidthMm: 680,
+        batteryRuntimeHours: 22,
+        batteryChargeMinutes: 90,
+        operatingTempRange: { min: 5, max: 40 },
+        throughputPerHour: 28,
+        capexCostRub: 1500000,
+        annualOpexCostRub: 180000,
+        monthlyRaasCostRub: 52500,
+      },
+      {
+        id: 'pudubot-2',
+        vendor: 'Pudu',
+        model: 'PuduBot 2 Medical',
+        supportedIndustries: ['hospital'],
+        operationType: 'Внутренняя логистика',
+        payloadKg: 40,
+        maxSpeedMps: 1.2,
+        dimensionsMm: { length: 580, width: 535, height: 1290 },
+        minAisleWidthMm: 800,
+        batteryRuntimeHours: 14,
+        batteryChargeMinutes: 240,
+        operatingTempRange: { min: 10, max: 35 },
+        throughputPerHour: 20,
+        capexCostRub: 1200000,
+        annualOpexCostRub: 144000,
+        monthlyRaasCostRub: 42000,
+      },
+      {
+        id: 'ronavi-sr',
+        vendor: 'Ronavi Robotics',
+        model: 'SR Parcel Sorter',
+        supportedIndustries: ['warehouse'],
+        operationType: 'Сортировка отправлений',
+        payloadKg: 50,
+        maxSpeedMps: 2.0,
+        dimensionsMm: { length: 700, width: 550, height: 350 },
+        minAisleWidthMm: 900,
+        batteryRuntimeHours: 12,
+        batteryChargeMinutes: 60,
+        operatingTempRange: { min: 5, max: 40 },
+        throughputPerHour: 60,
+        capexCostRub: 950000,
+        annualOpexCostRub: 114000,
+        monthlyRaasCostRub: 33250,
+      }
+    ];
+
+    const FACILITY_PRESETS = [
+      {
+        id: 'warehouse',
+        name: 'Склад Класса A',
+        tagline: 'Логистический хаб (1000 кг паллеты)',
+        requirements: {
+          industry: 'warehouse',
+          totalAreaSqm: 2500,
+          aisleWidthM: 2.2,
+          ceilingHeightM: 8.0,
+          operatingTempRange: { min: 10, max: 25 },
+          shiftsPerDay: 2,
+          hoursPerDay: 16,
+          requiredPayloadKg: 1000,
+          targetThroughputPerHour: 60,
+          averageWorkerSalaryRub: 85000,
+        }
+      },
+      {
+        id: 'airport',
+        name: 'Грузовой Аэропорт',
+        tagline: 'Перрон и багажная логистика (2000 кг)',
+        requirements: {
+          industry: 'airport',
+          totalAreaSqm: 8000,
+          aisleWidthM: 3.5,
+          ceilingHeightM: 6.0,
+          operatingTempRange: { min: -30, max: 40 },
+          shiftsPerDay: 3,
+          hoursPerDay: 24,
+          requiredPayloadKg: 2000,
+          targetThroughputPerHour: 40,
+          averageWorkerSalaryRub: 95000,
+        }
+      },
+      {
+        id: 'hospital',
+        name: 'Клиническая Больница',
+        tagline: 'Медикаменты, белье и питание (40 кг)',
+        requirements: {
+          industry: 'hospital',
+          totalAreaSqm: 1800,
+          aisleWidthM: 1.4,
+          ceilingHeightM: 3.5,
+          operatingTempRange: { min: 18, max: 24 },
+          shiftsPerDay: 2,
+          hoursPerDay: 16,
+          requiredPayloadKg: 40,
+          targetThroughputPerHour: 25,
+          averageWorkerSalaryRub: 65000,
+        }
+      }
+    ];
+
+    const DEFAULT_WHAT_IF = {
+      salaryChangePercent: 0,
+      throughputScalePercent: 100,
+      capexDiscountPercent: 0,
+    };
+
+    function calculateAvailability(batteryRuntimeHours, batteryChargeMinutes) {
+      const chargeHours = batteryChargeMinutes / 60;
+      if (batteryRuntimeHours + chargeHours <= 0) return 0.8;
+      return batteryRuntimeHours / (batteryRuntimeHours + chargeHours);
+    }
+
+    function ForgedValue({ value, prefix = '', suffix = '', isCurrency = false }) {
+      const [displayValue, setDisplayValue] = useState(value);
+      const [isForging, setIsForging] = useState(false);
+      const prevValueRef = useRef(value);
+
+      useEffect(() => {
+        if (prevValueRef.current !== value) {
+          prevValueRef.current = value;
+          setDisplayValue(value);
+          setIsForging(true);
+          const t = setTimeout(() => setIsForging(false), 1100);
+          return () => clearTimeout(t);
+        }
+      }, [value]);
+
+      const formatted = useMemo(() => {
+        if (isCurrency) {
+          return new Intl.NumberFormat('ru-RU', {
+            style: 'currency',
+            currency: 'RUB',
+            maximumFractionDigits: 0,
+          }).format(displayValue);
+        }
+        return displayValue;
+      }, [displayValue, isCurrency]);
+
+      return (
+        <span className={`font-mono font-bold transition-all duration-200 ${isForging ? 'forging-glow' : ''}`}>
+          {prefix}{formatted}{suffix}
+        </span>
+      );
+    }
+
+    function evaluateRobots(facility, robots) {
+      return robots.map((robot) => {
+        const reasons = [];
+
+        if (facility.industry !== 'custom' && !robot.supportedIndustries.includes(facility.industry)) {
+          reasons.push(`Отраслевое несоответствие: объект [${facility.industry}] не сертифицирован моделью`);
+        }
+
+        const aisleMm = facility.aisleWidthM * 1000;
+        if (aisleMm < robot.minAisleWidthMm) {
+          reasons.push(`Ширина проезда (${facility.aisleWidthM} м) меньше лимита робота (${robot.minAisleWidthMm} мм)`);
+        }
+
+        if (facility.requiredPayloadKg > robot.payloadKg) {
+          reasons.push(`Требуемая нагрузка ${facility.requiredPayloadKg} кг превышает предел ${robot.payloadKg} кг`);
+        }
+
+        const tMin = facility.operatingTempRange.min;
+        const tMax = facility.operatingTempRange.max;
+        if (tMin < robot.operatingTempRange.min || tMax > robot.operatingTempRange.max) {
+          reasons.push(`Температура [${tMin}..${tMax}°C] выходит за паспортный диапазон [${robot.operatingTempRange.min}..${robot.operatingTempRange.max}°C]`);
+        }
+
+        return {
+          robot,
+          isEligible: reasons.length === 0,
+          exclusionReasons: reasons,
+        };
+      }).sort((a, b) => {
+        if (a.isEligible && !b.isEligible) return -1;
+        if (!a.isEligible && b.isEligible) return 1;
+        return a.robot.capexCostRub - b.robot.capexCostRub;
+      });
+    }
+
+    function calculateEconomics(facility, robot, whatIf) {
+      const effThroughput = facility.targetThroughputPerHour * (whatIf.throughputScalePercent / 100);
+      const effSalary = facility.averageWorkerSalaryRub * (1 + whatIf.salaryChangePercent / 100);
+      const discountFactor = Math.max(0, 1 - (whatIf.capexDiscountPercent / 100));
+
+      const kAvail = calculateAvailability(robot.batteryRuntimeHours, robot.batteryChargeMinutes);
+      const unitProd = robot.throughputPerHour * kAvail;
+      const fleetSize = Math.max(1, Math.ceil(effThroughput / unitProd));
+
+      // As-Is: 12 units/h manual worker norm rate
+      const staffPerShift = Math.max(1, Math.ceil(effThroughput / 12));
+      const totalStaff = staffPerShift * facility.shiftsPerDay;
+      const annualManualOpex = totalStaff * (effSalary * 1.30) * 12; // 30% taxes
+      const fiveYearManualTco = annualManualOpex * 5;
+
+      // Scenario 2: CAPEX (+15% integration buffer)
+      const unitCapex = robot.capexCostRub * 1.15 * discountFactor;
+      const totalCapex = fleetSize * unitCapex;
+      const annualRobotOpex = fleetSize * robot.annualOpexCostRub;
+      const fiveYearCapexTco = totalCapex + (annualRobotOpex * 5);
+      const annualSavingsCapex = annualManualOpex - annualRobotOpex;
+      const simplePaybackYears = annualSavingsCapex > 0 ? totalCapex / annualSavingsCapex : 99;
+      const fiveYearRoi = totalCapex > 0 ? (((annualSavingsCapex * 5) - totalCapex) / totalCapex) * 100 : 0;
+
+      // Scenario 3: RaaS (Subscription)
+      const annualRaasOpex = fleetSize * robot.monthlyRaasCostRub * 12;
+      const fiveYearRaasTco = annualRaasOpex * 5;
+      const annualSavingsRaas = annualManualOpex - annualRaasOpex;
+
+      let verdict = 'FEASIBLE';
+      let verdictText = 'Инвестиционно привлекательно (окупаемость < 3 лет)';
+      if (simplePaybackYears > 5 || annualSavingsCapex <= 0) {
+        verdict = 'UNFEASIBLE';
+        verdictText = 'Нецелесообразно: ручной труд выгоднее или объем недостаточен';
+      } else if (simplePaybackYears > 3) {
+        verdict = 'MODERATE';
+        verdictText = 'Умеренный срок (3–5 лет). Рекомендуется сценарий RaaS-подписки';
+      }
+
+      return {
+        fleetSize,
+        kAvail: Number(kAvail.toFixed(2)),
+        effThroughput: Math.round(effThroughput),
+        manual: { staffCount: totalStaff, annualOpex: annualManualOpex, fiveYearTco: fiveYearManualTco },
+        capex: {
+          totalCapex,
+          annualOpex: annualRobotOpex,
+          fiveYearTco: fiveYearCapexTco,
+          annualSavings: annualSavingsCapex,
+          paybackYears: Number(simplePaybackYears.toFixed(1)),
+          roi: Number(fiveYearRoi.toFixed(1)),
+          verdict,
+          verdictText,
+        },
+        raas: {
+          totalCapex: 0,
+          annualOpex: annualRaasOpex,
+          fiveYearTco: fiveYearRaasTco,
+          annualSavings: annualSavingsRaas,
+        }
+      };
+    }
+
+    function App() {
+      // 1. Core REO State
+      const [activePresetId, setActivePresetId] = useState('warehouse');
+      const [facility, setFacility] = useState(FACILITY_PRESETS[0].requirements);
+      const [selectedRobotId, setSelectedRobotId] = useState('ronavi-h1500');
+      const [whatIf, setWhatIf] = useState(DEFAULT_WHAT_IF);
+
+      // 2. Layout Column Toggles
+      const [isLeftOpen, setIsLeftOpen] = useState(true);
+      const [isRightOpen, setIsRightOpen] = useState(true);
+      const [rightTab, setRightTab] = useState('economics'); // 'economics' | 'whatif' | 'catalog'
+
+      // 3. Fleet Configuration Mode (AI Optimum vs Manual 9)
+      const [fleetMode, setFleetMode] = useState('ai');
+      const [manualCounts, setManualCounts] = useState({});
+
+      // 4. Notifications & Modals
+      const [toastNotice, setToastNotice] = useState(null);
+      const [isFormulaModalOpen, setIsFormulaModalOpen] = useState(false);
+      const [isComputing, setIsComputing] = useState(false);
+
+      const triggerToast = (msg) => {
+        setToastNotice(msg);
+        setTimeout(() => setToastNotice(null), 4000);
+      };
+
+      const handlePresetChange = (presetId) => {
+        const found = FACILITY_PRESETS.find(p => p.id === presetId);
+        if (found) {
+          setActivePresetId(presetId);
+          setFacility({ ...found.requirements });
+          triggerToast(`REO: Применен отраслевой пресет «${found.name}»`);
+        }
+      };
+
+      // Evaluated robots
+      const evaluatedList = useMemo(() => evaluateRobots(facility, SEED_ROBOTS), [facility]);
+      const eligibleList = useMemo(() => evaluatedList.filter(e => e.isEligible), [evaluatedList]);
+
+      useEffect(() => {
+        if (eligibleList.length > 0 && !eligibleList.some(e => e.robot.id === selectedRobotId)) {
+          setSelectedRobotId(eligibleList[0].robot.id);
+        }
+      }, [eligibleList, selectedRobotId]);
+
+      const selectedRobot = useMemo(() => {
+        return eligibleList.find(e => e.robot.id === selectedRobotId)?.robot || eligibleList[0]?.robot || SEED_ROBOTS[0];
+      }, [eligibleList, selectedRobotId]);
+
+      // Financial model
+      const economics = useMemo(() => {
+        return calculateEconomics(facility, selectedRobot, whatIf);
+      }, [facility, selectedRobot, whatIf]);
+
+      // Manual counts
+      const updateManualCount = (robotId, delta) => {
+        setManualCounts(prev => ({
+          ...prev,
+          [robotId]: Math.max(0, (prev[robotId] || 0) + delta)
+        }));
+      };
+
+      const manualTotalFleet = useMemo(() => {
+        return Object.values(manualCounts).reduce((s, c) => s + c, 0);
+      }, [manualCounts]);
+
+      const handleExecuteCalculation = () => {
+      setIsComputing(true);
+      setTimeout(() => {
+        setIsComputing(false);
+        triggerToast('REO: Моделирование завершено. Экспресс-ТЭО обновлено.');
+      }, 500);
+    };
+
+    return (
+      <div className="flex flex-col h-screen w-screen overflow-hidden text-[#1A1A1A] select-none bg-[#F9F9F6]">
+        
+        {/* ======================= REO HEADER BAR ======================= */}
+        <header className="h-13 bg-[#FFFFFF] border-b gold-border px-4 flex items-center justify-between z-30 shrink-0 shadow-xs">
+          
+          {/* Logo REO: Золотой блок с контрастным темным текстом */}
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-[#D4AF37] text-[#1A1A1A] font-extrabold flex items-center justify-center border border-[#BFA02E] text-xs tracking-tighter">
+              REO
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-semibold text-xs uppercase tracking-tight text-[#1A1A1A]">
+                  REO Platform
+                </h1>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 bg-[#D4AF37]/15 text-[#8A6826] border border-[#D4AF37]/40 uppercase font-semibold">
+                  СППР v1.0
+                </span>
+              </div>
+              <p className="text-[10px] text-milk-500 -mt-0.5">
+                Robotic Economic Optimizer • Предынвестиционный аудит ФЦ БАС
+              </p>
+            </div>
+          </div>
+
+          {/* 1-Click Industry Presets: Темный текст на золоте */}
+          <div className="hidden md:flex items-center border border-[#D4AF37]/40 bg-[#FFFFFF]">
+            {FACILITY_PRESETS.map((p) => {
+              const isActive = activePresetId === p.id;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => handlePresetChange(p.id)}
+                  className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-tight transition cursor-pointer border-r last:border-r-0 border-[#D4AF37]/30 ${
+                    isActive
+                      ? 'bg-[#D4AF37] text-[#1A1A1A] font-bold shadow-xs'
+                      : 'text-milk-700 hover:text-[#1A1A1A] hover:bg-[#F4F4F0]'
+                  }`}
+                >
+                  {p.name}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Actions & Column Toggles */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center border border-[#D4AF37]/30 bg-[#FFFFFF] p-0.5 text-xs font-mono">
+              <button
+                onClick={() => setIsLeftOpen(!isLeftOpen)}
+                title="Показать / скрыть панель ввода условий"
+                className={`px-2 py-1 text-[11px] font-bold transition ${isLeftOpen ? 'bg-[#D4AF37] text-[#1A1A1A]' : 'text-milk-700 hover:text-[#1A1A1A]'}`}
+              >
+                {isLeftOpen ? '◀ Ввод' : '▶ Ввод'}
+              </button>
+              <div className="w-px h-3 bg-[#D4AF37]/30 mx-0.5"></div>
+              <button
+                onClick={() => setIsRightOpen(!isRightOpen)}
+                title="Показать / скрыть панель аналитики"
+                className={`px-2 py-1 text-[11px] font-bold transition ${isRightOpen ? 'bg-[#D4AF37] text-[#1A1A1A]' : 'text-milk-700 hover:text-[#1A1A1A]'}`}
+              >
+                {isRightOpen ? 'Вывод ▶' : '◀ Вывод'}
+              </button>
+            </div>
+
+            {/* 4. Винный оттенок (#58111A) для ключевого действия с белым текстом */}
+            <button
+              type="button"
+              onClick={() => triggerToast('[тут вот такой вот блок]: Модуль серверной генерации PDF-меморандума ТЭО REO')}
+              className="px-3.5 py-1.5 bg-[#58111A] hover:bg-[#4A0E17] active:bg-[#26040A] text-[#F9F9F6] border border-[#4A0E17] text-xs font-semibold uppercase tracking-tight cursor-pointer transition flex items-center gap-1.5"
+            >
+              <span className="w-1.5 h-1.5 bg-[#D4AF37]"></span>
+              Экспорт ТЭО (PDF)
+            </button>
+          </div>
+        </header>
+
+        <div className="flex-1 flex overflow-hidden relative">
+
+          {/* ======================= 1. LEFT COLUMN: INPUT / CONDITIONS ======================= */}
+          <aside
+            className={`panel-left-clean flex flex-col transition-all duration-300 shrink-0 z-20 overflow-hidden ${
+              isLeftOpen ? 'w-80 sm:w-96' : 'w-0 border-r-0'
+            }`}
+          >
+            <div className="p-3 border-b border-[#D4AF37]/30 bg-[#EAEAE5] flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#1A1A1A] flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-[#D4AF37]"></span>
+                Входные условия объекта
+              </span>
+              <span className="text-[10px] font-mono font-bold text-[#8A6826]">REO • ZONE 1</span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs text-milk-900">
+              
+              {/* Target Quota Callout */}
+              <div className="p-3 card-clean">
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#8A6826] mb-1">
+                  Целевой грузопоток (Квота объекта)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000"
+                    value={facility.targetThroughputPerHour}
+                    onChange={(e) => setFacility({ ...facility, targetThroughputPerHour: Number(e.target.value) || 1 })}
+                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/50 px-3 py-1.5 text-base font-mono font-bold text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37]"
+                  />
+                  <span className="text-xs font-mono font-bold text-[#8A6826] shrink-0">шт/час</span>
+                </div>
+                <p className="text-[10px] text-milk-500 mt-1">
+                  Нормативная выработка ручного труда: <strong className="font-mono text-[#1A1A1A]">12 шт/ч на чел.</strong>
+                </p>
+              </div>
+
+              {/* Physical constraints */}
+              <div className="p-3 card-clean space-y-2.5">
+                <h4 className="font-semibold text-[11px] uppercase tracking-wider text-[#1A1A1A] border-b border-[#D4AF37]/20 pb-1">
+                  Геометрия и тех. коридоры
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[10px] text-milk-500 font-semibold block">Площадь (м²)</span>
+                    <input
+                      type="number"
+                      value={facility.totalAreaSqm}
+                      onChange={(e) => setFacility({ ...facility, totalAreaSqm: Number(e.target.value) })}
+                      className="w-full bg-[#FFFFFF] border border-[#D4AF37]/30 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:border-[#D4AF37]"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-milk-500 font-semibold block">Ширина проезда (м)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={facility.aisleWidthM}
+                      onChange={(e) => setFacility({ ...facility, aisleWidthM: Number(e.target.value) })}
+                      className="w-full bg-[#FFFFFF] border border-[#D4AF37]/30 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:border-[#D4AF37]"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-milk-500 font-semibold block">Груз (кг)</span>
+                    <input
+                      type="number"
+                      value={facility.requiredPayloadKg}
+                      onChange={(e) => setFacility({ ...facility, requiredPayloadKg: Number(e.target.value) })}
+                      className="w-full bg-[#FFFFFF] border border-[#D4AF37]/30 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:border-[#D4AF37]"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-milk-500 font-semibold block">Сменность</span>
+                    <select
+                      value={facility.shiftsPerDay}
+                      onChange={(e) => setFacility({ ...facility, shiftsPerDay: Number(e.target.value) })}
+                      className="w-full bg-[#FFFFFF] border border-[#D4AF37]/30 px-1 py-1 font-mono text-xs text-[#1A1A1A] focus:border-[#D4AF37]"
+                    >
+                      <option value={1}>1 смена (8ч)</option>
+                      <option value={2}>2 смены (16ч)</option>
+                      <option value={3}>3 смены (24ч)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-milk-500 font-semibold block">ФОТ оператора (руб/мес)</span>
+                  <input
+                    type="number"
+                    step="5000"
+                    value={facility.averageWorkerSalaryRub}
+                    onChange={(e) => setFacility({ ...facility, averageWorkerSalaryRub: Number(e.target.value) })}
+                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/30 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:border-[#D4AF37]"
+                  />
+                </div>
+              </div>
+
+              {/* Fleet Configurator Strategy */}
+              <div className="p-3 card-clean space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold text-[11px] uppercase tracking-wider text-[#1A1A1A]">
+                    Конфигуратор состава флота
+                  </h4>
+                  <div className="flex border border-[#D4AF37]/40 text-[10px] font-mono">
+                    <button
+                      onClick={() => setFleetMode('ai')}
+                      className={`px-2 py-0.5 ${fleetMode === 'ai' ? 'bg-[#D4AF37] text-[#1A1A1A] font-bold' : 'bg-[#FFFFFF] text-milk-700'}`}
+                    >
+                      ИИ
+                    </button>
+                    <button
+                      onClick={() => setFleetMode('manual')}
+                      className={`px-2 py-0.5 ${fleetMode === 'manual' ? 'bg-[#D4AF37] text-[#1A1A1A] font-bold' : 'bg-[#FFFFFF] text-milk-700'}`}
+                    >
+                      Все 9
+                    </button>
+                  </div>
+                </div>
+
+                {fleetMode === 'ai' ? (
+                  <div className="p-2.5 bg-[#FFFFFF] border border-[#D4AF37]/30 text-xs">
+                    <div className="text-[10px] text-[#8A6826] font-semibold uppercase">Оптимальное решение REO:</div>
+                    <div className="font-bold text-[#1A1A1A] text-sm mt-0.5">{selectedRobot.vendor} {selectedRobot.model}</div>
+                    <div className="text-[11px] text-milk-700 mt-1">
+                      Потребный парк: <strong className="font-mono text-[#8A6826] font-bold text-xs">{economics.fleetSize} ед.</strong>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                    {SEED_ROBOTS.map((r) => {
+                      const evalItem = evaluatedList.find(e => e.robot.id === r.id);
+                      const isEligible = evalItem?.isEligible;
+                      const count = manualCounts[r.id] || 0;
+
+                      return (
+                        <div
+                          key={r.id}
+                          className={`p-2 border text-[11px] flex items-center justify-between ${
+                            isEligible ? 'bg-[#FFFFFF] border-[#D4AF37]/30' : 'bg-rose-50/60 border-rose-300 text-rose-800'
+                          }`}
+                        >
+                          <div className="overflow-hidden pr-2">
+                            <div className="font-bold truncate text-[#1A1A1A]">{r.vendor} {r.model}</div>
+                            <div className="text-[9px] text-milk-500">
+                              {r.payloadKg} кг • {isEligible ? 'Совместим' : '⚠️ Ограничение'}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 font-mono">
+                            <button
+                              onClick={() => updateManualCount(r.id, -1)}
+                              className="w-5 h-5 bg-[#EAEAE5] hover:bg-[#D4AF37] hover:text-[#1A1A1A] font-bold flex items-center justify-center text-xs text-[#1A1A1A]"
+                            >
+                              -
+                            </button>
+                            <span className="w-5 text-center font-bold text-[#8A6826]">{count}</span>
+                            <button
+                              onClick={() => updateManualCount(r.id, 1)}
+                              className="w-5 h-5 bg-[#EAEAE5] hover:bg-[#D4AF37] hover:text-[#1A1A1A] font-bold flex items-center justify-center text-xs text-[#1A1A1A]"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Кнопка на золоте: ТЕКСТ ОБЯЗАН БЫТЬ ГРАФИТОВЫМ (#1A1A1A) */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  disabled={isComputing}
+                  onClick={handleExecuteCalculation}
+                  className="w-full py-2.5 bg-[#D4AF37] hover:bg-[#BFA02E] active:bg-[#8A6826] text-[#1A1A1A] font-bold uppercase tracking-wider text-xs border border-[#BFA02E] shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="w-2 h-2 bg-[#1A1A1A]"></span>
+                  {isComputing ? 'REO: Расчет в процессе...' : 'Запустить расчет и моделирование'}
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          {/* ======================= 2. CENTER COLUMN: CAD WORKSTATION (NEUTRAL ALABASTER) ======================= */}
+          <section className="flex-1 flex flex-col cad-stage-neutral overflow-hidden relative gold-border-r">
+            
+            {/* Telemetry Header Strip */}
+            <div className="h-10 bg-[#FFFFFF] border-b gold-border px-4 flex items-center justify-between text-xs font-mono shrink-0 shadow-xs">
+              <div className="flex items-center gap-4">
+                <span className="flex items-center gap-1.5 font-semibold text-[#1A1A1A]">
+                  <span className="w-2 h-2 bg-[#D4AF37]"></span>
+                  ФАКТ КВОТЫ: <span className="text-[#8A6826]"><ForgedValue value={economics.effThroughput} suffix=" шт/ч" /></span>
+                </span>
+                <span className="text-milk-400">|</span>
+                <span className="text-milk-700">
+                  ПАРК: <strong className="text-[#1A1A1A] font-bold"><ForgedValue value={fleetMode === 'ai' ? economics.fleetSize : manualTotalFleet} suffix=" ед." /></strong>
+                </span>
+                <span className="text-milk-400">|</span>
+                <span className="text-milk-700">
+                  СВЯЗНОСТЬ (λ₂): <strong className="text-emerald-700 font-bold">0.340 (Без дедлоков)</strong>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F4F4F0] border border-[#D4AF37]/30 text-[10px] font-semibold text-milk-700 uppercase">
+                  <span className="w-1.5 h-1.5 bg-emerald-600"></span>
+                  CAD ВЬЮПОРТ ГОТОВ
+                </span>
+                <span className="text-[10px] text-milk-500 uppercase tracking-widest font-semibold hidden lg:inline">
+                  REO ZONE 2 • ЦИФРОВОЙ ДВОЙНИК
+                </span>
+              </div>
+            </div>
+
+            {/* Center Viewport Neutral Technical Stage */}
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center relative overflow-hidden">
+              
+              {/* Technical crosshairs */}
+              <div className="absolute inset-0 pointer-events-none opacity-40 flex items-center justify-center">
+                <div className="w-full h-px bg-[#D4AF37]/40"></div>
+                <div className="h-full w-px bg-[#D4AF37]/40 absolute"></div>
+                <div className="w-[420px] h-[420px] border border-dashed border-[#D4AF37]/50 absolute"></div>
+                <div className="w-[620px] h-[620px] border border-[#D4AF37]/20 absolute"></div>
+              </div>
+
+              <div className="max-w-md bg-[#FFFFFF] border-2 border-[#D4AF37] p-7 shadow-lg relative z-10 text-left">
+                <div className="flex items-center gap-3 mb-3 border-b border-[#D4AF37]/30 pb-3">
+                  <div className="w-8 h-8 bg-[#58111A] text-[#F9F9F6] font-extrabold flex items-center justify-center text-xs border border-[#4A0E17]">
+                    CAD
+                  </div>
+                  <div>
+                    <h2 className="text-xs font-bold uppercase tracking-tight text-[#58111A] leading-tight">
+                      тут вот такой вот блок:
+                    </h2>
+                    <p className="text-[11px] font-semibold text-[#8A6826] uppercase tracking-tight">
+                      Цифровой двойник и 2.5D проекция
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-milk-700 leading-relaxed mb-4 font-sans">
+                  Интерактивный рендер топологии объекта, траекторий движения роботов в пространстве Минковского и спектральная тепловая карта заторов временно замещены заглушкой.
+                </p>
+
+                <div className="p-3 bg-[#F4F4F0] border border-[#D4AF37]/30 text-[11px] font-mono space-y-1.5 text-[#1A1A1A]">
+                  <div className="flex justify-between">
+                    <span className="text-milk-500">• Объект:</span>
+                    <strong className="text-[#1A1A1A]">{facility.industry.toUpperCase()} ({facility.totalAreaSqm} м²)</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-milk-500">• Модель REO:</span>
+                    <strong className="text-[#8A6826]">{selectedRobot.vendor} {selectedRobot.model}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-milk-500">• Коэф. АКБ (k_avail):</span>
+                    <strong className="text-[#1A1A1A]">{(economics.kAvail * 100).toFixed(0)}%</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-milk-500">• Пропускная связность:</span>
+                    <strong className="text-emerald-700">Свободно (Риск &lt; 2%)</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Timeline Player HUD Strip */}
+            <div className="h-12 bg-[#FFFFFF] border-t gold-border px-4 flex items-center justify-between text-xs shrink-0 shadow-xs">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => triggerToast('[тут вот такой вот блок]: Воспроизведение симуляции')}
+                  className="px-3 py-1 bg-[#D4AF37] text-[#1A1A1A] hover:bg-[#BFA02E] active:bg-[#8A6826] font-mono text-xs font-bold border border-[#BFA02E] cursor-pointer"
+                >
+                  ▶ ПУСК
+                </button>
+                <span className="font-mono text-xs font-semibold text-[#1A1A1A]">00:00 / 60:00</span>
+                
+                <div className="w-48 bg-[#EAEAE5] h-2 relative cursor-pointer border border-[#D4AF37]/30">
+                  <div className="bg-[#D4AF37] h-full w-1/4"></div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 font-mono text-xs">
+                <span className="text-milk-500 font-semibold">СКОРОСТЬ:</span>
+                <span className="px-1.5 py-0.5 bg-[#D4AF37] text-[#1A1A1A] font-bold">1x</span>
+                <span className="px-1.5 py-0.5 text-milk-700 hover:text-[#1A1A1A] cursor-pointer font-bold">2x</span>
+                <span className="px-1.5 py-0.5 text-milk-700 hover:text-[#1A1A1A] cursor-pointer font-bold">5x</span>
+              </div>
+            </div>
+          </section>
+
+          {/* ======================= 3. RIGHT COLUMN: OUTPUT / ANALYTICS ======================= */}
+          <aside
+            className={`panel-right-clean flex flex-col transition-all duration-300 shrink-0 z-20 overflow-hidden ${
+              isRightOpen ? 'w-96 sm:w-[440px]' : 'w-0'
+            }`}
+          >
+            {/* Tabs Switcher Header */}
+            <div className="border-b gold-border bg-[#FFFFFF] p-1 flex items-center text-xs font-mono">
+              <button
+                onClick={() => setRightTab('economics')}
+                className={`flex-1 py-1.5 font-bold uppercase text-[11px] transition ${
+                  rightTab === 'economics' ? 'bg-[#D4AF37] text-[#1A1A1A]' : 'text-milk-500 hover:text-[#1A1A1A]'
+                }`}
+              >
+                3 Сценария
+              </button>
+              <button
+                onClick={() => setRightTab('whatif')}
+                className={`flex-1 py-1.5 font-bold uppercase text-[11px] transition ${
+                  rightTab === 'whatif' ? 'bg-[#D4AF37] text-[#1A1A1A]' : 'text-milk-500 hover:text-[#1A1A1A]'
+                }`}
+              >
+                What-If
+              </button>
+              <button
+                onClick={() => setRightTab('catalog')}
+                className={`flex-1 py-1.5 font-bold uppercase text-[11px] transition ${
+                  rightTab === 'catalog' ? 'bg-[#D4AF37] text-[#1A1A1A]' : 'text-milk-500 hover:text-[#1A1A1A]'
+                }`}
+              >
+                XAI Отбор
+              </button>
+            </div>
+
+            {/* Tab Contents */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs text-milk-900">
+              
+              {rightTab === 'economics' && (
+                <div className="space-y-3.5">
+                  
+                  {/* 4. ВИННЫЙ ОТТЕНОК (#58111A) ДЛЯ ПЛАШКИ ЭКСПЕРТНОГО ЗАКЛЮЧЕНИЯ С БЕЛЫМ ТЕКСТОМ */}
+                  <div className="p-3.5 bg-[#58111A] text-[#F9F9F6] border border-[#4A0E17] shadow-xs">
+                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#D4AF37] flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 bg-[#D4AF37]"></span>
+                      Экспертное заключение REO:
+                    </div>
+                    <div className="font-semibold text-xs mt-1 leading-snug text-[#FFFFFF]">
+                      {economics.capex.verdictText}
+                    </div>
+                  </div>
+
+                  {/* 3-Scenario Comparison Table */}
+                  <div className="card-clean overflow-hidden">
+                    <div className="p-2.5 bg-[#F4F4F0] border-b border-[#D4AF37]/30 flex items-center justify-between">
+                      <span className="font-semibold text-[11px] uppercase tracking-wider text-[#8A6826]">
+                        Сопоставление 3 моделей
+                      </span>
+                      <span className="text-[10px] font-mono text-milk-500 font-bold">5 ЛЕТ ТСО</span>
+                    </div>
+
+                    <div className="divide-y divide-[#D4AF37]/20 font-mono text-xs">
+                      <div className="p-2.5 grid grid-cols-3 gap-2 bg-[#F9F9F6] font-bold">
+                        <span className="text-milk-500">Параметр</span>
+                        <span className="text-[#1A1A1A]">As-Is (Люди)</span>
+                        <span className="text-[#8A6826]">CAPEX (Парк)</span>
+                      </div>
+                      <div className="p-2.5 grid grid-cols-3 gap-2 items-center">
+                        <span className="text-milk-500 text-[11px]">Штат / Парк</span>
+                        <span className="font-bold text-[#1A1A1A]"><ForgedValue value={economics.manual.staffCount} suffix=" чел." /></span>
+                        <span className="font-bold text-[#8A6826]"><ForgedValue value={economics.fleetSize} suffix=" роб." /></span>
+                      </div>
+                      <div className="p-2.5 grid grid-cols-3 gap-2 items-center bg-[#F9F9F6]">
+                        <span className="text-milk-500 text-[11px]">Инвестиции</span>
+                        <span className="text-milk-400">—</span>
+                        <span className="font-bold text-[#1A1A1A]"><ForgedValue value={economics.capex.totalCapex} isCurrency /></span>
+                      </div>
+                      <div className="p-2.5 grid grid-cols-3 gap-2 items-center">
+                        <span className="text-milk-500 text-[11px]">Годовой OPEX</span>
+                        <span className="text-[#1A1A1A]"><ForgedValue value={economics.manual.annualOpex} isCurrency /></span>
+                        <span className="text-[#1A1A1A]"><ForgedValue value={economics.capex.annualOpex} isCurrency /></span>
+                      </div>
+                      <div className="p-2.5 grid grid-cols-3 gap-2 items-center bg-[#F9F9F6]">
+                        <span className="text-milk-500 text-[11px]">Экономия/год</span>
+                        <span className="text-milk-400">—</span>
+                        <span className="font-bold text-emerald-700"><ForgedValue value={economics.capex.annualSavings} isCurrency prefix="+" /></span>
+                      </div>
+                      <div className="p-2.5 grid grid-cols-3 gap-2 items-center bg-[#D4AF37]/10">
+                        <span className="text-[#1A1A1A] font-bold text-[11px]">Окупаемость</span>
+                        <span className="text-milk-400">—</span>
+                        <span className="font-bold text-[#8A6826]"><ForgedValue value={economics.capex.paybackYears} suffix=" года" /></span>
+                      </div>
+                      <div className="p-2.5 grid grid-cols-3 gap-2 items-center">
+                        <span className="text-milk-500 text-[11px]">5-летний ROI</span>
+                        <span className="text-milk-400">—</span>
+                        <span className="font-bold text-emerald-700"><ForgedValue value={economics.capex.roi} suffix="%" /></span>
+                      </div>
+                      <div className="p-2.5 grid grid-cols-3 gap-2 items-center bg-[#FFFFFF] font-bold">
+                        <span className="text-[#1A1A1A] text-[11px]">TCO (5 лет)</span>
+                        <span className="text-milk-700"><ForgedValue value={economics.manual.fiveYearTco} isCurrency /></span>
+                        <span className="text-[#58111A] font-bold"><ForgedValue value={economics.capex.fiveYearTco} isCurrency /></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* RaaS Scenario Card */}
+                  <div className="p-3 card-clean">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-[11px] uppercase tracking-wider text-[#8A6826]">
+                        Сценарий 3: Подписка (RaaS)
+                      </span>
+                      <span className="text-[10px] font-mono bg-[#D4AF37]/20 text-[#8A6826] px-1 font-bold">0 ₽ CAPEX</span>
+                    </div>
+                    <p className="text-[11px] text-milk-700 mb-2">
+                      Аренда без капитальных затрат. Ежегодный платеж: <strong className="font-mono text-[#1A1A1A]"><ForgedValue value={economics.raas.annualOpex} isCurrency /></strong>
+                    </p>
+                    <div className="font-mono text-xs flex justify-between pt-1 border-t border-[#D4AF37]/20">
+                      <span className="text-milk-500">TCO за 5 лет:</span>
+                      <strong className="text-[#8A6826]"><ForgedValue value={economics.raas.fiveYearTco} isCurrency /></strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {rightTab === 'whatif' && (
+                <div className="space-y-3.5">
+                  <div className="p-3 card-clean">
+                    <h4 className="font-semibold text-[11px] uppercase tracking-wider text-[#8A6826] mb-1">
+                      Анализ чувствительности (What-If)
+                    </h4>
+                    <p className="text-[11px] text-milk-500 mb-4">
+                      Динамический пересчет TCO и окупаемости при колебаниях рыночных условий.
+                    </p>
+
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex justify-between font-mono text-[11px] mb-1">
+                          <span className="text-milk-700">Индексация зарплат персонала:</span>
+                          <strong className="text-[#8A6826]">{whatIf.salaryChangePercent > 0 ? `+${whatIf.salaryChangePercent}%` : `${whatIf.salaryChangePercent}%`}</strong>
+                        </div>
+                        <input
+                          type="range"
+                          min="-30"
+                          max="50"
+                          step="5"
+                          value={whatIf.salaryChangePercent}
+                          onChange={(e) => setWhatIf({ ...whatIf, salaryChangePercent: Number(e.target.value) })}
+                          className="w-full accent-[#D4AF37] cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between font-mono text-[11px] mb-1">
+                          <span className="text-milk-700">Масштабирование грузопотока:</span>
+                          <strong className="text-[#8A6826]">{whatIf.throughputScalePercent}%</strong>
+                        </div>
+                        <input
+                          type="range"
+                          min="50"
+                          max="200"
+                          step="10"
+                          value={whatIf.throughputScalePercent}
+                          onChange={(e) => setWhatIf({ ...whatIf, throughputScalePercent: Number(e.target.value) })}
+                          className="w-full accent-[#D4AF37] cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between font-mono text-[11px] mb-1">
+                          <span className="text-milk-700">Субсидия / Скидка на технику:</span>
+                          <strong className="text-[#8A6826]">{whatIf.capexDiscountPercent}%</strong>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="30"
+                          step="2"
+                          value={whatIf.capexDiscountPercent}
+                          onChange={(e) => setWhatIf({ ...whatIf, capexDiscountPercent: Number(e.target.value) })}
+                          className="w-full accent-[#D4AF37] cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsFormulaModalOpen(true)}
+                    className="w-full py-2 bg-[#FFFFFF] border border-[#D4AF37]/40 hover:bg-[#F4F4F0] font-mono text-xs text-[#8A6826] cursor-pointer font-bold"
+                  >
+                    Показать формулы расчета (XAI)
+                  </button>
+                </div>
+              )}
+
+              {rightTab === 'catalog' && (
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-[11px] uppercase tracking-wider text-[#8A6826]">
+                    Объяснимый подбор решений REO (XAI)
+                  </h4>
+                  
+                  <div className="space-y-2">
+                    {evaluatedList.map(({ robot, isEligible, exclusionReasons }) => (
+                      <div
+                        key={robot.id}
+                        className={`p-2.5 border text-xs card-clean ${
+                          !isEligible ? 'bg-rose-50/50 border-rose-300' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-[#1A1A1A]">{robot.vendor} {robot.model}</span>
+                          <span className={`text-[10px] font-mono px-1 font-bold ${
+                            isEligible ? 'bg-emerald-100 text-emerald-800 border border-emerald-400' : 'bg-rose-100 text-rose-800 border border-rose-400'
+                          }`}>
+                            {isEligible ? 'Рекомендован' : 'Отклонен'}
+                          </span>
+                        </div>
+                        
+                        <div className="text-[11px] text-milk-500">
+                          Нагрузка: {robot.payloadKg} кг • Мин. проезд: {robot.minAisleWidthMm} мм
+                        </div>
+
+                        {!isEligible && (
+                          <ul className="mt-1.5 space-y-0.5 text-[10px] text-rose-700 border-t border-rose-200 pt-1">
+                            {exclusionReasons.map((r, i) => (
+                              <li key={i}>• {r}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </aside>
+        </div>
+
+        {/* Formula Assumptions Modal */}
+        {isFormulaModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+            <div className="bg-[#FFFFFF] border-2 border-[#D4AF37] max-w-lg w-full p-6 shadow-xl relative">
+              <div className="flex justify-between items-center mb-4 border-b border-[#D4AF37]/30 pb-2">
+                <h3 className="font-semibold text-sm uppercase text-[#1A1A1A]">
+                  Математические формулы и допущения REO (п. 3.5.8 ТЗ)
+                </h3>
+                <button
+                  onClick={() => setIsFormulaModalOpen(false)}
+                  className="text-milk-500 hover:text-[#1A1A1A] font-mono font-bold text-sm cursor-pointer"
+                >
+                  [✕]
+                </button>
+              </div>
+
+              <div className="space-y-3 font-mono text-xs text-milk-700 leading-relaxed">
+                <div>
+                  <strong className="text-[#1A1A1A]">1. Доступность АКБ (k_avail):</strong><br />
+                  <code>k_avail = T_work / (T_work + T_charge)</code>
+                </div>
+                <div>
+                  <strong className="text-[#1A1A1A]">2. Потребный флот REO:</strong><br />
+                  <code>N_fleet = ⌈ Q_target / (Q_robot × k_avail) ⌉</code>
+                </div>
+                <div>
+                  <strong className="text-[#1A1A1A]">3. Простой срок окупаемости:</strong><br />
+                  <code>Payback = CAPEX / (OPEX_manual - OPEX_robots)</code>
+                </div>
+                <div>
+                  <strong className="text-[#1A1A1A]">4. 5-летний TCO:</strong><br />
+                  <code>TCO_5 = CAPEX + (5 × OPEX_annual)</code>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => setIsFormulaModalOpen(false)}
+                  className="px-4 py-1.5 bg-[#D4AF37] hover:bg-[#BFA02E] text-[#1A1A1A] font-bold text-xs uppercase cursor-pointer"
+                >
+                  Понятно
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Toast Notification */}
+        {toastNotice && (
+          <div className="fixed bottom-4 right-4 z-50 bg-[#FFFFFF] text-[#1A1A1A] border-2 border-[#D4AF37] px-4 py-2.5 text-xs font-mono shadow-lg flex items-center gap-2">
+            <span className="w-2 h-2 bg-[#D4AF37]"></span>
+            <span className="font-bold">{toastNotice}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

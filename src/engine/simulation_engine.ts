@@ -11,6 +11,22 @@ export type AgentFSMState =
   | 'MOVING_TO_CHARGE'
   | 'CHARGING';
 
+export interface AgentSnapshot {
+  id: string;
+  x: number;
+  y: number;
+  headingRad: number;
+  state: AgentFSMState;
+  batterySoc: number;
+  cargoPayload: boolean;
+}
+
+export interface SimulationReplayFrame {
+  timestampSec: number; // от 0 до 3600 с
+  agents: AgentSnapshot[];
+  events?: Array<'PICKUP' | 'DROPOFF' | 'CHARGE_START' | 'CHARGE_END' | 'BRAKE'>;
+}
+
 export interface AgentState {
   id: string;
   state: AgentFSMState;
@@ -200,6 +216,7 @@ export class SimulationEngine {
   private legacyFleetSize: number;
 
   public agents: AgentState[] = [];
+  public replayFrames: SimulationReplayFrame[] = [];
   public elapsedSimSeconds: number = 0;
   public completedDeliveries: number = 0;
   public deliveriesByRobotType: Record<string, number> = {};
@@ -207,7 +224,13 @@ export class SimulationEngine {
 
   // Key node caches and O(1) map
   private nodeMap: Map<string, GraphNode> = new Map();
+  private nodeIndexMap: Map<string, number> = new Map();
   private adjMap: Map<string, Array<{ target: string; distance: number }>> = new Map();
+
+  // Reusable Dijkstra arrays
+  private dijkstraDist: Float64Array = new Float64Array(0);
+  private dijkstraPrev: Int32Array = new Int32Array(0);
+  private dijkstraVisited: Uint8Array = new Uint8Array(0);
   private inboundNodes: GraphNode[] = [];
   private outboundNodes: GraphNode[] = [];
   private storageNodes: GraphNode[] = [];
@@ -247,9 +270,15 @@ export class SimulationEngine {
   }
 
   private classifyNodes(): void {
-    this.nodeMap = new Map<string, GraphNode>(this.topology.nodes.map((n) => [n.id, n]));
+    const nodes = this.topology.nodes;
+    this.nodeMap = new Map<string, GraphNode>(nodes.map((n) => [n.id, n]));
+    this.nodeIndexMap = new Map<string, number>();
+    for (let i = 0; i < nodes.length; i++) {
+      this.nodeIndexMap.set(nodes[i].id, i);
+    }
+
     this.adjMap = new Map();
-    this.topology.nodes.forEach((n) => this.adjMap.set(n.id, []));
+    nodes.forEach((n) => this.adjMap.set(n.id, []));
     this.topology.edges.forEach((e) => {
       this.adjMap.get(e.source)?.push({ target: e.target, distance: e.distanceM });
       if (e.bidirectional) {
@@ -257,45 +286,40 @@ export class SimulationEngine {
       }
     });
 
-    this.inboundNodes = this.topology.nodes.filter((n) => n.type === 'INBOUND_DOCK');
-    this.outboundNodes = this.topology.nodes.filter((n) => n.type === 'OUTBOUND_DOCK');
-    this.storageNodes = this.topology.nodes.filter((n) => n.type === 'STORAGE_AISLE');
-    this.chargingNodes = this.topology.nodes.filter((n) => n.type === 'CHARGING_HUB');
-    this.waypointNodes = this.topology.nodes.filter((n) => n.type === 'WAYPOINT');
+    const numNodes = nodes.length;
+    this.dijkstraDist = new Float64Array(numNodes);
+    this.dijkstraPrev = new Int32Array(numNodes);
+    this.dijkstraVisited = new Uint8Array(numNodes);
+
+    this.inboundNodes = nodes.filter((n) => n.type === 'INBOUND_DOCK');
+    this.outboundNodes = nodes.filter((n) => n.type === 'OUTBOUND_DOCK');
+    this.storageNodes = nodes.filter((n) => n.type === 'STORAGE_AISLE');
+    this.chargingNodes = nodes.filter((n) => n.type === 'CHARGING_HUB');
+    this.waypointNodes = nodes.filter((n) => n.type === 'WAYPOINT');
   }
 
   private getShortestPath(startNodeId: string, targetNodeId: string): string[] {
     if (startNodeId === targetNodeId) return [startNodeId];
-    const startNode = this.nodeMap.get(startNodeId);
-    const targetNode = this.nodeMap.get(targetNodeId);
-    if (!startNode || !targetNode) return [];
+    const startIdx = this.nodeIndexMap.get(startNodeId);
+    const targetIdx = this.nodeIndexMap.get(targetNodeId);
+    if (startIdx === undefined || targetIdx === undefined) return [];
 
     const nodes = this.topology.nodes;
     const numNodes = nodes.length;
 
-    const nodeIndexMap = new Map<string, number>();
-    for (let i = 0; i < numNodes; i++) {
-      nodeIndexMap.set(nodes[i].id, i);
-    }
+    this.dijkstraDist.fill(Infinity);
+    this.dijkstraPrev.fill(-1);
+    this.dijkstraVisited.fill(0);
 
-    const startIdx = nodeIndexMap.get(startNodeId)!;
-    const targetIdx = nodeIndexMap.get(targetNodeId)!;
-
-    const dist = new Float64Array(numNodes);
-    dist.fill(Infinity);
-    const prev = new Int32Array(numNodes);
-    prev.fill(-1);
-    const visited = new Uint8Array(numNodes);
-
-    dist[startIdx] = 0;
+    this.dijkstraDist[startIdx] = 0;
 
     for (let step = 0; step < numNodes; step++) {
       let u = -1;
       let minD = Infinity;
 
       for (let i = 0; i < numNodes; i++) {
-        if (!visited[i] && dist[i] < minD) {
-          minD = dist[i];
+        if (!this.dijkstraVisited[i] && this.dijkstraDist[i] < minD) {
+          minD = this.dijkstraDist[i];
           u = i;
         }
       }
@@ -303,30 +327,30 @@ export class SimulationEngine {
       if (u === -1 || minD === Infinity) break;
       if (u === targetIdx) break;
 
-      visited[u] = 1;
+      this.dijkstraVisited[u] = 1;
 
       const neighbors = this.adjMap.get(nodes[u].id) || [];
       for (let k = 0; k < neighbors.length; k++) {
         const edge = neighbors[k];
-        const v = nodeIndexMap.get(edge.target);
-        if (v !== undefined && !visited[v]) {
+        const v = this.nodeIndexMap.get(edge.target);
+        if (v !== undefined && !this.dijkstraVisited[v]) {
           const alt = minD + edge.distance;
-          if (alt < dist[v]) {
-            dist[v] = alt;
-            prev[v] = u;
+          if (alt < this.dijkstraDist[v]) {
+            this.dijkstraDist[v] = alt;
+            this.dijkstraPrev[v] = u;
           }
         }
       }
     }
 
-    if (dist[targetIdx] === Infinity) return [];
+    if (this.dijkstraDist[targetIdx] === Infinity) return [];
 
     const path: string[] = [];
     let curr = targetIdx;
     while (curr !== -1) {
       path.push(nodes[curr].id);
       if (curr === startIdx) break;
-      curr = prev[curr];
+      curr = this.dijkstraPrev[curr];
     }
     path.reverse();
     return path;
@@ -384,6 +408,9 @@ export class SimulationEngine {
       const minY = box.minY - radius;
       const maxY = box.maxY + radius;
 
+      if ((x1 < minX && x2 < minX) || (x1 > maxX && x2 > maxX)) continue;
+      if ((y1 < minY && y2 < minY) || (y1 > maxY && y2 > maxY)) continue;
+
       let t0 = 0;
       let t1 = 1;
 
@@ -421,6 +448,7 @@ export class SimulationEngine {
    */
   public initializeFleet(): void {
     this.agents = [];
+    this.replayFrames = [];
     this.elapsedSimSeconds = 0;
     this.completedDeliveries = 0;
     this.deliveriesByRobotType = {};
@@ -621,15 +649,23 @@ export class SimulationEngine {
           for (const box of this.obstacleBoxes) {
             let cx = Math.max(box.minX, Math.min(agent.x, box.maxX));
             let cy = Math.max(box.minY, Math.min(agent.y, box.maxY));
-            let dObs = Math.hypot(agent.x - cx, agent.y - cy);
+            const dxObs = agent.x - cx;
+            const dyObs = agent.y - cy;
+            const dObsSq = dxObs * dxObs + dyObs * dyObs;
+
+            if (dObsSq >= 1.44) { // dSafe = 1.2 => dSafeSq = 1.44
+              continue;
+            }
+
+            let dObs = Math.sqrt(dObsSq);
 
             // Hard Boundary Push-out if robot penetrated physical collision buffer
             if (dObs < agent.robotRadius) {
               let nx = 1;
               let ny = 0;
               if (dObs >= 0.001) {
-                nx = (agent.x - cx) / dObs;
-                ny = (agent.y - cy) / dObs;
+                nx = dxObs / dObs;
+                ny = dyObs / dObs;
               }
               const pushDist = agent.robotRadius + 0.05;
               agent.x = cx + nx * pushDist;
@@ -672,13 +708,16 @@ export class SimulationEngine {
             if (i === j) continue;
             const other = this.agents[j];
             const rSum = agent.robotRadius + other.robotRadius;
-            const distOther = Math.hypot(other.x - agent.x, other.y - agent.y);
             const dDetect = rSum + 0.5;
+            const dxOther = agent.x - other.x;
+            const dyOther = agent.y - other.y;
+            const distOtherSq = dxOther * dxOther + dyOther * dyOther;
 
-            if (distOther < dDetect && distOther > 0.001) {
+            if (distOtherSq < dDetect * dDetect && distOtherSq > 0.000001) {
+              const distOther = Math.sqrt(distOtherSq);
               nearbyRobotCount++;
-              const uAwayX = (agent.x - other.x) / distOther;
-              const uAwayY = (agent.y - other.y) / distOther;
+              const uAwayX = dxOther / distOther;
+              const uAwayY = dyOther / distOther;
 
               const otherCos = Math.cos(other.headingRad);
               const otherSin = Math.sin(other.headingRad);
@@ -822,12 +861,15 @@ export class SimulationEngine {
       for (let j = i + 1; j < this.agents.length; j++) {
         const a1 = this.agents[i];
         const a2 = this.agents[j];
-        const dist = Math.hypot(a1.x - a2.x, a1.y - a2.y);
+        const dx = a1.x - a2.x;
+        const dy = a1.y - a2.y;
         const minDist = a1.robotRadius + a2.robotRadius;
-        if (dist < minDist) {
+        const distSq = dx * dx + dy * dy;
+        if (distSq < minDist * minDist) {
+          const dist = Math.sqrt(distSq);
           const overlap = minDist - dist;
-          const nx = dist >= 0.001 ? (a1.x - a2.x) / dist : 1;
-          const ny = dist >= 0.001 ? (a1.y - a2.y) / dist : 0;
+          const nx = dist >= 0.001 ? dx / dist : 1;
+          const ny = dist >= 0.001 ? dy / dist : 0;
           const shift = overlap / 2;
           a1.x += nx * shift;
           a1.y += ny * shift;
@@ -875,7 +917,10 @@ export class SimulationEngine {
    * Calculates throughput, topological loss factor eta_traffic, average idle percentage,
    * deliveries breakdown by robot type, and deadlock count without storing coordinate history.
    */
-  public runOneHourSimulation(targetHourlyQuota: number): OneHourSimulationResult {
+  public runOneHourSimulation(
+    targetHourlyQuota: number,
+    recordReplay: boolean = false
+  ): OneHourSimulationResult {
     this.initializeFleet();
 
     const dtSim = 0.5;
@@ -888,19 +933,63 @@ export class SimulationEngine {
     const stuckTicksPerAgent = new Uint16Array(N);
     const prevX = new Float64Array(N);
     const prevY = new Float64Array(N);
+    const prevStates: AgentFSMState[] = new Array(N);
+    const prevSpeeds = new Float64Array(N);
 
     for (let i = 0; i < N; i++) {
       prevX[i] = this.agents[i].x;
       prevY[i] = this.agents[i].y;
+      prevStates[i] = this.agents[i].state;
+      prevSpeeds[i] = 0;
+    }
+
+    if (recordReplay) {
+      this.replayFrames = new Array(totalTicks);
+    } else {
+      this.replayFrames = [];
     }
 
     for (let tick = 0; tick < totalTicks; tick++) {
       this.update(dtSim);
 
+      let frameEvents: Array<'PICKUP' | 'DROPOFF' | 'CHARGE_START' | 'CHARGE_END' | 'BRAKE'> | undefined = undefined;
+
       for (let i = 0; i < N; i++) {
         const agent = this.agents[i];
         const distMoved = Math.hypot(agent.x - prevX[i], agent.y - prevY[i]);
         const speedMps = distMoved / dtSim;
+
+        if (recordReplay) {
+          const prevState = prevStates[i];
+          const currState = agent.state;
+
+          // FSM Event transitions
+          if (prevState === 'LOADING' && (currState === 'TRANSPORTING' || currState === 'UNLOADING')) {
+            if (!frameEvents) frameEvents = [];
+            if (!frameEvents.includes('PICKUP')) frameEvents.push('PICKUP');
+          } else if (prevState === 'UNLOADING' && currState !== 'UNLOADING') {
+            if (!frameEvents) frameEvents = [];
+            if (!frameEvents.includes('DROPOFF')) frameEvents.push('DROPOFF');
+          } else if (prevState !== 'CHARGING' && currState === 'CHARGING') {
+            if (!frameEvents) frameEvents = [];
+            if (!frameEvents.includes('CHARGE_START')) frameEvents.push('CHARGE_START');
+          } else if (prevState === 'CHARGING' && currState === 'IDLE') {
+            if (!frameEvents) frameEvents = [];
+            if (!frameEvents.includes('CHARGE_END')) frameEvents.push('CHARGE_END');
+          }
+
+          if (
+            (prevState === 'MOVING_TO_PICKUP' || prevState === 'TRANSPORTING' || prevState === 'MOVING_TO_CHARGE') &&
+            prevSpeeds[i] > 0.4 &&
+            speedMps < 0.1
+          ) {
+            if (!frameEvents) frameEvents = [];
+            if (!frameEvents.includes('BRAKE')) frameEvents.push('BRAKE');
+          }
+
+          prevStates[i] = currState;
+          prevSpeeds[i] = speedMps;
+        }
 
         prevX[i] = agent.x;
         prevY[i] = agent.y;
@@ -924,6 +1013,31 @@ export class SimulationEngine {
         } else {
           stuckTicksPerAgent[i] = 0;
         }
+      }
+
+      if (recordReplay) {
+        const agentSnapshots: AgentSnapshot[] = new Array(N);
+        for (let i = 0; i < N; i++) {
+          const a = this.agents[i];
+          agentSnapshots[i] = {
+            id: a.id,
+            x: a.x,
+            y: a.y,
+            headingRad: a.headingRad,
+            state: a.state,
+            batterySoc: a.batterySoc,
+            cargoPayload: a.cargoPayload,
+          };
+        }
+
+        const frame: SimulationReplayFrame = {
+          timestampSec: tick * dtSim,
+          agents: agentSnapshots,
+        };
+        if (frameEvents) {
+          frame.events = frameEvents;
+        }
+        this.replayFrames[tick] = frame;
       }
     }
 

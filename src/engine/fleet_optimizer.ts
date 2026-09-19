@@ -216,30 +216,29 @@ export function optimizeFleetComposition(
       let bestPairCountJ = 0;
       let minPairTco = Infinity;
 
-      const evaluatePairCounts = (nI: number) => {
-        if (nI < 1 || nI >= nIMax) return;
+      for (let nI = 1; nI < nIMax; nI += step) {
         const qRem = targetQ - nI * qI;
         const nJ = Math.max(1, Math.ceil(qRem / qJ));
-
         const pairTco = nI * tcoI + nJ * tcoJ;
-
         if (pairTco < minPairTco) {
           minPairTco = pairTco;
           bestPairCountI = nI;
           bestPairCountJ = nJ;
         }
-      };
-
-      for (let nI = 1; nI < nIMax; nI += step) {
-        evaluatePairCounts(nI);
       }
-      evaluatePairCounts(nIMax - 1);
 
       if (step > 1 && bestPairCountI > 0) {
         const start = Math.max(1, bestPairCountI - step);
         const end = Math.min(nIMax - 1, bestPairCountI + step);
         for (let nI = start; nI <= end; nI++) {
-          evaluatePairCounts(nI);
+          const qRem = targetQ - nI * qI;
+          const nJ = Math.max(1, Math.ceil(qRem / qJ));
+          const pairTco = nI * tcoI + nJ * tcoJ;
+          if (pairTco < minPairTco) {
+            minPairTco = pairTco;
+            bestPairCountI = nI;
+            bestPairCountJ = nJ;
+          }
         }
       }
 

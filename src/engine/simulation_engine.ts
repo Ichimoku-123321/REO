@@ -921,7 +921,7 @@ export class SimulationEngine {
   public runSimulation(options: RunSimulationOptions): ExtendedSimulationResult {
     this.initializeFleet();
 
-    const durationHours = Math.min(72, Math.max(1, options.durationHours ?? 1.0));
+    const durationHours = Math.max(1, options.durationHours ?? 1.0);
     const dtSim = 0.5;
     const totalSimulatedSeconds = Math.round(durationHours * 3600);
     const totalTicks = Math.round(totalSimulatedSeconds / dtSim);

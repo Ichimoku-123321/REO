@@ -1,15 +1,18 @@
 import React from 'react';
 import type { Robot } from '../types/robot.js';
+import type { FacilityRequirements } from '../types/facility.js';
 import type { FleetCompositionItem, HeterogeneousOptimizationResult } from '../engine/fleet_optimizer.js';
+import { SEED_ROBOTS } from '../data/robots.seed.js';
+import { isRobotEligible } from '../engine/dss.js';
 import {
   Sparkles,
   Sliders,
-  Play,
   Check,
   Plus,
   Minus,
   Bot,
   Percent,
+  AlertTriangle,
 } from 'lucide-react';
 
 export type FleetConfigMode = 'ai' | 'manual';
@@ -20,7 +23,9 @@ interface FleetConfigPanelProps {
   aiOptimizationResult: HeterogeneousOptimizationResult;
   manualFleetCounts: Record<string, number>;
   onManualCountChange: (robotId: string, count: number) => void;
-  eligibleRobots: Robot[];
+  facility: FacilityRequirements;
+  allRobots?: Robot[];
+  eligibleRobots?: Robot[];
   onRunSimulation: () => void;
   isCalculating: boolean;
 }
@@ -31,177 +36,172 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
   aiOptimizationResult,
   manualFleetCounts,
   onManualCountChange,
-  eligibleRobots,
+  facility,
+  allRobots = SEED_ROBOTS,
   onRunSimulation,
   isCalculating,
 }) => {
   return (
-    <div className="bg-slate-800/90 border border-slate-700/80 rounded-xl p-5 mb-8 shadow-xl">
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-4 border-b border-slate-700/80 pb-4">
+    <div className="bg-[#FFFFFF] border border-[#D4AF37]/30 p-3 space-y-3 rounded-none text-xs text-[#1A1A1A]">
+      <div className="flex items-center justify-between border-b border-[#D4AF37]/20 pb-2 rounded-none">
         <div>
-          <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-            <Bot className="w-5 h-5 text-blue-400" />
-            Конфигурация состава флота
+          <h2 className="text-xs font-bold uppercase tracking-wider text-[#1A1A1A] flex items-center gap-1.5">
+            <Bot className="w-4 h-4 text-[#8A6826]" />
+            Конфигуратор состава флота
           </h2>
-          <p className="text-xs text-slate-400">
-            Выберите режим формирования парка роботов или настройте количество моделей вручную
-          </p>
         </div>
 
         {/* Mode Selector Toggle */}
-        <div className="flex items-center bg-slate-900 border border-slate-700 rounded-xl p-1">
+        <div className="flex border border-[#D4AF37]/40 text-[10px] font-mono rounded-none">
           <button
             type="button"
             onClick={() => onModeChange('ai')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-2 py-0.5 font-bold transition cursor-pointer rounded-none ${
               mode === 'ai'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-[#D4AF37] text-[#1A1A1A]'
+                : 'bg-[#FFFFFF] text-[#4F4F47] hover:text-[#1A1A1A]'
             }`}
           >
-            <Sparkles className="w-4 h-4 text-amber-300" />
-            <span>Режим 1: Оптимум ИИ</span>
+            ИИ
           </button>
 
           <button
             type="button"
             onClick={() => onModeChange('manual')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-2 py-0.5 font-bold transition cursor-pointer rounded-none ${
               mode === 'manual'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-[#D4AF37] text-[#1A1A1A]'
+                : 'bg-[#FFFFFF] text-[#4F4F47] hover:text-[#1A1A1A]'
             }`}
           >
-            <Sliders className="w-4 h-4 text-emerald-400" />
-            <span>Режим 2: Ручной выбор</span>
+            Все 9
           </button>
         </div>
       </div>
 
       {/* Mode 1: AI Composition Display */}
       {mode === 'ai' && (
-        <div className="bg-slate-900/80 border border-slate-700/80 rounded-xl p-4 mb-5">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-            <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              Рекомендованный алгоритмом состав флота:
+        <div className="p-2.5 bg-[#FFFFFF] border border-[#D4AF37]/30 text-xs rounded-none space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-[#8A6826] font-semibold uppercase flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-[#8A6826]" />
+              Оптимальное решение REO:
             </span>
 
             {aiOptimizationResult.isHeterogeneous ? (
-              <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 text-xs font-bold px-3 py-1 rounded-full border border-emerald-500/30">
-                <Percent className="w-3.5 h-3.5" />
-                Экономия TCO: {aiOptimizationResult.tcoSavingsPercentVsBestMono}% (Мульти-флот)
+              <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 border border-emerald-300 rounded-none">
+                Мульти-флот (TCO -{aiOptimizationResult.tcoSavingsPercentVsBestMono}%)
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 bg-blue-500/10 text-blue-400 text-xs font-bold px-3 py-1 rounded-full border border-blue-500/30">
-                Монофлот (Оптимальный CAPEX/TCO)
+              <span className="text-[10px] font-mono font-bold bg-[#D4AF37]/20 text-[#8A6826] px-1.5 py-0.5 rounded-none">
+                Монофлот
               </span>
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="space-y-1.5">
             {aiOptimizationResult.composition.map((item: FleetCompositionItem) => (
               <div
                 key={item.robot.id}
-                className="bg-slate-800 border border-slate-700 rounded-lg p-3 flex items-center justify-between"
+                className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/20 flex items-center justify-between rounded-none"
               >
                 <div>
-                  <p className="text-xs font-bold text-slate-100">{item.robot.model}</p>
-                  <p className="text-[11px] text-slate-400">{item.robot.vendor}</p>
+                  <p className="text-xs font-bold text-[#1A1A1A] leading-tight">{item.robot.vendor} {item.robot.model}</p>
+                  <p className="text-[10px] text-[#4F4F47]">до {item.robot.payloadKg} кг</p>
                 </div>
-                <div className="text-right">
-                  <span className="bg-blue-600/30 text-blue-300 text-xs font-bold px-2.5 py-1 rounded border border-blue-500/30">
-                    {item.count} ед.
-                  </span>
-                </div>
+                <span className="bg-[#D4AF37] text-[#1A1A1A] text-xs font-bold font-mono px-2 py-0.5 rounded-none">
+                  {item.count} ед.
+                </span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Mode 2: Manual Selection Grid */}
+      {/* Mode 2: Manual Selection Grid (All 9 Sandbox Robots) */}
       {mode === 'manual' && (
-        <div className="bg-slate-900/80 border border-slate-700/80 rounded-xl p-4 mb-5">
-          <p className="text-xs font-bold text-slate-300 mb-3">
-            Выберите модели роботов из каталога и укажите их количество:
+        <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5 rounded-none">
+          <p className="text-[10px] text-[#8A6826] font-semibold uppercase mb-1">
+            Песочница моделей (все 9 роботов):
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {eligibleRobots.map((robot) => {
+          <div className="grid grid-cols-1 gap-2.5 rounded-none">
+            {allRobots.map((robot) => {
               const currentCount = manualFleetCounts[robot.id] || 0;
               const isSelected = currentCount > 0;
+              const { isEligible, exclusionReasons } = isRobotEligible(facility, robot);
 
               return (
                 <div
                   key={robot.id}
-                  className={`border rounded-xl p-3 transition-all ${
-                    isSelected
-                      ? 'bg-blue-950/40 border-blue-500/60 shadow-md'
-                      : 'bg-slate-800/60 border-slate-700 hover:border-slate-600'
+                  className={`p-2 border text-[11px] rounded-none transition-all ${
+                    !isEligible
+                      ? 'bg-amber-50/60 border-amber-300 text-amber-900'
+                      : isSelected
+                      ? 'bg-[#D4AF37]/15 border-[#D4AF37]'
+                      : 'bg-[#FFFFFF] border-[#D4AF37]/30'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between gap-1.5 mb-1">
+                    <div className="flex items-center gap-1.5 overflow-hidden">
                       <button
                         type="button"
                         onClick={() =>
                           onManualCountChange(robot.id, isSelected ? 0 : 1)
                         }
-                        className={`w-5 h-5 rounded flex items-center justify-center border transition-all ${
+                        className={`w-4 h-4 shrink-0 font-bold flex items-center justify-center border text-[10px] rounded-none transition-all cursor-pointer ${
                           isSelected
-                            ? 'bg-blue-600 border-blue-500 text-white'
-                            : 'border-slate-600 bg-slate-800'
+                            ? 'bg-[#D4AF37] border-[#BFA02E] text-[#1A1A1A]'
+                            : 'border-[#D4AF37]/40 bg-[#FFFFFF] text-[#1A1A1A]'
                         }`}
                       >
-                        {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                       </button>
-                      <div>
-                        <p className="text-xs font-bold text-slate-100 leading-tight">
-                          {robot.model}
-                        </p>
-                        <p className="text-[10px] text-slate-400">{robot.vendor}</p>
+                      <div className="truncate">
+                        <span className="font-bold truncate text-[#1A1A1A] block leading-tight">
+                          {robot.vendor} {robot.model}
+                        </span>
                       </div>
                     </div>
 
-                    <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
-                      до {robot.payloadKg} кг
+                    <span className="text-[9px] font-mono shrink-0 text-[#8A6826] font-semibold">
+                      {robot.payloadKg} кг
                     </span>
                   </div>
 
-                  {/* Count Stepper Control */}
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-700/60">
-                    <span className="text-[11px] text-slate-400">Количество:</span>
-                    <div className="flex items-center gap-1.5">
+                  {/* Warning Badge if Ineligible */}
+                  {!isEligible && (
+                    <div className="mb-1.5 p-1 bg-amber-100/80 border border-amber-300 text-[10px] text-amber-900 font-medium leading-tight flex items-start gap-1 rounded-none">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+                      <span>
+                        ⚠️ Ограничение: {exclusionReasons[0]}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Count Stepper Control (unblocked) */}
+                  <div className="flex items-center justify-between pt-1 border-t border-[#D4AF37]/20 font-mono">
+                    <span className="text-[10px] text-[#4F4F47]">Количество:</span>
+                    <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() =>
                           onManualCountChange(robot.id, Math.max(0, currentCount - 1))
                         }
                         disabled={currentCount === 0}
-                        className="p-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="w-5 h-5 bg-[#EAEAE5] hover:bg-[#D4AF37] hover:text-[#1A1A1A] font-bold flex items-center justify-center text-xs text-[#1A1A1A] rounded-none disabled:opacity-30 cursor-pointer"
                       >
-                        <Minus className="w-3 h-3" />
+                        -
                       </button>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={currentCount}
-                        onChange={(e) =>
-                          onManualCountChange(
-                            robot.id,
-                            Math.max(0, parseInt(e.target.value, 10) || 0)
-                          )
-                        }
-                        className="w-12 bg-slate-900 border border-slate-700 text-center text-xs font-bold text-slate-100 rounded py-0.5 focus:outline-none focus:border-blue-500"
-                      />
+                      <span className="w-6 text-center font-bold text-[#8A6826] text-xs">
+                        {currentCount}
+                      </span>
                       <button
                         type="button"
                         onClick={() => onManualCountChange(robot.id, currentCount + 1)}
-                        className="p-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200"
+                        className="w-5 h-5 bg-[#EAEAE5] hover:bg-[#D4AF37] hover:text-[#1A1A1A] font-bold flex items-center justify-center text-xs text-[#1A1A1A] rounded-none cursor-pointer"
                       >
-                        <Plus className="w-3 h-3" />
+                        +
                       </button>
                     </div>
                   </div>
@@ -212,16 +212,16 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
         </div>
       )}
 
-      {/* Main Action Button */}
-      <div className="flex justify-end">
+      {/* Main Action Button (Gold background with graphite text) */}
+      <div className="pt-1">
         <button
           type="button"
           onClick={onRunSimulation}
           disabled={isCalculating}
-          className="flex items-center gap-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-blue-600/25 transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full py-2.5 bg-[#D4AF37] hover:bg-[#BFA02E] active:bg-[#8A6826] text-[#1A1A1A] font-bold uppercase tracking-wider text-xs border border-[#BFA02E] shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 rounded-none"
         >
-          <Play className="w-5 h-5 fill-current" />
-          <span>Запустить моделирование и расчет</span>
+          <span className="w-2 h-2 bg-[#1A1A1A]"></span>
+          <span>{isCalculating ? 'REO: Расчет в процессе...' : 'Запустить моделирование и расчет'}</span>
         </button>
       </div>
     </div>

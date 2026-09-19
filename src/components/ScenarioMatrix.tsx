@@ -4,8 +4,6 @@ import type { Robot } from '../types/robot.js';
 import type { FacilityRequirements } from '../types/facility.js';
 import type { WhatIfParams } from '../engine/economics.js';
 import type { SpectralAnalysisResult } from '../engine/spectral_analyzer.js';
-import { generateFeasibilityPdf } from '../engine/export_pdf.js';
-import { Award, CheckCircle2, TrendingUp, FileText } from 'lucide-react';
 
 interface ScenarioMatrixProps {
   evaluation: EconomicEvaluation;
@@ -17,10 +15,6 @@ interface ScenarioMatrixProps {
 
 export const ScenarioMatrix: React.FC<ScenarioMatrixProps> = ({
   evaluation,
-  robot,
-  facility,
-  whatIf,
-  spectralResult,
 }) => {
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat('ru-RU', {
@@ -30,226 +24,102 @@ export const ScenarioMatrix: React.FC<ScenarioMatrixProps> = ({
     }).format(amount);
   };
 
-  const { asIs, capexPurchase, raas, recommendedScenario } = evaluation;
-
-  const handleDownloadPdf = () => {
-    generateFeasibilityPdf({
-      projectTitle: `ТЭО Роботизации - ${facility.industry.toUpperCase()}`,
-      facility,
-      selectedRobot: robot,
-      fleetSize: evaluation.fleetSize,
-      economicEvaluation: evaluation,
-      spectralResult,
-      whatIf,
-      generatedAt: new Date(),
-      version: 'СППР v1.0',
-    });
-  };
+  const { asIs, capexPurchase, raas } = evaluation;
 
   return (
-    <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-6 shadow-md mb-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-emerald-400" />
-            3-Сценарная финансовая матрица (Шаг 5)
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Детальное сравнение моделей для выбранного робота: <strong className="text-slate-200">{robot.model}</strong> ({robot.vendor}) — Парк: <strong className="text-blue-400">{evaluation.fleetSize} шт.</strong>
-          </p>
+    <div className="space-y-3 text-xs text-[#1A1A1A] rounded-none">
+
+      {/* Wine expert verdict card (bg-[#58111A] text-[#F9F9F6]) */}
+      <div className="p-3 bg-[#58111A] text-[#F9F9F6] border border-[#4A0E17] shadow-xs rounded-none">
+        <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#D4AF37] flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 bg-[#D4AF37]"></span>
+          Экспертное заключение REO:
         </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-emerald-400 text-xs font-semibold">
-            <Award className="w-4 h-4 text-emerald-400" />
-            <span>
-              Рекомендация: {recommendedScenario === 'capexPurchase' ? 'Покупка парка (CAPEX)' : recommendedScenario === 'raas' ? 'Сервисная модель (RaaS)' : 'Базовый (Как есть)'}
-            </span>
-          </div>
-
-          <button
-            onClick={handleDownloadPdf}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-blue-500/20 transition"
-          >
-            <FileText className="w-4 h-4" />
-            <span>📄 Скачать ТЭО (PDF)</span>
-          </button>
+        <div className="font-semibold text-xs mt-1 leading-snug text-[#FFFFFF]">
+          {capexPurchase.verdictText || 'Инвестиционно привлекательно'}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Scenario 1: As-Is */}
-        <div className={`p-5 rounded-xl border flex flex-col justify-between ${
-          recommendedScenario === 'asIs'
-            ? 'bg-blue-950/30 border-blue-500 shadow-lg shadow-blue-500/10 ring-1 ring-blue-500'
-            : 'bg-slate-900/60 border-slate-700/80'
-        }`}>
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
-                Базовый (Как есть)
-              </h3>
-              {recommendedScenario === 'asIs' && (
-                <span className="text-[10px] bg-blue-500 text-white font-bold px-2 py-0.5 rounded uppercase">
-                  Оптимально
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-400 mb-4">
-              Полностью ручной труд операторов ({evaluation.manualStaffCount} человек на смену/объект).
-            </p>
-
-            <div className="space-y-3 border-t border-slate-800 pt-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-400">CAPEX (Разово):</span>
-                <span className="font-semibold text-slate-200">0 ₽</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Ежегодный OPEX:</span>
-                <span className="font-semibold text-rose-400">{formatMoney(asIs.annualOpex)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Годовая экономия:</span>
-                <span className="font-semibold text-slate-400">—</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Срок окупаемости:</span>
-                <span className="font-semibold text-slate-400">—</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Итоговый ROI:</span>
-                <span className="font-semibold text-slate-400">—</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-800 pt-3 mt-4">
-            <div className="flex justify-between items-baseline">
-              <span className="text-xs text-slate-400">5-летний TCO:</span>
-              <span className="text-lg font-bold text-slate-100">{formatMoney(asIs.fiveYearTco)}</span>
-            </div>
-          </div>
+      {/* 3-Scenario Comparison Matrix */}
+      <div className="bg-[#FFFFFF] border border-[#D4AF37]/30 overflow-hidden rounded-none">
+        <div className="p-2.5 bg-[#F4F4F0] border-b border-[#D4AF37]/30 flex items-center justify-between rounded-none">
+          <span className="font-semibold text-[11px] uppercase tracking-wider text-[#8A6826]">
+            Сопоставление 3 моделей
+          </span>
+          <span className="text-[10px] font-mono text-[#4F4F47] font-bold">5 ЛЕТ ТСО</span>
         </div>
 
-        {/* Scenario 2: CAPEX Purchase */}
-        <div className={`p-5 rounded-xl border flex flex-col justify-between ${
-          recommendedScenario === 'capexPurchase'
-            ? 'bg-emerald-950/30 border-emerald-500 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500'
-            : 'bg-slate-900/60 border-slate-700/80'
-        }`}>
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
-                Покупка парка (CAPEX)
-              </h3>
-              {recommendedScenario === 'capexPurchase' && (
-                <span className="text-[10px] bg-emerald-500 text-slate-950 font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Оптимально
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-400 mb-4">
-              Прямая покупка {evaluation.fleetSize} роботов + интеграция (15%) + сохранение {evaluation.retainedSupervisorsCount} супервайзера.
-            </p>
+        <div className="divide-y divide-[#D4AF37]/20 font-mono text-xs rounded-none">
 
-            <div className="space-y-3 border-t border-slate-800 pt-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-400">CAPEX (Разово):</span>
-                <span className="font-semibold text-purple-400">{formatMoney(capexPurchase.capex)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Ежегодный OPEX:</span>
-                <span className="font-semibold text-slate-200">{formatMoney(capexPurchase.annualOpex)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Годовая экономия:</span>
-                <span className="font-semibold text-emerald-400">{formatMoney(capexPurchase.netAnnualSavings)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Срок окупаемости:</span>
-                <span className="font-semibold text-emerald-400">
-                  {capexPurchase.paybackYears !== null ? `${capexPurchase.paybackYears.toFixed(1)} лет` : 'Не окупается'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Итоговый ROI (5 лет):</span>
-                <span className="font-semibold text-emerald-400">
-                  {capexPurchase.fiveYearRoi !== null ? `${capexPurchase.fiveYearRoi.toFixed(0)}%` : '—'}
-                </span>
-              </div>
-            </div>
+          {/* Table Header */}
+          <div className="p-2 grid grid-cols-3 gap-1 bg-[#F9F9F6] font-bold border-b border-[#D4AF37]/30 text-[10px] uppercase">
+            <span className="text-[#4F4F47] truncate">Показатель</span>
+            <span className="text-[#1A1A1A] truncate text-center">As-Is (Люди)</span>
+            <span className="text-[#8A6826] truncate text-right">CAPEX (Парк)</span>
           </div>
 
-          <div className="border-t border-slate-800 pt-3 mt-4">
-            <div className="mb-2">
-              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded inline-block ${
-                capexPurchase.verdict === 'green'
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : capexPurchase.verdict === 'yellow'
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-              }`}>
-                {capexPurchase.verdictText}
-              </span>
-            </div>
-            <div className="flex justify-between items-baseline">
-              <span className="text-xs text-slate-400">5-летний TCO:</span>
-              <span className="text-lg font-bold text-slate-100">{formatMoney(capexPurchase.fiveYearTco)}</span>
-            </div>
+          <div className="p-2 grid grid-cols-3 gap-1 items-center">
+            <span className="text-[#4F4F47] text-[10px] truncate">Штат / Парк</span>
+            <span className="font-bold text-[#1A1A1A] text-center truncate">{evaluation.manualStaffCount} чел.</span>
+            <span className="font-bold text-[#8A6826] text-right truncate">{evaluation.fleetSize} роб.</span>
+          </div>
+
+          <div className="p-2 grid grid-cols-3 gap-1 items-center bg-[#F9F9F6]">
+            <span className="text-[#4F4F47] text-[10px] truncate">Инвестиции</span>
+            <span className="text-[#4F4F47] text-center truncate">—</span>
+            <span className="font-bold text-[#1A1A1A] text-right truncate">{formatMoney(capexPurchase.capex)}</span>
+          </div>
+
+          <div className="p-2 grid grid-cols-3 gap-1 items-center">
+            <span className="text-[#4F4F47] text-[10px] truncate">Годовой OPEX</span>
+            <span className="text-[#1A1A1A] text-center truncate">{formatMoney(asIs.annualOpex)}</span>
+            <span className="text-[#1A1A1A] text-right truncate">{formatMoney(capexPurchase.annualOpex)}</span>
+          </div>
+
+          <div className="p-2 grid grid-cols-3 gap-1 items-center bg-[#F9F9F6]">
+            <span className="text-[#4F4F47] text-[10px] truncate">Экономия/год</span>
+            <span className="text-[#4F4F47] text-center truncate">—</span>
+            <span className="font-bold text-emerald-800 text-right truncate">+{formatMoney(capexPurchase.netAnnualSavings)}</span>
+          </div>
+
+          <div className="p-2 grid grid-cols-3 gap-1 items-center bg-[#D4AF37]/10">
+            <span className="text-[#1A1A1A] font-bold text-[10px] truncate">Окупаемость</span>
+            <span className="text-[#4F4F47] text-center truncate">—</span>
+            <span className="font-bold text-[#8A6826] text-right truncate">
+              {capexPurchase.paybackYears !== null ? `${capexPurchase.paybackYears.toFixed(1)} г.` : '>5 лет'}
+            </span>
+          </div>
+
+          <div className="p-2 grid grid-cols-3 gap-1 items-center">
+            <span className="text-[#4F4F47] text-[10px] truncate">5-летний ROI</span>
+            <span className="text-[#4F4F47] text-center truncate">—</span>
+            <span className="font-bold text-emerald-800 text-right truncate">
+              {capexPurchase.fiveYearRoi !== null ? `${capexPurchase.fiveYearRoi.toFixed(0)}%` : '—'}
+            </span>
+          </div>
+
+          <div className="p-2 grid grid-cols-3 gap-1 items-center bg-[#FFFFFF] font-bold">
+            <span className="text-[#1A1A1A] text-[10px] truncate">TCO (5 лет)</span>
+            <span className="text-[#4F4F47] text-center truncate">{formatMoney(asIs.fiveYearTco)}</span>
+            <span className="text-[#58111A] text-right font-bold truncate">{formatMoney(capexPurchase.fiveYearTco)}</span>
           </div>
         </div>
+      </div>
 
-        {/* Scenario 3: RaaS */}
-        <div className={`p-5 rounded-xl border flex flex-col justify-between ${
-          recommendedScenario === 'raas'
-            ? 'bg-purple-950/30 border-purple-500 shadow-lg shadow-purple-500/10 ring-1 ring-purple-500'
-            : 'bg-slate-900/60 border-slate-700/80'
-        }`}>
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold text-base text-slate-100 flex items-center gap-2">
-                Сервисная модель (RaaS)
-              </h3>
-              {recommendedScenario === 'raas' && (
-                <span className="text-[10px] bg-purple-500 text-white font-bold px-2 py-0.5 rounded uppercase flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Оптимально
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-400 mb-4">
-              Подписка на роботов ({formatMoney(robot.monthlyRaasCostRub)}/мес за шт) без первоначального CAPEX.
-            </p>
-
-            <div className="space-y-3 border-t border-slate-800 pt-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-400">CAPEX (Разово):</span>
-                <span className="font-semibold text-slate-200">0 ₽</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Ежегодный OPEX:</span>
-                <span className="font-semibold text-slate-200">{formatMoney(raas.annualOpex)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Годовая экономия:</span>
-                <span className="font-semibold text-emerald-400">{formatMoney(raas.netAnnualSavings)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Срок окупаемости:</span>
-                <span className="font-semibold text-slate-300">Мгновенно (0 CAPEX)</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Итоговый ROI:</span>
-                <span className="font-semibold text-slate-300">—</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-800 pt-3 mt-4">
-            <div className="flex justify-between items-baseline">
-              <span className="text-xs text-slate-400">5-летний TCO:</span>
-              <span className="text-lg font-bold text-slate-100">{formatMoney(raas.fiveYearTco)}</span>
-            </div>
-          </div>
+      {/* RaaS Scenario Card */}
+      <div className="p-3 bg-[#FFFFFF] border border-[#D4AF37]/30 rounded-none space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold text-[11px] uppercase tracking-wider text-[#8A6826]">
+            Сценарий 3: Подписка (RaaS)
+          </span>
+          <span className="text-[10px] font-mono bg-[#D4AF37]/20 text-[#8A6826] px-1 font-bold rounded-none">0 ₽ CAPEX</span>
+        </div>
+        <p className="text-[11px] text-[#4F4F47]">
+          Аренда без капитальных затрат. Ежегодный платеж: <strong className="font-mono text-[#1A1A1A]">{formatMoney(raas.annualOpex)}</strong>
+        </p>
+        <div className="font-mono text-xs flex justify-between pt-1 border-t border-[#D4AF37]/20">
+          <span className="text-[#4F4F47]">TCO за 5 лет:</span>
+          <strong className="text-[#8A6826]">{formatMoney(raas.fiveYearTco)}</strong>
         </div>
       </div>
     </div>

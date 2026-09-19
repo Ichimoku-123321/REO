@@ -792,52 +792,52 @@ export function SimulationViewport({
   return (
     <div
       ref={outerContainerRef}
-      className="bg-slate-800/90 border border-slate-700/80 rounded-xl overflow-hidden shadow-xl mb-8"
+      className="bg-slate-900 h-full flex flex-col overflow-y-auto"
     >
       {/* Viewport Header with Mode Switcher */}
-      <div className="bg-slate-900/95 border-b border-slate-700/80 px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-slate-900/95 border-b border-slate-700/80 px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <Layers className="w-5 h-5 text-blue-400" />
-            <h3 className="text-base font-bold text-slate-100">
-              2.5D Интерактивный плеер симуляции (Timeline Replay)
+            <Layers className="w-4 h-4 text-blue-400" />
+            <h3 className="text-xs font-bold uppercase tracking-tight text-slate-100">
+              2.5D CAD Viewport
             </h3>
           </div>
 
           {/* Mode Switcher Buttons */}
-          <div className="flex items-center bg-slate-800 border border-slate-700 rounded-lg p-1 ml-2">
+          <div className="flex items-center bg-slate-800 border border-slate-700 p-0.5 ml-2">
             <button
               type="button"
               onClick={() => setIsConstructorMode(false)}
-              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-md transition-all ${
+              className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold transition-all ${
                 !isConstructorMode
-                  ? 'bg-blue-600 text-white shadow-sm'
+                  ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Building2 className="w-3.5 h-3.5" />
+              <Building2 className="w-3 h-3" />
               <span>🏢 Автоматическая схема</span>
             </button>
 
             <button
               type="button"
               onClick={() => setIsConstructorMode(true)}
-              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-md transition-all ${
+              className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold transition-all ${
                 isConstructorMode
-                  ? 'bg-blue-600 text-white shadow-sm'
+                  ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Wrench className="w-3.5 h-3.5" />
-              <span>🛠️ Интерактивный конструктор (2.5D)</span>
+              <Wrench className="w-3 h-3" />
+              <span>🛠️ Конструктор 2.5D</span>
             </button>
           </div>
         </div>
 
         {/* Dimension & Graph Metrics Badges */}
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <div className="bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-2 text-slate-300">
-            <Maximize2 className="w-4 h-4 text-emerald-400" />
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <div className="bg-slate-800 border border-slate-700 px-2 py-1 flex items-center gap-1.5 text-slate-300">
+            <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
             <span>
               Габариты:{' '}
               <strong className="text-white">
@@ -846,18 +846,17 @@ export function SimulationViewport({
             </span>
           </div>
 
-          <div className="bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-2 text-slate-300">
-            <MapPin className="w-4 h-4 text-purple-400" />
+          <div className="bg-slate-800 border border-slate-700 px-2 py-1 flex items-center gap-1.5 text-slate-300">
+            <MapPin className="w-3.5 h-3.5 text-purple-400" />
             <span>
-              Активных зон:{' '}
-              <strong className="text-white">{topology.zones.length}</strong>
+              Зон: <strong className="text-white">{topology.zones.length}</strong>
             </span>
           </div>
 
-          <div className="bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-2 text-slate-300">
-            <Navigation className="w-4 h-4 text-sky-400" />
+          <div className="bg-slate-800 border border-slate-700 px-2 py-1 flex items-center gap-1.5 text-slate-300">
+            <Navigation className="w-3.5 h-3.5 text-sky-400" />
             <span>
-              Транзитные трассы:{' '}
+              Трассы:{' '}
               <strong className="text-white">{totalPathLengthM} м</strong> (
               {topology.nodes.length} узлов)
             </span>
@@ -867,41 +866,14 @@ export function SimulationViewport({
 
       {/* Graph Isolation Warning Banner */}
       {isIsolatedZone && (
-        <div className="bg-red-950/90 border-b border-red-800/80 px-6 py-2.5 flex items-center gap-3 text-red-200 text-xs font-bold animate-pulse">
-          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+        <div className="bg-red-950/90 border-b border-red-800/80 px-4 py-1.5 flex items-center gap-2 text-red-200 text-xs font-bold animate-pulse shrink-0">
+          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
           <span>Внимание: изолированная зона. Роботы не могут построить маршрут к доку или зарядной станции.</span>
         </div>
       )}
 
-      {/* Simulation HUD Controls Bar */}
-      <SimulationControls
-        isPlaying={isPlaying}
-        onTogglePlayPause={() => {
-          audioEngine.initAudioContext();
-          setIsPlaying((prev) => !prev);
-        }}
-        speedMultiplier={speedMultiplier}
-        onSpeedChange={setSpeedMultiplier}
-        currentTimestampSec={currentTimeSec}
-        totalDurationSec={3600}
-        onSeek={(sec) => {
-          setCurrentTimeSec(sec);
-          lastProcessedFrameIndexRef.current = -1;
-        }}
-        volume={volume}
-        onVolumeChange={handleVolumeChange}
-        isMuted={isMuted}
-        onToggleMute={handleToggleMute}
-        onToggleFullscreen={handleToggleFullscreen}
-        telemetry={telemetry}
-        targetThroughputPerHour={targetThroughputPerHour}
-        fleetSize={fleetSize}
-        selectedRobotName={selectedRobotFullName}
-        spectralAnalysis={spectralAnalysis}
-      />
-
-      {/* Three.js Canvas Container */}
-      <div className="relative w-full h-[540px] bg-slate-950">
+      {/* Three.js Canvas Container (CENTER OF ZONE 2) */}
+      <div className="relative w-full h-[450px] min-h-[350px] bg-slate-950 shrink-0">
         {/* Floating Constructor Toolbar */}
         {isConstructorMode && (
           <ConstructorToolbar
@@ -918,46 +890,75 @@ export function SimulationViewport({
         {/* Empty Fleet Overlay Banner */}
         {isFleetEmpty && (
           <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6 text-center z-10">
-            <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-8 max-w-md shadow-2xl">
-              <div className="p-3 bg-amber-500/10 text-amber-400 rounded-full w-fit mx-auto mb-4 border border-amber-500/20">
-                <AlertCircle className="w-8 h-8" />
+            <div className="bg-slate-900 border border-amber-500/40 p-6 max-w-md shadow-2xl">
+              <div className="p-3 bg-amber-500/10 text-amber-400 w-fit mx-auto mb-3 border border-amber-500/20">
+                <AlertCircle className="w-7 h-7" />
               </div>
-              <h4 className="text-lg font-bold text-slate-100 mb-2">
+              <h4 className="text-base font-bold text-slate-100 mb-1">
                 Парк не сформирован
               </h4>
-              <p className="text-sm text-slate-400">
-                Выберите подходящее роботизированное решение или нажмите «Запустить моделирование и расчет» выше.
+              <p className="text-xs text-slate-400">
+                Выберите подходящее роботизированное решение или нажмите «Запустить моделирование и расчет» слева.
               </p>
             </div>
           </div>
         )}
 
         {/* Legend Overlay */}
-        <div className="absolute bottom-4 left-4 bg-slate-900/90 border border-slate-700/80 rounded-lg p-3 backdrop-blur text-xs flex flex-wrap gap-4 text-slate-300 shadow-lg z-10">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-emerald-500/30" />
-            <span>Активен / В пути</span>
+        <div className="absolute bottom-3 left-3 bg-slate-900/90 border border-slate-700/80 p-2 backdrop-blur text-[11px] flex flex-wrap gap-3 text-slate-300 shadow-md z-10 font-mono">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+            <span>В пути</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-amber-500 ring-2 ring-amber-500/30" />
-            <span>Погрузка / Разгрузка / Ожидание</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+            <span>Погрузка/Ожидание</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-cyan-500 ring-2 ring-cyan-500/30" />
-            <span>На зарядке</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-cyan-500" />
+            <span>Зарядка</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-2 rounded-sm bg-sky-500" />
-            <span>Груз (Паллета)</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2 bg-sky-500" />
+            <span>Груз</span>
           </div>
         </div>
 
         {/* Viewport Control Tip */}
-        <div className="absolute bottom-4 right-4 bg-slate-900/80 border border-slate-700/60 rounded-lg px-3 py-1.5 text-[11px] text-slate-400 z-10">
+        <div className="absolute bottom-3 right-3 bg-slate-900/80 border border-slate-700/60 px-2.5 py-1 text-[10px] text-slate-400 z-10">
           {isConstructorMode
-            ? 'Кликните на поле для установки блока • Зажмите ЛКМ для вращения • Колесо для зума'
-            : 'Зажмите ЛКМ для вращения • Колесо для зума • ПКМ для панорамирования'}
+            ? 'Клик для установки блока • ЛКМ: вращение • Колесо: зум'
+            : 'ЛКМ: вращение • Колесо: зум • ПКМ: панорамирование'}
         </div>
+      </div>
+
+      {/* Simulation HUD Controls Bar (STRICTLY BELOW CANVAS) */}
+      <div className="shrink-0">
+        <SimulationControls
+          isPlaying={isPlaying}
+          onTogglePlayPause={() => {
+            audioEngine.initAudioContext();
+            setIsPlaying((prev) => !prev);
+          }}
+          speedMultiplier={speedMultiplier}
+          onSpeedChange={setSpeedMultiplier}
+          currentTimestampSec={currentTimeSec}
+          totalDurationSec={3600}
+          onSeek={(sec) => {
+            setCurrentTimeSec(sec);
+            lastProcessedFrameIndexRef.current = -1;
+          }}
+          volume={volume}
+          onVolumeChange={handleVolumeChange}
+          isMuted={isMuted}
+          onToggleMute={handleToggleMute}
+          onToggleFullscreen={handleToggleFullscreen}
+          telemetry={telemetry}
+          targetThroughputPerHour={targetThroughputPerHour}
+          fleetSize={fleetSize}
+          selectedRobotName={selectedRobotFullName}
+          spectralAnalysis={spectralAnalysis}
+        />
       </div>
     </div>
   );

@@ -107,9 +107,9 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   const connectivityBadge = getConnectivityBadge();
 
   return (
-    <div className="bg-slate-900/95 border-b border-slate-700/80 p-4">
-      {/* 1. Timeline Scrubber HUD Bar */}
-      <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 mb-4">
+    <div className="bg-slate-900/95 border-t border-slate-700/80 p-4">
+      {/* 1. Timeline Scrubber HUD Bar (STRICTLY BELOW CANVAS) */}
+      <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 mb-3">
         <div className="flex items-center justify-between text-xs font-bold text-slate-300 mb-2">
           <span className="text-blue-400 font-mono text-sm">
             {formatTime(currentTimestampSec)}
@@ -131,8 +131,8 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
         />
       </div>
 
-      {/* 2. Top Playback & HUD Control Row */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+      {/* 2. Control Buttons Row */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         {/* Play/Pause Button */}
         <div className="flex items-center gap-3">
           <button

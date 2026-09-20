@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import type { FacilityRequirements, FacilityType, FloorSurfaceQuality, CleanlinessClass } from '../types/facility.js';
 import type { Robot } from '../types/robot.js';
 import type { FleetCompositionItem, HeterogeneousOptimizationResult } from '../engine/fleet_optimizer.js';
-import { FACILITY_PRESETS } from '../data/presets.js';
 import { SEED_ROBOTS } from '../data/robots.seed.js';
 import { isRobotEligible } from '../engine/dss.js';
 import type { SimulationParams } from './SimulationParamsPanel.js';
@@ -26,8 +25,6 @@ import {
 interface Zone1SidebarProps {
   facility: FacilityRequirements;
   onChangeFacility: (updated: FacilityRequirements) => void;
-  activePresetId: string;
-  onPresetSelect: (presetId: string) => void;
   simulationParams: SimulationParams;
   onChangeSimulationParams: (params: SimulationParams) => void;
   fleetMode: 'ai' | 'manual';
@@ -43,8 +40,6 @@ interface Zone1SidebarProps {
 export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
   facility,
   onChangeFacility,
-  activePresetId,
-  onPresetSelect,
   simulationParams,
   onChangeSimulationParams,
   fleetMode,
@@ -132,34 +127,6 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
 
           {openSections.geometry && (
             <div className="p-3 space-y-2.5">
-              {/* Preset Selector */}
-              <div>
-                <label className="text-[10px] text-[#8A6826] font-semibold uppercase block mb-1 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-[#8A6826]" />
-                  Быстрый пресет объекта:
-                </label>
-                <div className="grid grid-cols-2 gap-1 font-mono text-[11px]">
-                  {FACILITY_PRESETS.map((p) => {
-                    const isActive = activePresetId === p.id;
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => onPresetSelect(p.id)}
-                        className={`p-1.5 border text-left truncate transition cursor-pointer rounded-none ${
-                          isActive
-                            ? 'bg-[#D4AF37] text-[#1A1A1A] border-[#BFA02E] font-bold'
-                            : 'bg-[#F4F4F0] text-[#4F4F47] border-[#D4AF37]/30 hover:bg-[#EAEAE5]'
-                        }`}
-                      >
-                        <span className="mr-1">{p.icon}</span>
-                        {p.name.split(' ')[0]}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
               {/* Industry Selection */}
               <div>
                 <label className="text-[10px] text-[#4F4F47] font-semibold block mb-0.5">

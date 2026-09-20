@@ -166,19 +166,7 @@ export function createInitialConstructorGrid(
   for (let x = 0; x < cols; x++) {
     for (let y = 0; y < rows; y++) {
       const key = getTileKey(x, y);
-
-      // Default layout assignment
-      if (x === 0) {
-        tiles.set(key, 'DOCK_INBOUND');
-      } else if (x === cols - 1) {
-        tiles.set(key, 'DOCK_OUTBOUND');
-      } else if (y === 0 && x > 1 && x < cols - 2) {
-        tiles.set(key, 'CHARGER');
-      } else if (x >= 2 && x <= cols - 3 && y >= 2 && y <= rows - 3 && (x % 3 === 0)) {
-        tiles.set(key, 'RACK');
-      } else {
-        tiles.set(key, 'EMPTY_FLOOR');
-      }
+      tiles.set(key, 'EMPTY_FLOOR');
     }
   }
 

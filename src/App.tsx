@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { SEED_ROBOTS } from './data/robots.seed.js';
 import { FACILITY_PRESETS } from './data/presets.js';
-import { evaluateEligibility, isRobotEligible } from './engine/dss.js';
+import { evaluateEligibility } from './engine/dss.js';
 import {
   calculateEconomics,
   calculateCompositionEconomics,
@@ -21,8 +21,9 @@ import type { FacilityRequirements } from './types/facility.js';
 import { generateFeasibilityPdf } from './engine/export_pdf.js';
 import { exportFeasibilityToExcel } from './engine/export_excel.js';
 
-import { SimulationParamsPanel, type SimulationParams } from './components/SimulationParamsPanel.js';
-import { FleetConfigPanel, type FleetConfigMode } from './components/FleetConfigPanel.js';
+import { Zone1Sidebar } from './components/Zone1Sidebar.js';
+import { SimulationParams } from './components/SimulationParamsPanel.js';
+import { FleetConfigMode } from './components/FleetConfigPanel.js';
 import { SimulationViewport } from './components/SimulationViewport.js';
 import { RobotComparisonTable } from './components/RobotComparisonTable.js';
 import { ScenarioMatrix } from './components/ScenarioMatrix.js';
@@ -31,7 +32,7 @@ import { FormulaModal } from './components/FormulaModal.js';
 import { ExcludedRobotsAccordion } from './components/ExcludedRobotsAccordion.js';
 import { CalculationProgressModal } from './components/CalculationProgressModal.js';
 
-import { SlidersHorizontal, FileSpreadsheet, FileText } from 'lucide-react';
+import { FileSpreadsheet } from 'lucide-react';
 
 export default function App() {
   // 1. Facility & Preset State
@@ -359,116 +360,25 @@ export default function App() {
       {/* ================= MAIN 3-ZONE DASHBOARD WORKSPACE ================= */}
       <div className="flex-1 flex overflow-hidden relative rounded-none">
 
-        {/* ================= ZONE 1: LEFT COLUMN (INPUT & CONDITIONS) ================= */}
-        <aside
-          className={`transition-all duration-300 shrink-0 z-20 flex flex-col bg-[#F4F4F0] border-r border-[#D4AF37]/40 overflow-hidden rounded-none ${
-            isLeftOpen ? 'w-80 sm:w-96' : 'w-0 border-r-0'
-          }`}
-        >
-          <div className="p-3 bg-[#EAEAE5] border-b border-[#D4AF37]/40 flex items-center justify-between rounded-none">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#1A1A1A] flex items-center gap-1.5">
-              <span className="w-2 h-2 bg-[#D4AF37]"></span>
-              Входные условия объекта
-            </span>
-            <span className="text-[10px] font-mono font-bold text-[#8A6826]">REO • ZONE 1</span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs text-[#1A1A1A] rounded-none">
-            {/* Facility Geometry & Requirements Card */}
-            <div className="p-3 bg-[#FFFFFF] border border-[#D4AF37]/30 rounded-none space-y-2.5">
-              <h4 className="font-semibold text-[11px] uppercase tracking-wider text-[#1A1A1A] border-b border-[#D4AF37]/20 pb-1">
-                Геометрия и тех. коридоры
-              </h4>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Площадь (м²)</span>
-                  <input
-                    type="number"
-                    value={facility.totalAreaSqm}
-                    onChange={(e) =>
-                      setFacility({ ...facility, totalAreaSqm: Number(e.target.value) || 100 })
-                    }
-                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
-                  />
-                </div>
-                <div>
-                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Ширина проезда (м)</span>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={facility.aisleWidthM}
-                    onChange={(e) =>
-                      setFacility({ ...facility, aisleWidthM: Number(e.target.value) || 1 })
-                    }
-                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
-                  />
-                </div>
-                <div>
-                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Груз (кг)</span>
-                  <input
-                    type="number"
-                    value={facility.requiredPayloadKg}
-                    onChange={(e) =>
-                      setFacility({ ...facility, requiredPayloadKg: Number(e.target.value) || 1 })
-                    }
-                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
-                  />
-                </div>
-                <div>
-                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Сменность</span>
-                  <select
-                    value={facility.shiftsPerDay}
-                    onChange={(e) =>
-                      setFacility({ ...facility, shiftsPerDay: Number(e.target.value) })
-                    }
-                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-1 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
-                  >
-                    <option value={1}>1 смена (8ч)</option>
-                    <option value={2}>2 смены (16ч)</option>
-                    <option value={3}>3 смены (24ч)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <span className="text-[10px] text-[#4F4F47] font-semibold block">ФОТ оператора (руб/мес)</span>
-                <input
-                  type="number"
-                  step="5000"
-                  value={facility.averageWorkerSalaryRub}
-                  onChange={(e) =>
-                    setFacility({
-                      ...facility,
-                      averageWorkerSalaryRub: Number(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
-                />
-              </div>
-            </div>
-
-            {/* Simulation Calculation Parameters Panel */}
-            <SimulationParamsPanel
-              params={simulationParams}
-              onChange={handleSimulationParamsChange}
-              fleetSize={activeFleetSize}
-            />
-
-            {/* Fleet Configurator Panel (Sandbox for all 9 robots) */}
-            <FleetConfigPanel
-              mode={fleetMode}
-              onModeChange={setFleetMode}
-              aiOptimizationResult={aiOptimizationResult}
-              manualFleetCounts={manualFleetCounts}
-              onManualCountChange={handleManualCountChange}
-              facility={facility}
-              allRobots={SEED_ROBOTS}
-              onRunSimulation={handleRunSimulation}
-              isCalculating={isCalculating}
-            />
-          </div>
-        </aside>
+        {/* ================= ZONE 1: LEFT COLUMN (EXHAUSTIVE INPUTS & CONDITIONS) ================= */}
+        {isLeftOpen && (
+          <Zone1Sidebar
+            facility={facility}
+            onChangeFacility={setFacility}
+            activePresetId={activePresetId}
+            onPresetSelect={handlePresetSelect}
+            simulationParams={simulationParams}
+            onChangeSimulationParams={handleSimulationParamsChange}
+            fleetMode={fleetMode}
+            onChangeFleetMode={setFleetMode}
+            aiOptimizationResult={aiOptimizationResult}
+            manualFleetCounts={manualFleetCounts}
+            onManualCountChange={handleManualCountChange}
+            activeFleetSize={activeFleetSize}
+            onRunSimulation={handleRunSimulation}
+            isCalculating={isCalculating}
+          />
+        )}
 
         {/* ================= ZONE 2: CENTER COLUMN (DIGITAL TWIN VIEWPORT) ================= */}
         <section className="flex-1 flex flex-col bg-[#EAEAE6] overflow-hidden relative border-r border-[#D4AF37]/40 rounded-none">

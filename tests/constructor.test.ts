@@ -10,33 +10,42 @@ import {
   calculateWarehouseCapacity,
 } from '../src/engine/constructor_engine.js';
 
-describe('2.5D Constructor Engine & Topology Rebuilder', () => {
-  it('creates initial grid matching dimensions and cell size', () => {
+describe('3D CAD Constructor Engine & Topology Rebuilder', () => {
+  it('creates initial grid matching dimensions and cell size with empty floor tiles', () => {
     const grid = createInitialConstructorGrid(20, 20, 2.0);
     assert.strictEqual(grid.cols, 10);
     assert.strictEqual(grid.rows, 10);
     assert.strictEqual(grid.cellSizeM, 2.0);
-    assert.ok(grid.tiles.size > 0);
+    assert.strictEqual(grid.tiles.size, 100);
+    // All initial tiles are EMPTY_FLOOR
+    assert.ok(Array.from(grid.tiles.values()).every((t) => t === 'EMPTY_FLOOR'));
   });
 
   it('rebuilds topology nodes and passable edges when tiles are placed', () => {
     const grid = createInitialConstructorGrid(10, 10, 2.0);
+    // Populate some floor tiles with docks and racks
+    grid.tiles.set(getTileKey(0, 0), 'DOCK_INBOUND');
+    grid.tiles.set(getTileKey(1, 0), 'EMPTY_FLOOR');
+    grid.tiles.set(getTileKey(2, 0), 'DOCK_OUTBOUND');
+
     const initialTopology = rebuildTopologyFromGrid(grid, 10, 10);
 
     assert.ok(initialTopology.nodes.length > 0);
     assert.ok(initialTopology.edges.length > 0);
 
-    // Place an obstacle in the middle
-    grid.tiles.set(getTileKey(2, 2), 'OBSTACLE');
+    // Place an obstacle in place of empty floor
+    grid.tiles.set(getTileKey(1, 0), 'OBSTACLE');
     const updatedTopology = rebuildTopologyFromGrid(grid, 10, 10);
 
     // Node count should decrease because OBSTACLE creates no passable graph node
     assert.ok(updatedTopology.nodes.length < initialTopology.nodes.length);
-    assert.ok(!updatedTopology.nodes.some((n) => n.id === 'c_node_2_2'));
+    assert.ok(!updatedTopology.nodes.some((n) => n.id === 'c_node_1_0'));
   });
 
   it('detects graph isolation when obstacles block dock connectivity', () => {
     const grid = createInitialConstructorGrid(6, 6, 2.0);
+    grid.tiles.set(getTileKey(0, 0), 'DOCK_INBOUND');
+    grid.tiles.set(getTileKey(5, 5), 'DOCK_OUTBOUND');
 
     // Place obstacles across column x=1 to cut off inbound dock at x=0
     for (let y = 0; y < grid.rows; y++) {

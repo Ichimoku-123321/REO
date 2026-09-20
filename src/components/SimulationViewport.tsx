@@ -35,15 +35,19 @@ import { SkuInventoryModal } from './SkuInventoryModal.js';
 import { SupplyScheduleModal } from './SupplyScheduleModal.js';
 import { RackInspectionPopover } from './RackInspectionPopover.js';
 import { audioEngine } from '../engine/audio_synth.js';
-import { Layers, MapPin, Navigation, AlertTriangle, Building2, Wrench } from 'lucide-react';
+import { Layers, MapPin, Navigation, AlertTriangle, Edit3, Play } from 'lucide-react';
 
 interface SimulationViewportProps {
+  appMode: 'CONSTRUCTOR' | 'SIMULATION';
+  onAppModeChange: (mode: 'CONSTRUCTOR' | 'SIMULATION') => void;
   facility: FacilityRequirements;
   onChangeFacility?: (updated: FacilityRequirements) => void;
   fleetConfig: Robot | FleetCompositionItem[] | null;
   fleetSize: number;
   targetThroughputPerHour: number;
   replayFrames?: SimulationReplayFrame[];
+  onTriggerSimulationRun: () => void;
+  showToast: (msg: string) => void;
 }
 
 const DEFAULT_TELEMETRY: SimulationTelemetry = {
@@ -69,18 +73,23 @@ function angleLerp(a: number, b: number, t: number): number {
 }
 
 export function SimulationViewport({
+  appMode,
+  onAppModeChange,
   facility,
   onChangeFacility,
   fleetConfig,
   fleetSize,
   targetThroughputPerHour,
   replayFrames = [],
+  onTriggerSimulationRun,
+  showToast,
 }: SimulationViewportProps) {
   const outerContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Viewport mode & CAD Interaction mode
-  const [isConstructorMode, setIsConstructorMode] = useState<boolean>(false);
+  const isConstructorMode = appMode === 'CONSTRUCTOR';
+
+  // CAD Interaction mode
   const [interactionMode, setInteractionMode] = useState<CtorInteractionMode>('SELECT');
   const [selectedTileType, setSelectedTileType] = useState<ConstructorTileType>('RACK');
   const [showGrid, setShowGrid] = useState<boolean>(true);
@@ -114,7 +123,7 @@ export function SimulationViewport({
   } | null>(null);
 
   // Playback & Simulation state
-  const [isPlaying, setIsPlaying] = useState<boolean>(true);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [speedMultiplier, setSpeedMultiplier] = useState<number>(2);
   const [currentTimeSec, setCurrentTimeSec] = useState<number>(0);
   const [volume, setVolume] = useState<number>(0.5);
@@ -143,6 +152,23 @@ export function SimulationViewport({
   // Capacity calculation
   const warehouseCapacity = useMemo(() => {
     return calculateWarehouseCapacity(grid);
+  }, [grid]);
+
+  // Count placed elements for live CAD bar & validation
+  const gridElementCounts = useMemo(() => {
+    let inboundDocks = 0;
+    let outboundDocks = 0;
+    let racks = 0;
+    let chargers = 0;
+
+    grid.tiles.forEach((type) => {
+      if (type === 'DOCK_INBOUND') inboundDocks++;
+      if (type === 'DOCK_OUTBOUND') outboundDocks++;
+      if (type === 'RACK') racks++;
+      if (type === 'CHARGER') chargers++;
+    });
+
+    return { inboundDocks, outboundDocks, racks, chargers };
   }, [grid]);
 
   // Derived active topology
@@ -189,6 +215,29 @@ export function SimulationViewport({
     setCurrentTimeSec(0);
     lastProcessedFrameIndexRef.current = -1;
   }, [replayFrames]);
+
+  // Finish Construction & Start Simulation Handler
+  const handleFinishConstructionAndSimulate = useCallback(() => {
+    if (
+      gridElementCounts.inboundDocks < 1 ||
+      gridElementCounts.outboundDocks < 1 ||
+      gridElementCounts.racks < 1
+    ) {
+      showToast('⚠️ Разместите хотя бы одни ворота приемки, отгрузки и стеллаж');
+      return;
+    }
+
+    onTriggerSimulationRun();
+    onAppModeChange('SIMULATION');
+    setIsPlaying(true);
+  }, [gridElementCounts, onTriggerSimulationRun, onAppModeChange, showToast]);
+
+  // Return to CAD Editor Handler
+  const handleReturnToEditor = useCallback(() => {
+    setIsPlaying(false);
+    setCurrentTimeSec(0);
+    onAppModeChange('CONSTRUCTOR');
+  }, [onAppModeChange]);
 
   const handleResetGrid = useCallback(() => {
     const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
@@ -474,154 +523,6 @@ export function SimulationViewport({
           const dMesh = new THREE.Mesh(dGeo, dMat);
           dMesh.position.set(tileX, 0.02, tileY);
           scene.add(dMesh);
-        }
-      });
-    }
-
-    // Automatic Mode Functional Zones
-    if (!isConstructorMode) {
-      topology.zones.forEach((zone) => {
-        const zoneGeo = new THREE.PlaneGeometry(zone.width, zone.height);
-        const zoneMat = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(zone.color),
-          transparent: true,
-          opacity: 0.25,
-          roughness: 0.5,
-        });
-        const zoneMesh = new THREE.Mesh(zoneGeo, zoneMat);
-        zoneMesh.rotation.x = -Math.PI / 2;
-        zoneMesh.position.set(
-          zone.x + zone.width / 2,
-          0.01,
-          zone.y + zone.height / 2
-        );
-        zoneMesh.receiveShadow = true;
-        scene.add(zoneMesh);
-
-        const borderEdgesGeo = new THREE.EdgesGeometry(zoneGeo);
-        const borderMat = new THREE.LineBasicMaterial({
-          color: new THREE.Color(zone.color),
-          linewidth: 2,
-        });
-        const borderLine = new THREE.LineSegments(borderEdgesGeo, borderMat);
-        borderLine.rotation.x = -Math.PI / 2;
-        borderLine.position.set(
-          zone.x + zone.width / 2,
-          0.02,
-          zone.y + zone.height / 2
-        );
-        scene.add(borderLine);
-
-        if (zone.type === 'STORAGE_AISLE') {
-          const rackHeight = Math.min(4, (facility.ceilingHeightM ?? 8.0) * 0.6);
-          const rackGroup = new THREE.Group();
-
-          const isVertical = zone.height > zone.width * 1.2;
-
-          if (isVertical) {
-            const rackCols = 4;
-            const colWidth = Math.max(0.1, (zone.width - 2) / rackCols);
-            for (let c = 0; c < rackCols; c++) {
-              const rackGeo = new THREE.BoxGeometry(
-                colWidth * 0.6,
-                rackHeight,
-                zone.height - 2
-              );
-              const rackMat = new THREE.MeshStandardMaterial({
-                color: 0x334155,
-                roughness: 0.4,
-                metalness: 0.3,
-              });
-              const rackMesh = new THREE.Mesh(rackGeo, rackMat);
-              rackMesh.position.set(
-                zone.x + 1 + c * colWidth + colWidth * 0.3,
-                rackHeight / 2,
-                zone.y + zone.height / 2
-              );
-              rackMesh.castShadow = true;
-              rackMesh.receiveShadow = true;
-              rackGroup.add(rackMesh);
-            }
-          } else {
-            const rackRows = 4;
-            const rowHeight = Math.max(0.1, (zone.height - 2) / rackRows);
-            for (let r = 0; r < rackRows; r++) {
-              const rackGeo = new THREE.BoxGeometry(
-                zone.width - 2,
-                rackHeight,
-                rowHeight * 0.6
-              );
-              const rackMat = new THREE.MeshStandardMaterial({
-                color: 0x334155,
-                roughness: 0.4,
-                metalness: 0.3,
-              });
-              const rackMesh = new THREE.Mesh(rackGeo, rackMat);
-              rackMesh.position.set(
-                zone.x + zone.width / 2,
-                rackHeight / 2,
-                zone.y + 1 + r * rowHeight + rowHeight * 0.3
-              );
-              rackMesh.castShadow = true;
-              rackMesh.receiveShadow = true;
-              rackGroup.add(rackMesh);
-            }
-          }
-          scene.add(rackGroup);
-        }
-      });
-    }
-
-    // Nodes visual markers
-    const getNodeColor = (type: NodeType): number => {
-      switch (type) {
-        case 'INBOUND_DOCK':
-          return 0x3b82f6;
-        case 'OUTBOUND_DOCK':
-          return 0x0284c7;
-        case 'CHARGING_HUB':
-          return 0xf59e0b;
-        case 'STORAGE_AISLE':
-          return 0x10b981;
-        case 'WAYPOINT':
-        default:
-          return 0x94a3b8;
-      }
-    };
-
-    topology.nodes.forEach((node) => {
-      if (node.type === 'WAYPOINT') return;
-      const color = getNodeColor(node.type);
-      const markerGeo = new THREE.CylinderGeometry(0.8, 1.2, 0.8, 16);
-      const markerMat = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.2,
-        metalness: 0.5,
-        emissive: color,
-        emissiveIntensity: 0.2,
-      });
-      const markerMesh = new THREE.Mesh(markerGeo, markerMat);
-      markerMesh.position.set(node.x, 0.4, node.y);
-      markerMesh.castShadow = true;
-      scene.add(markerMesh);
-    });
-
-    // Bottleneck Heatmap Overlay
-    if (showBottleneckHeatmap) {
-      const criticalSet = new Set(spectralAnalysis.criticalNodeIds);
-      topology.nodes.forEach((node) => {
-        if (criticalSet.has(node.id)) {
-          const ringGeo = new THREE.RingGeometry(1.0, 1.8, 32);
-          const ringMat = new THREE.MeshBasicMaterial({
-            color: 0xef4444,
-            side: THREE.DoubleSide,
-            transparent: true,
-            opacity: 0.85,
-          });
-          const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-          ringMesh.rotation.x = -Math.PI / 2;
-          ringMesh.position.set(node.x, 0.15, node.y);
-          scene.add(ringMesh);
         }
       });
     }
@@ -1048,8 +949,6 @@ export function SimulationViewport({
     onChangeFacility,
   ]);
 
-  const isFleetEmpty = fleetSize === 0 || !fleetConfig;
-
   let selectedRobotFullName: string | null = null;
   if (Array.isArray(fleetConfig)) {
     if (fleetConfig.length > 0) {
@@ -1123,45 +1022,29 @@ export function SimulationViewport({
   return (
     <div
       ref={outerContainerRef}
-      className="bg-[#EAEAE6] h-full flex flex-col overflow-y-auto font-sans text-[#1A1A1A] rounded-none"
+      className="bg-[#EAEAE6] h-full flex flex-col overflow-hidden font-sans text-[#1A1A1A] rounded-none"
     >
-      {/* Viewport Header with Mode Switcher */}
+      {/* Viewport Header */}
       <div className="bg-[#FFFFFF] border-b border-[#D4AF37]/40 px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0 font-mono text-xs rounded-none">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-[#8A6826]" />
             <h3 className="font-bold uppercase tracking-tight text-[#1A1A1A]">
-              2.5D CAD Viewport
+              3D CAD WAREHOUSE CONSTRUCTOR
             </h3>
           </div>
 
-          <div className="flex items-center bg-[#F4F4F0] border border-[#D4AF37]/40 p-0.5 ml-2 rounded-none">
+          {/* Mode Action Button when in Simulation */}
+          {appMode === 'SIMULATION' && (
             <button
               type="button"
-              onClick={() => setIsConstructorMode(false)}
-              className={`flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-bold uppercase transition rounded-none cursor-pointer ${
-                !isConstructorMode
-                  ? 'bg-[#D4AF37] text-[#1A1A1A] shadow-xs'
-                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
-              }`}
+              onClick={handleReturnToEditor}
+              className="flex items-center gap-1.5 px-3 py-1 bg-[#D4AF37] hover:bg-[#BFA02E] text-[#1A1A1A] font-bold text-xs uppercase tracking-tight border border-[#BFA02E] rounded-none cursor-pointer transition shadow-xs"
             >
-              <Building2 className="w-3 h-3" />
-              <span>🏢 Автоматическая схема</span>
+              <Edit3 className="w-3.5 h-3.5 text-[#1A1A1A]" />
+              <span>[ ✏️ ВЕРНУТЬСЯ В РЕДАКТОР CAD ]</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => setIsConstructorMode(true)}
-              className={`flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-bold uppercase transition rounded-none cursor-pointer ${
-                isConstructorMode
-                  ? 'bg-[#D4AF37] text-[#1A1A1A] shadow-xs'
-                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
-              }`}
-            >
-              <Wrench className="w-3 h-3" />
-              <span>🛠️ Конструктор 2.5D</span>
-            </button>
-          </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
@@ -1193,7 +1076,7 @@ export function SimulationViewport({
       </div>
 
       {/* Graph Isolation Warning Banner */}
-      {isIsolatedZone && (
+      {isIsolatedZone && isConstructorMode && (
         <div className="bg-red-900 border-b border-red-700 px-4 py-1.5 flex items-center gap-2 text-white text-xs font-bold font-mono shrink-0 animate-pulse">
           <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />
           <span>Внимание: изолированная зона. Роботы не могут построить маршрут к доку или зарядной станции.</span>
@@ -1202,7 +1085,7 @@ export function SimulationViewport({
 
       {/* Three.js Canvas Container (CENTER OF ZONE 2) */}
       <div
-        className="relative w-full h-[480px] min-h-[380px] bg-[#EAEAE6] shrink-0 overflow-hidden"
+        className="relative flex-1 bg-[#EAEAE6] overflow-hidden"
         onMouseDown={handleMarqueeMouseDown}
         onMouseMove={handleMarqueeMouseMove}
         onMouseUp={handleMarqueeMouseUp}
@@ -1279,42 +1162,27 @@ export function SimulationViewport({
 
         <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
-        {/* Empty Fleet Overlay Banner */}
-        {isFleetEmpty && (
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-6 text-center z-10 font-sans">
-            <div className="bg-[#FFFFFF] border-2 border-[#D4AF37] p-6 max-w-md shadow-2xl rounded-none">
-              <div className="p-3 bg-[#D4AF37]/15 text-[#8A6826] w-fit mx-auto mb-3 border border-[#D4AF37]/30 rounded-none">
-                <AlertTriangle className="w-7 h-7" />
-              </div>
-              <h4 className="text-base font-bold text-[#1A1A1A] mb-1 uppercase tracking-tight">
-                Парк не сформирован
-              </h4>
-              <p className="text-xs text-[#4F4F47]">
-                Выберите подходящее роботизированное решение или нажмите «Запустить моделирование и расчет» слева.
-              </p>
+        {/* Legend Overlay in Simulation mode */}
+        {appMode === 'SIMULATION' && (
+          <div className="absolute bottom-3 left-3 bg-[#FFFFFF]/95 border border-[#D4AF37]/40 p-2 text-[11px] flex flex-wrap gap-3 text-[#1A1A1A] shadow-md z-10 font-mono rounded-none">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 bg-emerald-600" />
+              <span>В пути</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 bg-amber-500" />
+              <span>Погрузка/Ожидание</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 bg-cyan-600" />
+              <span>Зарядка</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2 bg-sky-600" />
+              <span>Груз</span>
             </div>
           </div>
         )}
-
-        {/* Legend Overlay */}
-        <div className="absolute bottom-3 left-3 bg-[#FFFFFF]/95 border border-[#D4AF37]/40 p-2 text-[11px] flex flex-wrap gap-3 text-[#1A1A1A] shadow-md z-10 font-mono rounded-none">
-          <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 bg-emerald-600" />
-            <span>В пути</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 bg-amber-500" />
-            <span>Погрузка/Ожидание</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 bg-cyan-600" />
-            <span>Зарядка</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2 bg-sky-600" />
-            <span>Груз</span>
-          </div>
-        </div>
 
         {/* Viewport Control Tip */}
         <div className="absolute bottom-3 right-3 bg-[#FFFFFF]/90 border border-[#D4AF37]/40 px-2.5 py-1 text-[10px] text-[#4F4F47] z-10 font-mono rounded-none">
@@ -1324,34 +1192,66 @@ export function SimulationViewport({
         </div>
       </div>
 
-      {/* Simulation HUD Controls Bar (STRICTLY BELOW CANVAS) */}
-      <div className="shrink-0">
-        <SimulationControls
-          isPlaying={isPlaying}
-          onTogglePlayPause={() => {
-            audioEngine.initAudioContext();
-            setIsPlaying((prev) => !prev);
-          }}
-          speedMultiplier={speedMultiplier}
-          onSpeedChange={setSpeedMultiplier}
-          currentTimestampSec={currentTimeSec}
-          totalDurationSec={3600}
-          onSeek={(sec) => {
-            setCurrentTimeSec(sec);
-            lastProcessedFrameIndexRef.current = -1;
-          }}
-          volume={volume}
-          onVolumeChange={handleVolumeChange}
-          isMuted={isMuted}
-          onToggleMute={handleToggleMute}
-          onToggleFullscreen={handleToggleFullscreen}
-          telemetry={telemetry}
-          targetThroughputPerHour={targetThroughputPerHour}
-          fleetSize={fleetSize}
-          selectedRobotName={selectedRobotFullName}
-          spectralAnalysis={spectralAnalysis}
-        />
-      </div>
+      {/* BOTTOM ACTION / SIMULATION PLAYER AREA */}
+      {isConstructorMode ? (
+        /* Bottom CAD Status & Action Bar */
+        <div className="h-14 bg-[#FFFFFF] border-t border-[#D4AF37]/40 px-4 flex items-center justify-between shrink-0 font-mono text-xs shadow-md z-20 rounded-none">
+          {/* Left Side: Live Layout Metrics */}
+          <div className="flex items-center gap-3 text-[#1A1A1A]">
+            <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
+              Площадь: <strong className="text-[#8A6826] font-bold tabular-nums">{facility.totalAreaSqm} м²</strong>
+            </span>
+            <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
+              Стеллажей: <strong className="text-[#8A6826] font-bold tabular-nums">{warehouseCapacity.totalRacks} шт.</strong>
+            </span>
+            <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
+              Вместимость: <strong className="text-[#8A6826] font-bold tabular-nums">{warehouseCapacity.totalPalletCapacity} паллет</strong>
+            </span>
+            <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
+              Доков: <strong className="text-[#8A6826] font-bold tabular-nums">{gridElementCounts.inboundDocks + gridElementCounts.outboundDocks}</strong> (Приемка: {gridElementCounts.inboundDocks}, Отгрузка: {gridElementCounts.outboundDocks})
+            </span>
+          </div>
+
+          {/* Right Side: Primary CTA Button */}
+          <button
+            type="button"
+            onClick={handleFinishConstructionAndSimulate}
+            className="px-6 py-2.5 bg-[#D4AF37] hover:bg-[#BFA02E] active:bg-[#8A6826] text-[#1A1A1A] font-bold uppercase tracking-wider text-xs border border-[#BFA02E] shadow-xs rounded-none cursor-pointer flex items-center gap-2 transition"
+          >
+            <Play className="w-4 h-4 text-[#1A1A1A] fill-[#1A1A1A]" />
+            <span>[ СКЛАД ГОТОВ: ЗАПУСТИТЬ РАСЧЕТ И МОДЕЛИРОВАНИЕ ]</span>
+          </button>
+        </div>
+      ) : (
+        /* Bottom Simulation Replay Player with Telemetry Cards */
+        <div className="shrink-0">
+          <SimulationControls
+            isPlaying={isPlaying}
+            onTogglePlayPause={() => {
+              audioEngine.initAudioContext();
+              setIsPlaying((prev) => !prev);
+            }}
+            speedMultiplier={speedMultiplier}
+            onSpeedChange={setSpeedMultiplier}
+            currentTimestampSec={currentTimeSec}
+            totalDurationSec={3600}
+            onSeek={(sec) => {
+              setCurrentTimeSec(sec);
+              lastProcessedFrameIndexRef.current = -1;
+            }}
+            volume={volume}
+            onVolumeChange={handleVolumeChange}
+            isMuted={isMuted}
+            onToggleMute={handleToggleMute}
+            onToggleFullscreen={handleToggleFullscreen}
+            telemetry={telemetry}
+            targetThroughputPerHour={targetThroughputPerHour}
+            fleetSize={fleetSize}
+            selectedRobotName={selectedRobotFullName}
+            spectralAnalysis={spectralAnalysis}
+          />
+        </div>
+      )}
 
       {/* SKU Inventory Panel Modal */}
       <SkuInventoryModal

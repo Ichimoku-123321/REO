@@ -35,8 +35,10 @@ import { CalculationProgressModal } from './components/CalculationProgressModal.
 import { FileSpreadsheet } from 'lucide-react';
 
 export default function App() {
-  // 1. Facility & Preset State
-  const [activePresetId, setActivePresetId] = useState<string>('warehouse');
+  // 0. App Mode State: 'CONSTRUCTOR' | 'SIMULATION'
+  const [appMode, setAppMode] = useState<'CONSTRUCTOR' | 'SIMULATION'>('CONSTRUCTOR');
+
+  // 1. Facility Requirements State
   const [facility, setFacility] = useState<FacilityRequirements>(
     FACILITY_PRESETS[0].requirements
   );
@@ -92,15 +94,6 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handlePresetSelect = (presetId: string) => {
-    const preset = FACILITY_PRESETS.find((p) => p.id === presetId);
-    if (preset) {
-      setActivePresetId(preset.id);
-      setFacility(preset.requirements);
-      setReplayFrames([]);
-      showToast(`Применен пресет объекта «${preset.name}»`);
-    }
-  };
 
   // Eligibility Evaluation
   const evaluatedRobots = useMemo(() => {
@@ -293,24 +286,15 @@ export default function App() {
           </div>
         </div>
 
-        {/* 1-Click Industry Presets */}
-        <div className="hidden md:flex items-center border border-[#D4AF37]/40 bg-[#FFFFFF] rounded-none">
-          {FACILITY_PRESETS.map((p) => {
-            const isActive = activePresetId === p.id;
-            return (
-              <button
-                key={p.id}
-                onClick={() => handlePresetSelect(p.id)}
-                className={`px-3 py-1 text-xs font-semibold uppercase tracking-tight transition cursor-pointer border-r last:border-r-0 border-[#D4AF37]/30 rounded-none ${
-                  isActive
-                    ? 'bg-[#D4AF37] text-[#1A1A1A] font-bold shadow-xs'
-                    : 'text-[#4F4F47] hover:text-[#1A1A1A] hover:bg-[#F4F4F0]'
-                }`}
-              >
-                {p.name}
-              </button>
-            );
-          })}
+        {/* Dynamic Project Header */}
+        <div className="hidden md:flex items-center gap-2 border border-[#D4AF37]/40 bg-[#FFFFFF] px-3 py-1 text-xs font-mono rounded-none">
+          <span className="font-bold text-[#8A6826]">[ REO CAD PLATFORM ]</span>
+          <span className="text-[#DFDFD8]">•</span>
+          <span className="text-[#1A1A1A] font-semibold">[ Проект склада #1 ]</span>
+          <span className="text-[#DFDFD8]">•</span>
+          <span className={`font-bold ${appMode === 'CONSTRUCTOR' ? 'text-[#8A6826]' : 'text-emerald-700'}`}>
+            [ Статус: {appMode === 'CONSTRUCTOR' ? 'Чертеж / Проектирование' : 'Моделирование / Симуляция'} ]
+          </span>
         </div>
 
         {/* Column Toggles & Export Actions */}
@@ -365,8 +349,6 @@ export default function App() {
           <Zone1Sidebar
             facility={facility}
             onChangeFacility={setFacility}
-            activePresetId={activePresetId}
-            onPresetSelect={handlePresetSelect}
             simulationParams={simulationParams}
             onChangeSimulationParams={handleSimulationParamsChange}
             fleetMode={fleetMode}
@@ -422,13 +404,18 @@ export default function App() {
           {/* Interactive Simulation Viewport Stage */}
           <div className="flex-1 overflow-hidden relative rounded-none">
             <SimulationViewport
+              appMode={appMode}
+              onAppModeChange={setAppMode}
               facility={facility}
+              onChangeFacility={setFacility}
               fleetConfig={activeComposition.length > 0 ? activeComposition : selectedRobot}
               fleetSize={activeFleetSize || (activeEconomics?.fleetSize ?? 0)}
               targetThroughputPerHour={
                 activeEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour
               }
               replayFrames={replayFrames}
+              onTriggerSimulationRun={handleRunSimulation}
+              showToast={showToast}
             />
           </div>
         </section>

@@ -1,25 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { FacilityRequirements, FacilityType } from '../types/facility.js';
-import { FACILITY_PRESETS } from '../data/presets.js';
-import { Building2, Sparkles } from 'lucide-react';
+import { Building2 } from 'lucide-react';
 
 interface FacilityFormProps {
   facility: FacilityRequirements;
   onChange: (updated: FacilityRequirements) => void;
-  onPresetSelect: (presetId: string) => void;
-  activePresetId?: string;
 }
 
 export const FacilityForm: React.FC<FacilityFormProps> = ({
   facility,
   onChange,
-  onPresetSelect,
-  activePresetId,
 }) => {
   const [localFacility, setLocalFacility] = useState<FacilityRequirements>(facility);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Sync local state when external facility prop changes (e.g. preset selected)
+  // Sync local state when external facility prop changes
   useEffect(() => {
     setLocalFacility(facility);
   }, [facility]);
@@ -79,44 +74,7 @@ export const FacilityForm: React.FC<FacilityFormProps> = ({
 
   return (
     <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-6 shadow-xl mb-8">
-      {/* Top Preset Buttons */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <label className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            Быстрый выбор пресета объекта (1 клик):
-          </label>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {FACILITY_PRESETS.map((preset) => {
-            const isActive = activePresetId === preset.id;
-            return (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => onPresetSelect(preset.id)}
-                className={`p-3.5 rounded-lg border text-left transition duration-150 flex items-start gap-3 cursor-pointer ${
-                  isActive
-                    ? 'bg-blue-600/20 border-blue-500 ring-2 ring-blue-500/30'
-                    : 'bg-slate-900/60 border-slate-700 hover:border-slate-500 hover:bg-slate-900/90'
-                }`}
-              >
-                <span className="text-2xl shrink-0">{preset.icon}</span>
-                <div className="overflow-hidden">
-                  <div className="font-bold text-sm text-slate-100 truncate">
-                    {preset.name}
-                  </div>
-                  <div className="text-xs text-slate-400 truncate">
-                    {preset.subtitle}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="border-t border-slate-700/60 pt-6">
+      <div>
         <h3 className="text-base font-bold text-slate-200 mb-4 flex items-center gap-2">
           <Building2 className="w-5 h-5 text-blue-400" />
           Параметры и ограничения объекта

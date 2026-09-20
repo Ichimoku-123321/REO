@@ -365,7 +365,7 @@ export function SimulationViewport({
 
         // Extruded Storage Rack Blocks
         if (zone.type === 'STORAGE_AISLE') {
-          const rackHeight = Math.min(4, facility.ceilingHeightM * 0.6);
+          const rackHeight = Math.min(4, (facility.ceilingHeightM ?? 8.0) * 0.6);
           const rackGroup = new THREE.Group();
 
           const isVertical = zone.height > zone.width * 1.2;

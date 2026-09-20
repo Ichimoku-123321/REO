@@ -9,6 +9,127 @@ export type ConstructorTileType =
   | 'DOCK_INBOUND'
   | 'DOCK_OUTBOUND';
 
+export interface Point2D {
+  x: number;
+  z: number;
+}
+
+export interface SkuItem {
+  id: string;
+  name: string;
+  weightPerUnitKg: number;
+}
+
+export interface PlacedElement {
+  id: string;
+  type: ConstructorTileType;
+  x: number;
+  z: number;
+  rotationDeg: number; // 0, 90, 180, 270
+  skuId?: string;
+  slotsPerRack?: number; // Default 12 for RACK
+}
+
+export interface SupplySchedule {
+  inboundIntervalValue: number;
+  inboundIntervalUnit: 'hours' | 'days' | 'minutes';
+  inboundBatchVolume: number; // Q_in (pallets)
+  outboundIntervalValue: number;
+  outboundIntervalUnit: 'hours' | 'days' | 'minutes';
+  outboundBatchVolume: number; // Q_out (pallets)
+}
+
+export const DEFAULT_SUPPLY_SCHEDULE: SupplySchedule = {
+  inboundIntervalValue: 24,
+  inboundIntervalUnit: 'hours',
+  inboundBatchVolume: 100,
+  outboundIntervalValue: 24,
+  outboundIntervalUnit: 'hours',
+  outboundBatchVolume: 100,
+};
+
+export const DEFAULT_SKU_LIST: SkuItem[] = [
+  { id: 'sku-1', name: 'Огурцы (Свежие)', weightPerUnitKg: 500 },
+  { id: 'sku-2', name: 'Паллеты 1000 кг (Промышленные)', weightPerUnitKg: 1000 },
+  { id: 'sku-3', name: 'Двигатели В-46', weightPerUnitKg: 850 },
+  { id: 'sku-4', name: 'Медикаменты (Охлажденные)', weightPerUnitKg: 250 },
+];
+
+/**
+ * Calculates floor surface area using Gauss's Shoelace formula for polygon vertices.
+ */
+export function calculateShoelaceArea(points: Point2D[]): number {
+  const n = points.length;
+  if (n < 3) return 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const nextIndex = (i + 1) % n;
+    sum += points[i].x * points[nextIndex].z - points[nextIndex].x * points[i].z;
+  }
+  return Math.round((Math.abs(sum) / 2) * 100) / 100;
+}
+
+/**
+ * Finds magnetic snap coordinates along X or Z axis if distance to neighbor center/edge is < thresholdM (default 0.35m).
+ */
+export function findMagneticSnapPosition(
+  target: Point2D,
+  existingPoints: Point2D[],
+  thresholdM: number = 0.35
+): { snapped: Point2D; guideX: number | null; guideZ: number | null } {
+  let snappedX = target.x;
+  let snappedZ = target.z;
+  let guideX: number | null = null;
+  let guideZ: number | null = null;
+
+  let minDiffX = thresholdM;
+  let minDiffZ = thresholdM;
+
+  for (const pt of existingPoints) {
+    const diffX = Math.abs(target.x - pt.x);
+    if (diffX < minDiffX) {
+      minDiffX = diffX;
+      snappedX = pt.x;
+      guideX = pt.x;
+    }
+
+    const diffZ = Math.abs(target.z - pt.z);
+    if (diffZ < minDiffZ) {
+      minDiffZ = diffZ;
+      snappedZ = pt.z;
+      guideZ = pt.z;
+    }
+  }
+
+  return {
+    snapped: { x: snappedX, z: snappedZ },
+    guideX,
+    guideZ,
+  };
+}
+
+/**
+ * Calculates live total rack count and total warehouse pallet slot capacity.
+ */
+export function calculateWarehouseCapacity(grid: ConstructorGrid): {
+  totalRacks: number;
+  totalPalletCapacity: number;
+} {
+  let totalRacks = 0;
+  let totalPalletCapacity = 0;
+
+  grid.tiles.forEach((type, key) => {
+    if (type === 'RACK') {
+      totalRacks++;
+      const details = grid.elementDetails?.get(key);
+      const slots = details?.slotsPerRack ?? 12;
+      totalPalletCapacity += slots;
+    }
+  });
+
+  return { totalRacks, totalPalletCapacity };
+}
+
 export interface GridTileState {
   gridX: number;
   gridY: number;
@@ -20,6 +141,7 @@ export interface ConstructorGrid {
   rows: number;
   cellSizeM: number;
   tiles: Map<string, ConstructorTileType>; // key: `${gridX}_${gridY}`
+  elementDetails?: Map<string, { skuId?: string; slotsPerRack?: number; rotationDeg?: number }>;
 }
 
 /**

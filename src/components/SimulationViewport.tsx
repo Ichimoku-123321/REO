@@ -18,16 +18,28 @@ import {
   rebuildTopologyFromGrid,
   checkGraphIsolation,
   getTileKey,
+  calculateShoelaceArea,
+  findMagneticSnapPosition,
+  calculateWarehouseCapacity,
+  DEFAULT_SKU_LIST,
+  DEFAULT_SUPPLY_SCHEDULE,
   type ConstructorGrid,
   type ConstructorTileType,
+  type Point2D,
+  type SkuItem,
+  type SupplySchedule,
 } from '../engine/constructor_engine.js';
 import { SimulationControls } from './SimulationControls.js';
-import { ConstructorToolbar } from './ConstructorToolbar.js';
+import { ConstructorToolbar, type CtorInteractionMode } from './ConstructorToolbar.js';
+import { SkuInventoryModal } from './SkuInventoryModal.js';
+import { SupplyScheduleModal } from './SupplyScheduleModal.js';
+import { RackInspectionPopover } from './RackInspectionPopover.js';
 import { audioEngine } from '../engine/audio_synth.js';
-import { Layers, MapPin, Navigation, Maximize2, AlertCircle, Wrench, Building2, AlertTriangle } from 'lucide-react';
+import { Layers, MapPin, Navigation, AlertTriangle, Building2, Wrench } from 'lucide-react';
 
 interface SimulationViewportProps {
   facility: FacilityRequirements;
+  onChangeFacility?: (updated: FacilityRequirements) => void;
   fleetConfig: Robot | FleetCompositionItem[] | null;
   fleetSize: number;
   targetThroughputPerHour: number;
@@ -58,6 +70,7 @@ function angleLerp(a: number, b: number, t: number): number {
 
 export function SimulationViewport({
   facility,
+  onChangeFacility,
   fleetConfig,
   fleetSize,
   targetThroughputPerHour,
@@ -66,10 +79,39 @@ export function SimulationViewport({
   const outerContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Viewport mode: Automatic vs Interactive Constructor
+  // Viewport mode & CAD Interaction mode
   const [isConstructorMode, setIsConstructorMode] = useState<boolean>(false);
+  const [interactionMode, setInteractionMode] = useState<CtorInteractionMode>('SELECT');
   const [selectedTileType, setSelectedTileType] = useState<ConstructorTileType>('RACK');
+  const [showGrid, setShowGrid] = useState<boolean>(true);
+  const [snappingEnabled, setSnappingEnabled] = useState<boolean>(true);
   const [showBottleneckHeatmap, setShowBottleneckHeatmap] = useState<boolean>(false);
+
+  // Selected Object & Popover State
+  const [selectedTileKey, setSelectedTileKey] = useState<string | null>(null);
+  const [popoverPos, setPopoverPos] = useState<{ x: number; y: number } | null>(null);
+
+  // SKU & Supply Schedule State
+  const [skuList, setSkuList] = useState<SkuItem[]>(DEFAULT_SKU_LIST);
+  const [selectedSkuForBox, setSelectedSkuForBox] = useState<SkuItem | null>(DEFAULT_SKU_LIST[0]);
+  const [supplySchedule, setSupplySchedule] = useState<SupplySchedule>(DEFAULT_SUPPLY_SCHEDULE);
+
+  // Modals Visibility State
+  const [isSkuModalOpen, setIsSkuModalOpen] = useState<boolean>(false);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
+
+  // Floor Contour Drawing State
+  const [drawingPoints, setDrawingPoints] = useState<Point2D[]>([]);
+  const [isDrawingActive, setIsDrawingActive] = useState<boolean>(false);
+
+  // Box Marquee Drag State
+  const [marqueeBox, setMarqueeBox] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    isDragging: boolean;
+  } | null>(null);
 
   // Playback & Simulation state
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
@@ -97,6 +139,11 @@ export function SimulationViewport({
     const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
     setGrid(createInitialConstructorGrid(facilityDims.widthM, facilityDims.lengthM, cellSize));
   }, [facilityDims, facility.totalAreaSqm]);
+
+  // Capacity calculation
+  const warehouseCapacity = useMemo(() => {
+    return calculateWarehouseCapacity(grid);
+  }, [grid]);
 
   // Derived active topology
   const topology: FacilityTopology = useMemo(() => {
@@ -143,11 +190,63 @@ export function SimulationViewport({
     lastProcessedFrameIndexRef.current = -1;
   }, [replayFrames]);
 
-
   const handleResetGrid = useCallback(() => {
     const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
     setGrid(createInitialConstructorGrid(facilityDims.widthM, facilityDims.lengthM, cellSize));
+    setSelectedTileKey(null);
+    setPopoverPos(null);
   }, [facilityDims, facility.totalAreaSqm]);
+
+  const handleRotateSelected = useCallback(() => {
+    if (!selectedTileKey) return;
+    setGrid((prev) => {
+      const detailsMap = new Map(prev.elementDetails || []);
+      const existing = detailsMap.get(selectedTileKey) || {};
+      const currentRot = existing.rotationDeg || 0;
+      const nextRot = (currentRot + 90) % 360;
+      detailsMap.set(selectedTileKey, { ...existing, rotationDeg: nextRot });
+      return { ...prev, elementDetails: detailsMap };
+    });
+  }, [selectedTileKey]);
+
+  const handleDeleteSelected = useCallback(() => {
+    if (!selectedTileKey) return;
+    setGrid((prev) => {
+      const updatedTiles = new Map(prev.tiles);
+      updatedTiles.set(selectedTileKey, 'EMPTY_FLOOR');
+      const detailsMap = new Map(prev.elementDetails || []);
+      detailsMap.delete(selectedTileKey);
+      return { ...prev, tiles: updatedTiles, elementDetails: detailsMap };
+    });
+    setSelectedTileKey(null);
+    setPopoverPos(null);
+  }, [selectedTileKey]);
+
+  // Hotkey keyboard event listener [G], [S], [R], [Del]
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        document.activeElement?.tagName === 'SELECT'
+      ) {
+        return;
+      }
+
+      if (e.key === 'g' || e.key === 'G' || e.key === 'п' || e.key === 'П') {
+        setShowGrid((prev) => !prev);
+      } else if (e.key === 's' || e.key === 'S' || e.key === 'ы' || e.key === 'Ы') {
+        setSnappingEnabled((prev) => !prev);
+      } else if (e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К') {
+        handleRotateSelected();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        handleDeleteSelected();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleRotateSelected, handleDeleteSelected]);
 
   const handleVolumeChange = useCallback((newVol: number) => {
     setVolume(newVol);
@@ -175,11 +274,11 @@ export function SimulationViewport({
     }
   }, []);
 
+  // Main Three.js Scene Setup & Interaction Loop
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Clear previous elements
     container.innerHTML = '';
 
     const width = container.clientWidth;
@@ -187,9 +286,9 @@ export function SimulationViewport({
 
     // 1. Scene setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#0f172a'); // slate-900
+    scene.background = new THREE.Color('#EAEAE6'); // Alabaster CAD background
 
-    // 2. Camera setup (Orthographic Camera for 2.5D isometric view)
+    // 2. Camera setup
     const aspect = width / height;
     const viewSize = Math.max(topology.widthM, topology.lengthM) * 1.15;
     const camera = new THREE.OrthographicCamera(
@@ -205,7 +304,7 @@ export function SimulationViewport({
     const centerZ = topology.lengthM / 2;
 
     const cameraDistance = Math.max(topology.widthM, topology.lengthM) * 1.5;
-    const pitchAngleRad = THREE.MathUtils.degToRad(25);
+    const pitchAngleRad = THREE.MathUtils.degToRad(30);
 
     camera.position.set(
       centerX,
@@ -214,7 +313,7 @@ export function SimulationViewport({
     );
     camera.lookAt(centerX, 0, centerZ);
 
-    // 3. Renderer setup
+    // 3. Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(width, height);
@@ -232,33 +331,26 @@ export function SimulationViewport({
     controls.maxPolarAngle = Math.PI / 3.2;
     controls.update();
 
-    // Raycaster for Grid Tile Interaction
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
     // 5. Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
     dirLight.position.set(centerX - 20, 40, centerZ - 30);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 1024;
     dirLight.shadow.mapSize.height = 1024;
-    dirLight.shadow.camera.near = 0.5;
-    dirLight.shadow.camera.far = 150;
-    dirLight.shadow.camera.left = -viewSize;
-    dirLight.shadow.camera.right = viewSize;
-    dirLight.shadow.camera.top = viewSize;
-    dirLight.shadow.camera.bottom = -viewSize;
     scene.add(dirLight);
 
-    // 6. Industrial CAD Floor Plane
+    // 6. CAD Floor Plane
     const floorGeo = new THREE.PlaneGeometry(topology.widthM, topology.lengthM);
     const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b, // slate-800 CAD floor
-      roughness: 0.8,
-      metalness: 0.1,
+      color: 0xf4f4f0, // Light CAD floor
+      roughness: 0.9,
+      metalness: 0.05,
     });
     const floorMesh = new THREE.Mesh(floorGeo, floorMat);
     floorMesh.rotation.x = -Math.PI / 2;
@@ -266,17 +358,46 @@ export function SimulationViewport({
     floorMesh.receiveShadow = true;
     scene.add(floorMesh);
 
-    // Clean Subtle Floor Grid Helper
-    const gridHelper = new THREE.GridHelper(
-      Math.max(topology.widthM, topology.lengthM),
-      Math.max(10, Math.floor(Math.max(topology.widthM, topology.lengthM) / (isConstructorMode ? grid.cellSizeM : 5))),
-      0x475569,
-      0x334155
-    );
-    gridHelper.position.set(centerX, 0, centerZ);
-    scene.add(gridHelper);
+    // Grid Helper
+    let gridHelper: THREE.GridHelper | null = null;
+    if (showGrid) {
+      gridHelper = new THREE.GridHelper(
+        Math.max(topology.widthM, topology.lengthM),
+        Math.max(10, Math.floor(Math.max(topology.widthM, topology.lengthM) / (isConstructorMode ? grid.cellSizeM : 5))),
+        0xd4af37, // Gold primary lines
+        0xc0c0b8  // Fine secondary lines
+      );
+      gridHelper.position.set(centerX, 0, centerZ);
+      scene.add(gridHelper);
+    }
 
-    // Constructor Interactive Tile Rendering
+    // Ghost Preview Mesh for Drag & Drop / Hover
+    const ghostGroup = new THREE.Group();
+    const ghostGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.85, 2.0, grid.cellSizeM * 0.85);
+    const ghostMat = new THREE.MeshStandardMaterial({
+      color: 0xd4af37,
+      transparent: true,
+      opacity: 0.5,
+      wireframe: true,
+    });
+    const ghostMesh = new THREE.Mesh(ghostGeo, ghostMat);
+    ghostGroup.add(ghostMesh);
+    ghostGroup.visible = false;
+    scene.add(ghostGroup);
+
+    // Visual Magnetic Snapping Guide Lines
+    const guideLineMat = new THREE.LineDashedMaterial({
+      color: 0xd4af37,
+      dashSize: 0.5,
+      gapSize: 0.2,
+      linewidth: 2,
+    });
+    const guideGeo = new THREE.BufferGeometry();
+    const guideLine = new THREE.LineSegments(guideGeo, guideLineMat);
+    guideLine.visible = false;
+    scene.add(guideLine);
+
+    // Render Tiles / Elements in Constructor Mode
     if (isConstructorMode) {
       grid.tiles.forEach((type, key) => {
         const [gxStr, gyStr] = key.split('_');
@@ -285,42 +406,71 @@ export function SimulationViewport({
         const tileX = (gx + 0.5) * grid.cellSizeM;
         const tileY = (gy + 0.5) * grid.cellSizeM;
 
+        const isSelected = selectedTileKey === key;
+        const details = grid.elementDetails?.get(key);
+        const rotRad = THREE.MathUtils.degToRad(details?.rotationDeg || 0);
+
         if (type === 'RACK') {
           const rackGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.85, 2.2, grid.cellSizeM * 0.85);
-          const rackMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4, metalness: 0.3 });
+          const rackMat = new THREE.MeshStandardMaterial({
+            color: isSelected ? 0xd4af37 : details?.skuId ? 0x0284c7 : 0x334155,
+            roughness: 0.4,
+            metalness: 0.3,
+          });
           const rackMesh = new THREE.Mesh(rackGeo, rackMat);
           rackMesh.position.set(tileX, 1.1, tileY);
+          rackMesh.rotation.y = rotRad;
           rackMesh.castShadow = true;
           rackMesh.receiveShadow = true;
           scene.add(rackMesh);
 
           const rackEdges = new THREE.EdgesGeometry(rackGeo);
-          const rackLineMat = new THREE.LineBasicMaterial({ color: 0x64748b });
+          const rackLineMat = new THREE.LineBasicMaterial({
+            color: isSelected ? 0x1a1a1a : 0x64748b,
+          });
           const rackLine = new THREE.LineSegments(rackEdges, rackLineMat);
           rackLine.position.copy(rackMesh.position);
+          rackLine.rotation.y = rotRad;
           scene.add(rackLine);
         } else if (type === 'OBSTACLE') {
           const obsGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 3.0, grid.cellSizeM * 0.9);
-          const obsMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3, metalness: 0.1 });
+          const obsMat = new THREE.MeshStandardMaterial({
+            color: isSelected ? 0xd4af37 : 0xef4444,
+            roughness: 0.3,
+            metalness: 0.1,
+          });
           const obsMesh = new THREE.Mesh(obsGeo, obsMat);
           obsMesh.position.set(tileX, 1.5, tileY);
+          obsMesh.rotation.y = rotRad;
           obsMesh.castShadow = true;
           scene.add(obsMesh);
         } else if (type === 'CHARGER') {
           const cGeo = new THREE.CylinderGeometry(grid.cellSizeM * 0.35, grid.cellSizeM * 0.35, 0.4, 16);
-          const cMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 0.3 });
+          const cMat = new THREE.MeshStandardMaterial({
+            color: isSelected ? 0xd4af37 : 0xf59e0b,
+            emissive: 0xf59e0b,
+            emissiveIntensity: 0.3,
+          });
           const cMesh = new THREE.Mesh(cGeo, cMat);
           cMesh.position.set(tileX, 0.2, tileY);
           scene.add(cMesh);
         } else if (type === 'DOCK_INBOUND') {
           const dGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 0.1, grid.cellSizeM * 0.9);
-          const dMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.6 });
+          const dMat = new THREE.MeshStandardMaterial({
+            color: isSelected ? 0xd4af37 : 0x3b82f6,
+            transparent: true,
+            opacity: 0.7,
+          });
           const dMesh = new THREE.Mesh(dGeo, dMat);
           dMesh.position.set(tileX, 0.02, tileY);
           scene.add(dMesh);
         } else if (type === 'DOCK_OUTBOUND') {
           const dGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 0.1, grid.cellSizeM * 0.9);
-          const dMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, transparent: true, opacity: 0.6 });
+          const dMat = new THREE.MeshStandardMaterial({
+            color: isSelected ? 0xd4af37 : 0x0284c7,
+            transparent: true,
+            opacity: 0.7,
+          });
           const dMesh = new THREE.Mesh(dGeo, dMat);
           dMesh.position.set(tileX, 0.02, tileY);
           scene.add(dMesh);
@@ -328,14 +478,14 @@ export function SimulationViewport({
       });
     }
 
-    // 7. Automatic Mode Functional Zones Floor Patches & Extrusions
+    // Automatic Mode Functional Zones
     if (!isConstructorMode) {
       topology.zones.forEach((zone) => {
         const zoneGeo = new THREE.PlaneGeometry(zone.width, zone.height);
         const zoneMat = new THREE.MeshStandardMaterial({
           color: new THREE.Color(zone.color),
           transparent: true,
-          opacity: 0.35,
+          opacity: 0.25,
           roughness: 0.5,
         });
         const zoneMesh = new THREE.Mesh(zoneGeo, zoneMat);
@@ -348,7 +498,6 @@ export function SimulationViewport({
         zoneMesh.receiveShadow = true;
         scene.add(zoneMesh);
 
-        // Border outline for Zone
         const borderEdgesGeo = new THREE.EdgesGeometry(zoneGeo);
         const borderMat = new THREE.LineBasicMaterial({
           color: new THREE.Color(zone.color),
@@ -363,7 +512,6 @@ export function SimulationViewport({
         );
         scene.add(borderLine);
 
-        // Extruded Storage Rack Blocks
         if (zone.type === 'STORAGE_AISLE') {
           const rackHeight = Math.min(4, (facility.ceilingHeightM ?? 8.0) * 0.6);
           const rackGroup = new THREE.Group();
@@ -393,12 +541,6 @@ export function SimulationViewport({
               rackMesh.castShadow = true;
               rackMesh.receiveShadow = true;
               rackGroup.add(rackMesh);
-
-              const rackEdges = new THREE.EdgesGeometry(rackGeo);
-              const rackLineMat = new THREE.LineBasicMaterial({ color: 0x64748b });
-              const rackLine = new THREE.LineSegments(rackEdges, rackLineMat);
-              rackLine.position.copy(rackMesh.position);
-              rackGroup.add(rackLine);
             }
           } else {
             const rackRows = 4;
@@ -423,12 +565,6 @@ export function SimulationViewport({
               rackMesh.castShadow = true;
               rackMesh.receiveShadow = true;
               rackGroup.add(rackMesh);
-
-              const rackEdges = new THREE.EdgesGeometry(rackGeo);
-              const rackLineMat = new THREE.LineBasicMaterial({ color: 0x64748b });
-              const rackLine = new THREE.LineSegments(rackEdges, rackLineMat);
-              rackLine.position.copy(rackMesh.position);
-              rackGroup.add(rackLine);
             }
           }
           scene.add(rackGroup);
@@ -436,7 +572,7 @@ export function SimulationViewport({
       });
     }
 
-    // 8. Infrastructure Destination Markers (Inbound, Outbound, Charging Docks)
+    // Nodes visual markers
     const getNodeColor = (type: NodeType): number => {
       switch (type) {
         case 'INBOUND_DOCK':
@@ -454,10 +590,7 @@ export function SimulationViewport({
     };
 
     topology.nodes.forEach((node) => {
-      if (node.type === 'WAYPOINT') {
-        return;
-      }
-
+      if (node.type === 'WAYPOINT') return;
       const color = getNodeColor(node.type);
       const markerGeo = new THREE.CylinderGeometry(0.8, 1.2, 0.8, 16);
       const markerMat = new THREE.MeshStandardMaterial({
@@ -471,22 +604,16 @@ export function SimulationViewport({
       markerMesh.position.set(node.x, 0.4, node.y);
       markerMesh.castShadow = true;
       scene.add(markerMesh);
-
-      const capGeo = new THREE.SphereGeometry(0.5, 12, 12);
-      const capMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-      const capMesh = new THREE.Mesh(capGeo, capMat);
-      capMesh.position.set(node.x, 0.9, node.y);
-      scene.add(capMesh);
     });
 
-    // Visual Bottleneck Heatmap Overlay
+    // Bottleneck Heatmap Overlay
     if (showBottleneckHeatmap) {
       const criticalSet = new Set(spectralAnalysis.criticalNodeIds);
       topology.nodes.forEach((node) => {
         if (criticalSet.has(node.id)) {
           const ringGeo = new THREE.RingGeometry(1.0, 1.8, 32);
           const ringMat = new THREE.MeshBasicMaterial({
-            color: 0xef4444, // Glowing Red
+            color: 0xef4444,
             side: THREE.DoubleSide,
             transparent: true,
             opacity: 0.85,
@@ -495,23 +622,11 @@ export function SimulationViewport({
           ringMesh.rotation.x = -Math.PI / 2;
           ringMesh.position.set(node.x, 0.15, node.y);
           scene.add(ringMesh);
-
-          const innerRingGeo = new THREE.RingGeometry(1.8, 2.3, 32);
-          const innerRingMat = new THREE.MeshBasicMaterial({
-            color: 0xf59e0b, // Amber
-            side: THREE.DoubleSide,
-            transparent: true,
-            opacity: 0.5,
-          });
-          const innerRingMesh = new THREE.Mesh(innerRingGeo, innerRingMat);
-          innerRingMesh.rotation.x = -Math.PI / 2;
-          innerRingMesh.position.set(node.x, 0.14, node.y);
-          scene.add(innerRingMesh);
         }
       });
     }
 
-    // 9. Dynamic Robot Fleet Meshes Map
+    // Dynamic Robot Fleet Meshes
     interface AgentMeshGroup {
       group: THREE.Group;
       chassisMesh: THREE.Mesh;
@@ -528,27 +643,23 @@ export function SimulationViewport({
       isDeadlocked?: boolean;
       speedMps?: number;
     }): number => {
-      if (a0.isDeadlocked) {
-        return 0xef4444; // Red for deadlock
-      }
+      if (a0.isDeadlocked) return 0xef4444;
       const hasActiveTask = a0.state !== 'IDLE' && a0.state !== 'CHARGING';
       const isSlowMoving = hasActiveTask && typeof a0.speedMps === 'number' && a0.speedMps < 0.05;
-      if (a0.isQueued || isSlowMoving) {
-        return 0xf59e0b; // Yellow/Amber for queue or slow movement
-      }
+      if (a0.isQueued || isSlowMoving) return 0xf59e0b;
       switch (a0.state) {
         case 'TRANSPORTING':
         case 'MOVING_TO_PICKUP':
-          return 0x10b981; // Green for normal moving
+          return 0x10b981;
         case 'LOADING':
         case 'UNLOADING':
-          return 0xf59e0b; // Amber
+          return 0xf59e0b;
         case 'MOVING_TO_CHARGE':
         case 'CHARGING':
-          return 0x06b6d4; // Cyan
+          return 0x06b6d4;
         case 'IDLE':
         default:
-          return 0x64748b; // Slate
+          return 0x64748b;
       }
     };
 
@@ -557,7 +668,7 @@ export function SimulationViewport({
 
       const chassisGeo = new THREE.BoxGeometry(1.2, 0.4, 1.2);
       const chassisMat = new THREE.MeshStandardMaterial({
-        color: 0x2563eb, // blue-600 AMR chassis
+        color: 0x2563eb,
         roughness: 0.3,
         metalness: 0.6,
       });
@@ -566,12 +677,6 @@ export function SimulationViewport({
       chassisMesh.castShadow = true;
       chassisMesh.receiveShadow = true;
       group.add(chassisMesh);
-
-      const noseGeo = new THREE.BoxGeometry(0.3, 0.2, 0.3);
-      const noseMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0 });
-      const noseMesh = new THREE.Mesh(noseGeo, noseMat);
-      noseMesh.position.set(0.5, 0.3, 0);
-      group.add(noseMesh);
 
       const haloGeo = new THREE.RingGeometry(0.8, 1.1, 24);
       const haloMat = new THREE.MeshBasicMaterial({
@@ -587,13 +692,11 @@ export function SimulationViewport({
 
       const cargoGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
       const cargoMat = new THREE.MeshStandardMaterial({
-        color: 0x0284c7, // Sky blue cargo crate
+        color: 0x0284c7,
         roughness: 0.5,
-        metalness: 0.2,
       });
       const cargoMesh = new THREE.Mesh(cargoGeo, cargoMat);
       cargoMesh.position.set(0, 0.7, 0);
-      cargoMesh.castShadow = true;
       cargoMesh.visible = false;
       group.add(cargoMesh);
 
@@ -602,8 +705,8 @@ export function SimulationViewport({
       return { group, chassisMesh, haloMesh, cargoMesh, haloMat };
     };
 
-    // Constructor Click Handler
-    const handleCanvasPointerDown = (event: MouseEvent) => {
+    // Pointer Interaction Handler for Pointer Move & Hover
+    const handlePointerMove = (event: MouseEvent) => {
       if (!isConstructorMode) return;
 
       const rect = renderer.domElement.getBoundingClientRect();
@@ -614,25 +717,187 @@ export function SimulationViewport({
       const intersects = raycaster.intersectObject(floorMesh);
 
       if (intersects.length > 0) {
-        const point = intersects[0].point;
+        let point = intersects[0].point;
+
+        // Snapping check
+        if (snappingEnabled) {
+          const existingPositions: Point2D[] = [];
+          grid.tiles.forEach((type, key) => {
+            if (type !== 'EMPTY_FLOOR') {
+              const [gx, gy] = key.split('_').map((s) => parseInt(s, 10));
+              existingPositions.push({
+                x: (gx + 0.5) * grid.cellSizeM,
+                z: (gy + 0.5) * grid.cellSizeM,
+              });
+            }
+          });
+
+          const snapRes = findMagneticSnapPosition({ x: point.x, z: point.z }, existingPositions, 0.35);
+          point = new THREE.Vector3(snapRes.snapped.x, 0, snapRes.snapped.z);
+
+          // Render magnetic snap guide line if snapped
+          if (snapRes.guideX !== null || snapRes.guideZ !== null) {
+            const guidePoints: THREE.Vector3[] = [];
+            if (snapRes.guideX !== null) {
+              guidePoints.push(new THREE.Vector3(snapRes.guideX, 0.05, 0));
+              guidePoints.push(new THREE.Vector3(snapRes.guideX, 0.05, topology.lengthM));
+            }
+            if (snapRes.guideZ !== null) {
+              guidePoints.push(new THREE.Vector3(0, 0.05, snapRes.guideZ));
+              guidePoints.push(new THREE.Vector3(topology.widthM, 0.05, snapRes.guideZ));
+            }
+            guideGeo.setFromPoints(guidePoints);
+            guideLine.computeLineDistances();
+            guideLine.visible = true;
+          } else {
+            guideLine.visible = false;
+          }
+        } else {
+          guideLine.visible = false;
+        }
+
+        if (interactionMode === 'PLACE_ELEMENT') {
+          ghostGroup.position.set(point.x, 1.0, point.z);
+          ghostGroup.visible = true;
+        } else {
+          ghostGroup.visible = false;
+        }
+      }
+    };
+
+    // Pointer Click Handler
+    const handleCanvasPointerDown = (event: MouseEvent) => {
+      if (!isConstructorMode) return;
+
+      // Ignore right-click for placement
+      if (event.button === 2) {
+        // Right-Click Inspection Popover
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObject(floorMesh);
+
+        if (intersects.length > 0) {
+          const point = intersects[0].point;
+          const gx = Math.floor(point.x / grid.cellSizeM);
+          const gy = Math.floor(point.z / grid.cellSizeM);
+          const key = getTileKey(gx, gy);
+
+          if (grid.tiles.get(key) === 'RACK') {
+            setSelectedTileKey(key);
+            setPopoverPos({ x: event.clientX, y: event.clientY });
+          }
+        }
+        return;
+      }
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObject(floorMesh);
+
+      if (intersects.length > 0) {
+        let point = intersects[0].point;
+
+        if (snappingEnabled) {
+          const existingPositions: Point2D[] = [];
+          grid.tiles.forEach((type, key) => {
+            if (type !== 'EMPTY_FLOOR') {
+              const [gx, gy] = key.split('_').map((s) => parseInt(s, 10));
+              existingPositions.push({
+                x: (gx + 0.5) * grid.cellSizeM,
+                z: (gy + 0.5) * grid.cellSizeM,
+              });
+            }
+          });
+          const snapRes = findMagneticSnapPosition({ x: point.x, z: point.z }, existingPositions, 0.35);
+          point = new THREE.Vector3(snapRes.snapped.x, 0, snapRes.snapped.z);
+        }
+
         const gx = Math.floor(point.x / grid.cellSizeM);
         const gy = Math.floor(point.z / grid.cellSizeM);
 
-        if (gx >= 0 && gx < grid.cols && gy >= 0 && gy < grid.rows) {
+        // Floor Contour Drawing Modes
+        if (interactionMode === 'DRAW_RECT') {
+          if (!isDrawingActive) {
+            setDrawingPoints([{ x: point.x, z: point.z }]);
+            setIsDrawingActive(true);
+          } else {
+            const startPt = drawingPoints[0];
+            const endPt = { x: point.x, z: point.z };
+            const rectPoly = [
+              startPt,
+              { x: endPt.x, z: startPt.z },
+              endPt,
+              { x: startPt.x, z: endPt.z },
+            ];
+            const areaSqm = calculateShoelaceArea(rectPoly);
+            if (areaSqm > 0 && onChangeFacility) {
+              onChangeFacility({ ...facility, totalAreaSqm: areaSqm });
+            }
+            setDrawingPoints([]);
+            setIsDrawingActive(false);
+            setInteractionMode('SELECT');
+          }
+          return;
+        }
+
+        if (interactionMode === 'DRAW_POLY') {
+          const nextPts = [...drawingPoints, { x: point.x, z: point.z }];
+          setDrawingPoints(nextPts);
+          setIsDrawingActive(true);
+
+          if (nextPts.length >= 3) {
+            const areaSqm = calculateShoelaceArea(nextPts);
+            if (areaSqm > 0 && onChangeFacility) {
+              onChangeFacility({ ...facility, totalAreaSqm: areaSqm });
+            }
+          }
+          return;
+        }
+
+        // Element Placement Mode
+        if (interactionMode === 'PLACE_ELEMENT' && gx >= 0 && gx < grid.cols && gy >= 0 && gy < grid.rows) {
           const key = getTileKey(gx, gy);
           setGrid((prev) => {
-            const updated = new Map(prev.tiles);
-            updated.set(key, selectedTileType);
-            return { ...prev, tiles: updated };
+            const updatedTiles = new Map(prev.tiles);
+            updatedTiles.set(key, selectedTileType);
+            return { ...prev, tiles: updatedTiles };
           });
+          setSelectedTileKey(key);
+          setPopoverPos(null);
+          return;
+        }
+
+        // Select Mode
+        if (interactionMode === 'SELECT' && gx >= 0 && gx < grid.cols && gy >= 0 && gy < grid.rows) {
+          const key = getTileKey(gx, gy);
+          if (grid.tiles.get(key) !== 'EMPTY_FLOOR') {
+            setSelectedTileKey(key);
+            setPopoverPos({ x: event.clientX, y: event.clientY });
+          } else {
+            setSelectedTileKey(null);
+            setPopoverPos(null);
+          }
         }
       }
     };
 
     const domElem = renderer.domElement;
+    domElem.addEventListener('mousemove', handlePointerMove);
     domElem.addEventListener('pointerdown', handleCanvasPointerDown);
 
-    // 10. Animation Loop: Interpolates from replayFrames or runs real-time physics fallback
+    // Context Menu Prevent Default for Right Click Inspection
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+    domElem.addEventListener('contextmenu', handleContextMenu);
+
+    // Animation Loop
     const clock = new THREE.Clock();
     let animationFrameId: number;
     let telemetryTimer = 0;
@@ -646,10 +911,9 @@ export function SimulationViewport({
         setCurrentTimeSec((prevTime) => {
           let nextTime = prevTime + deltaReal * speedMultiplier;
           if (nextTime >= 3600) {
-            nextTime = 0; // Loop back to start
+            nextTime = 0;
           }
 
-          // Replay Frames Interpolation Logic
           if (replayFrames && replayFrames.length > 0) {
             const frameIndex = Math.min(
               replayFrames.length - 2,
@@ -661,7 +925,6 @@ export function SimulationViewport({
 
             const alpha = Math.max(0, Math.min(1, (nextTime - frame0.timestampSec) / 0.5));
 
-            // Trigger audio events on frame index transition
             if (frameIndex !== lastProcessedFrameIndexRef.current) {
               lastProcessedFrameIndexRef.current = frameIndex;
 
@@ -688,7 +951,6 @@ export function SimulationViewport({
               }
             }
 
-            // Interpolate agent positions & headings
             const numAgents = Math.min(frame0.agents.length, frame1.agents.length);
             for (let i = 0; i < numAgents; i++) {
               const a0 = frame0.agents[i];
@@ -720,7 +982,6 @@ export function SimulationViewport({
           return nextTime;
         });
 
-        // Telemetry update interval throttled to 300ms (3.33Hz)
         telemetryTimer += deltaReal;
         if (telemetryTimer >= 0.3) {
           telemetryTimer = 0;
@@ -759,7 +1020,9 @@ export function SimulationViewport({
 
     return () => {
       cancelAnimationFrame(animationFrameId);
+      domElem.removeEventListener('mousemove', handlePointerMove);
       domElem.removeEventListener('pointerdown', handleCanvasPointerDown);
+      domElem.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('resize', handleResize);
       controls.dispose();
       renderer.dispose();
@@ -771,11 +1034,18 @@ export function SimulationViewport({
     speedMultiplier,
     targetThroughputPerHour,
     isConstructorMode,
+    interactionMode,
     grid,
     selectedTileType,
+    showGrid,
+    snappingEnabled,
     showBottleneckHeatmap,
     spectralAnalysis,
     replayFrames,
+    selectedTileKey,
+    drawingPoints,
+    isDrawingActive,
+    onChangeFacility,
   ]);
 
   const isFleetEmpty = fleetSize === 0 || !fleetConfig;
@@ -789,30 +1059,90 @@ export function SimulationViewport({
     selectedRobotFullName = `${fleetConfig.vendor} ${fleetConfig.model}`;
   }
 
+  // Handle Box Marquee Dragging over 3D Viewport
+  const handleMarqueeMouseDown = (e: React.MouseEvent) => {
+    if (interactionMode !== 'BOX_SELECT_SKU' || !selectedSkuForBox) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setMarqueeBox({
+      startX: e.clientX - rect.left,
+      startY: e.clientY - rect.top,
+      currentX: e.clientX - rect.left,
+      currentY: e.clientY - rect.top,
+      isDragging: true,
+    });
+  };
+
+  const handleMarqueeMouseMove = (e: React.MouseEvent) => {
+    if (!marqueeBox || !marqueeBox.isDragging) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setMarqueeBox((prev) =>
+      prev
+        ? {
+            ...prev,
+            currentX: e.clientX - rect.left,
+            currentY: e.clientY - rect.top,
+          }
+        : null
+    );
+  };
+
+  const handleMarqueeMouseUp = () => {
+    if (!marqueeBox || !marqueeBox.isDragging || !selectedSkuForBox) return;
+
+    const minX = Math.min(marqueeBox.startX, marqueeBox.currentX);
+    const maxX = Math.max(marqueeBox.startX, marqueeBox.currentX);
+    const minY = Math.min(marqueeBox.startY, marqueeBox.currentY);
+    const maxY = Math.max(marqueeBox.startY, marqueeBox.currentY);
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) {
+      // Bulk assign SKU to racks inside bounding box
+      setGrid((prev) => {
+        const detailsMap = new Map(prev.elementDetails || []);
+        prev.tiles.forEach((type, key) => {
+          if (type === 'RACK') {
+            const [gx, gy] = key.split('_').map((s) => parseInt(s, 10));
+            const posX = ((gx + 0.5) / prev.cols) * rect.width;
+            const posY = ((gy + 0.5) / prev.rows) * rect.height;
+
+            if (posX >= minX && posX <= maxX && posY >= minY && posY <= maxY) {
+              const existing = detailsMap.get(key) || {};
+              detailsMap.set(key, { ...existing, skuId: selectedSkuForBox.id });
+            }
+          }
+        });
+        return { ...prev, elementDetails: detailsMap };
+      });
+    }
+
+    setMarqueeBox(null);
+  };
+
   return (
     <div
       ref={outerContainerRef}
-      className="bg-slate-900 h-full flex flex-col overflow-y-auto"
+      className="bg-[#EAEAE6] h-full flex flex-col overflow-y-auto font-sans text-[#1A1A1A] rounded-none"
     >
       {/* Viewport Header with Mode Switcher */}
-      <div className="bg-slate-900/95 border-b border-slate-700/80 px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
+      <div className="bg-[#FFFFFF] border-b border-[#D4AF37]/40 px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0 font-mono text-xs rounded-none">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-blue-400" />
-            <h3 className="text-xs font-bold uppercase tracking-tight text-slate-100">
+            <Layers className="w-4 h-4 text-[#8A6826]" />
+            <h3 className="font-bold uppercase tracking-tight text-[#1A1A1A]">
               2.5D CAD Viewport
             </h3>
           </div>
 
-          {/* Mode Switcher Buttons */}
-          <div className="flex items-center bg-slate-800 border border-slate-700 p-0.5 ml-2">
+          <div className="flex items-center bg-[#F4F4F0] border border-[#D4AF37]/40 p-0.5 ml-2 rounded-none">
             <button
               type="button"
               onClick={() => setIsConstructorMode(false)}
-              className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold transition-all ${
+              className={`flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-bold uppercase transition rounded-none cursor-pointer ${
                 !isConstructorMode
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#D4AF37] text-[#1A1A1A] shadow-xs'
+                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
               }`}
             >
               <Building2 className="w-3 h-3" />
@@ -822,10 +1152,10 @@ export function SimulationViewport({
             <button
               type="button"
               onClick={() => setIsConstructorMode(true)}
-              className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold transition-all ${
+              className={`flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-bold uppercase transition rounded-none cursor-pointer ${
                 isConstructorMode
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#D4AF37] text-[#1A1A1A] shadow-xs'
+                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
               }`}
             >
               <Wrench className="w-3 h-3" />
@@ -834,30 +1164,28 @@ export function SimulationViewport({
           </div>
         </div>
 
-        {/* Dimension & Graph Metrics Badges */}
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          <div className="bg-slate-800 border border-slate-700 px-2 py-1 flex items-center gap-1.5 text-slate-300">
-            <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+          <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 px-2 py-1 flex items-center gap-1.5 text-[#4F4F47]">
             <span>
               Габариты:{' '}
-              <strong className="text-white">
+              <strong className="text-[#1A1A1A] tabular-nums">
                 {topology.widthM} × {topology.lengthM} м
               </strong>
             </span>
           </div>
 
-          <div className="bg-slate-800 border border-slate-700 px-2 py-1 flex items-center gap-1.5 text-slate-300">
-            <MapPin className="w-3.5 h-3.5 text-purple-400" />
+          <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 px-2 py-1 flex items-center gap-1.5 text-[#4F4F47]">
+            <MapPin className="w-3.5 h-3.5 text-purple-600" />
             <span>
-              Зон: <strong className="text-white">{topology.zones.length}</strong>
+              Зон: <strong className="text-[#1A1A1A]">{topology.zones.length}</strong>
             </span>
           </div>
 
-          <div className="bg-slate-800 border border-slate-700 px-2 py-1 flex items-center gap-1.5 text-slate-300">
-            <Navigation className="w-3.5 h-3.5 text-sky-400" />
+          <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 px-2 py-1 flex items-center gap-1.5 text-[#4F4F47]">
+            <Navigation className="w-3.5 h-3.5 text-sky-600" />
             <span>
               Трассы:{' '}
-              <strong className="text-white">{totalPathLengthM} м</strong> (
+              <strong className="text-[#1A1A1A] tabular-nums">{totalPathLengthM} м</strong> (
               {topology.nodes.length} узлов)
             </span>
           </div>
@@ -866,22 +1194,86 @@ export function SimulationViewport({
 
       {/* Graph Isolation Warning Banner */}
       {isIsolatedZone && (
-        <div className="bg-red-950/90 border-b border-red-800/80 px-4 py-1.5 flex items-center gap-2 text-red-200 text-xs font-bold animate-pulse shrink-0">
-          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+        <div className="bg-red-900 border-b border-red-700 px-4 py-1.5 flex items-center gap-2 text-white text-xs font-bold font-mono shrink-0 animate-pulse">
+          <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />
           <span>Внимание: изолированная зона. Роботы не могут построить маршрут к доку или зарядной станции.</span>
         </div>
       )}
 
       {/* Three.js Canvas Container (CENTER OF ZONE 2) */}
-      <div className="relative w-full h-[450px] min-h-[350px] bg-slate-950 shrink-0">
+      <div
+        className="relative w-full h-[480px] min-h-[380px] bg-[#EAEAE6] shrink-0 overflow-hidden"
+        onMouseDown={handleMarqueeMouseDown}
+        onMouseMove={handleMarqueeMouseMove}
+        onMouseUp={handleMarqueeMouseUp}
+      >
         {/* Floating Constructor Toolbar */}
         {isConstructorMode && (
           <ConstructorToolbar
+            interactionMode={interactionMode}
+            onChangeInteractionMode={setInteractionMode}
             selectedTileType={selectedTileType}
             onSelectTileType={setSelectedTileType}
+            showGrid={showGrid}
+            onToggleGrid={() => setShowGrid((prev) => !prev)}
+            snappingEnabled={snappingEnabled}
+            onToggleSnapping={() => setSnappingEnabled((prev) => !prev)}
             showBottleneckHeatmap={showBottleneckHeatmap}
             onToggleBottleneckHeatmap={() => setShowBottleneckHeatmap((prev) => !prev)}
             onResetGrid={handleResetGrid}
+            selectedElementId={selectedTileKey}
+            onRotateSelected={handleRotateSelected}
+            onDeleteSelected={handleDeleteSelected}
+            onOpenSkuModal={() => setIsSkuModalOpen(true)}
+            onOpenSchedulePanel={() => setIsScheduleModalOpen(true)}
+            selectedSkuForBox={selectedSkuForBox}
+            skuList={skuList}
+            onSelectSkuForBox={setSelectedSkuForBox}
+            totalRacks={warehouseCapacity.totalRacks}
+            totalPalletCapacity={warehouseCapacity.totalPalletCapacity}
+            supplySchedule={supplySchedule}
+            calculatedAreaSqm={facility.totalAreaSqm}
+          />
+        )}
+
+        {/* 2D Marquee Box Overlay for Bulk SKU Assignment */}
+        {marqueeBox && marqueeBox.isDragging && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${Math.min(marqueeBox.startX, marqueeBox.currentX)}px`,
+              top: `${Math.min(marqueeBox.startY, marqueeBox.currentY)}px`,
+              width: `${Math.abs(marqueeBox.currentX - marqueeBox.startX)}px`,
+              height: `${Math.abs(marqueeBox.currentY - marqueeBox.startY)}px`,
+            }}
+            className="border-2 border-dashed border-[#D4AF37] bg-[#D4AF37]/20 pointer-events-none z-30"
+          />
+        )}
+
+        {/* Rack Inspection Popover */}
+        {selectedTileKey && (
+          <RackInspectionPopover
+            isOpen={true}
+            onClose={() => {
+              setSelectedTileKey(null);
+              setPopoverPos(null);
+            }}
+            rackKey={selectedTileKey}
+            gridX={parseInt(selectedTileKey.split('_')[0], 10)}
+            gridY={parseInt(selectedTileKey.split('_')[1], 10)}
+            currentSkuId={grid.elementDetails?.get(selectedTileKey)?.skuId}
+            slotsPerRack={grid.elementDetails?.get(selectedTileKey)?.slotsPerRack ?? 12}
+            skuList={skuList}
+            onAssignSku={(key, skuId) => {
+              setGrid((prev) => {
+                const detailsMap = new Map(prev.elementDetails || []);
+                const existing = detailsMap.get(key) || {};
+                detailsMap.set(key, { ...existing, skuId });
+                return { ...prev, elementDetails: detailsMap };
+              });
+            }}
+            onDeleteRack={handleDeleteSelected}
+            screenPos={popoverPos ?? undefined}
           />
         )}
 
@@ -889,15 +1281,15 @@ export function SimulationViewport({
 
         {/* Empty Fleet Overlay Banner */}
         {isFleetEmpty && (
-          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6 text-center z-10">
-            <div className="bg-slate-900 border border-amber-500/40 p-6 max-w-md shadow-2xl">
-              <div className="p-3 bg-amber-500/10 text-amber-400 w-fit mx-auto mb-3 border border-amber-500/20">
-                <AlertCircle className="w-7 h-7" />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-6 text-center z-10 font-sans">
+            <div className="bg-[#FFFFFF] border-2 border-[#D4AF37] p-6 max-w-md shadow-2xl rounded-none">
+              <div className="p-3 bg-[#D4AF37]/15 text-[#8A6826] w-fit mx-auto mb-3 border border-[#D4AF37]/30 rounded-none">
+                <AlertTriangle className="w-7 h-7" />
               </div>
-              <h4 className="text-base font-bold text-slate-100 mb-1">
+              <h4 className="text-base font-bold text-[#1A1A1A] mb-1 uppercase tracking-tight">
                 Парк не сформирован
               </h4>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-[#4F4F47]">
                 Выберите подходящее роботизированное решение или нажмите «Запустить моделирование и расчет» слева.
               </p>
             </div>
@@ -905,29 +1297,29 @@ export function SimulationViewport({
         )}
 
         {/* Legend Overlay */}
-        <div className="absolute bottom-3 left-3 bg-slate-900/90 border border-slate-700/80 p-2 backdrop-blur text-[11px] flex flex-wrap gap-3 text-slate-300 shadow-md z-10 font-mono">
+        <div className="absolute bottom-3 left-3 bg-[#FFFFFF]/95 border border-[#D4AF37]/40 p-2 text-[11px] flex flex-wrap gap-3 text-[#1A1A1A] shadow-md z-10 font-mono rounded-none">
           <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+            <div className="w-2.5 h-2.5 bg-emerald-600" />
             <span>В пути</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+            <div className="w-2.5 h-2.5 bg-amber-500" />
             <span>Погрузка/Ожидание</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-cyan-500" />
+            <div className="w-2.5 h-2.5 bg-cyan-600" />
             <span>Зарядка</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2 bg-sky-500" />
+            <div className="w-2.5 h-2 bg-sky-600" />
             <span>Груз</span>
           </div>
         </div>
 
         {/* Viewport Control Tip */}
-        <div className="absolute bottom-3 right-3 bg-slate-900/80 border border-slate-700/60 px-2.5 py-1 text-[10px] text-slate-400 z-10">
+        <div className="absolute bottom-3 right-3 bg-[#FFFFFF]/90 border border-[#D4AF37]/40 px-2.5 py-1 text-[10px] text-[#4F4F47] z-10 font-mono rounded-none">
           {isConstructorMode
-            ? 'Клик для установки блока • ЛКМ: вращение • Колесо: зум'
+            ? 'Клик для установки блока • ЛКМ: вращение • Колесо: зум • ПКМ: контекст'
             : 'ЛКМ: вращение • Колесо: зум • ПКМ: панорамирование'}
         </div>
       </div>
@@ -960,6 +1352,25 @@ export function SimulationViewport({
           spectralAnalysis={spectralAnalysis}
         />
       </div>
+
+      {/* SKU Inventory Panel Modal */}
+      <SkuInventoryModal
+        isOpen={isSkuModalOpen}
+        onClose={() => setIsSkuModalOpen(false)}
+        skuList={skuList}
+        onAddSku={(newSku) => setSkuList((prev) => [...prev, newSku])}
+        onDeleteSku={(id) => setSkuList((prev) => prev.filter((s) => s.id !== id))}
+      />
+
+      {/* Supply Schedule Panel Modal */}
+      <SupplyScheduleModal
+        isOpen={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
+        schedule={supplySchedule}
+        onChangeSchedule={setSupplySchedule}
+        totalPalletCapacity={warehouseCapacity.totalPalletCapacity}
+        totalRacks={warehouseCapacity.totalRacks}
+      />
     </div>
   );
 }

@@ -87,7 +87,7 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
   supplySchedule,
   calculatedAreaSqm,
 }) => {
-  const isOverflow = supplySchedule.inboundBatchVolume > totalPalletCapacity;
+  const isOverflow = totalPalletCapacity > 0 && supplySchedule.inboundBatchVolume > totalPalletCapacity;
 
   const paletteTools: Array<{
     type: ConstructorTileType;
@@ -352,47 +352,6 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
         </div>
       </div>
 
-      {/* Bottom Sub-Bar: Capacity, Overflow Alert & Area Summary */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 bg-[#FFFFFF]/95 border border-[#D4AF37]/40 shadow-xs text-xs font-mono rounded-none">
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Capacity Summary Badge */}
-          <div className="flex items-center gap-1.5 text-[#1A1A1A]">
-            <Boxes className="w-4 h-4 text-[#8A6826]" />
-            <span>
-              Емкость стеллажей:{' '}
-              <strong className="text-[#8A6826] font-bold tabular-nums">
-                {totalPalletCapacity} паллет
-              </strong>{' '}
-              (Стеллажей: <strong className="tabular-nums">{totalRacks} шт.</strong>)
-            </span>
-          </div>
-
-          <span className="text-[#D4AF37]/60">|</span>
-
-          {/* Area Shoelace Calculation Badge */}
-          <div className="text-[#4F4F47]">
-            Площадь пола S:{' '}
-            <strong className="text-[#1A1A1A] font-bold tabular-nums">
-              {calculatedAreaSqm} м²
-            </strong>
-          </div>
-        </div>
-
-        {/* Overflow Alert Banner */}
-        {isOverflow ? (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-red-100 border border-red-400 text-red-900 font-bold text-[11px] animate-pulse">
-            <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
-            <span>
-              ⚠️ Переполнение: Объем партии ({supplySchedule.inboundBatchVolume} паллет) превышает общую вместимость стеллажей ({totalPalletCapacity} паллет)!
-            </span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1 text-emerald-800 font-semibold text-[11px]">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span>Баланс вместимости в норме</span>
-          </div>
-        )}
-      </div>
     </div>
   );
 };

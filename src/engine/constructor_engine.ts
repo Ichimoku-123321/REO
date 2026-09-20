@@ -42,17 +42,14 @@ export interface SupplySchedule {
 export const DEFAULT_SUPPLY_SCHEDULE: SupplySchedule = {
   inboundIntervalValue: 24,
   inboundIntervalUnit: 'hours',
-  inboundBatchVolume: 100,
+  inboundBatchVolume: 0,
   outboundIntervalValue: 24,
   outboundIntervalUnit: 'hours',
-  outboundBatchVolume: 100,
+  outboundBatchVolume: 0,
 };
 
 export const DEFAULT_SKU_LIST: SkuItem[] = [
-  { id: 'sku-1', name: 'Огурцы (Свежие)', weightPerUnitKg: 500 },
-  { id: 'sku-2', name: 'Паллеты 1000 кг (Промышленные)', weightPerUnitKg: 1000 },
-  { id: 'sku-3', name: 'Двигатели В-46', weightPerUnitKg: 850 },
-  { id: 'sku-4', name: 'Медикаменты (Охлажденные)', weightPerUnitKg: 250 },
+  { id: 'sku-1', name: 'Стандартный груз', weightPerUnitKg: 500 },
 ];
 
 /**

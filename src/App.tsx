@@ -288,13 +288,21 @@ export default function App() {
 
         {/* Dynamic Project Header */}
         <div className="hidden md:flex items-center gap-2 border border-[#D4AF37]/40 bg-[#FFFFFF] px-3 py-1 text-xs font-mono rounded-none">
-          <span className="font-bold text-[#8A6826]">[ REO CAD PLATFORM ]</span>
-          <span className="text-[#DFDFD8]">•</span>
-          <span className="text-[#1A1A1A] font-semibold">[ Проект склада #1 ]</span>
-          <span className="text-[#DFDFD8]">•</span>
-          <span className={`font-bold ${appMode === 'CONSTRUCTOR' ? 'text-[#8A6826]' : 'text-emerald-700'}`}>
-            [ Статус: {appMode === 'CONSTRUCTOR' ? 'Чертеж / Проектирование' : 'Моделирование / Симуляция'} ]
-          </span>
+          {appMode === 'CONSTRUCTOR' ? (
+            <span className="font-bold text-[#8A6826]">
+              [ REO CAD CONSTRUCTOR ] • [ Проект склада #1 ] • [ Режим: Чертеж ]
+            </span>
+          ) : (
+            <>
+              <span className="font-bold text-[#8A6826]">[ REO CAD PLATFORM ]</span>
+              <span className="text-[#DFDFD8]">•</span>
+              <span className="text-[#1A1A1A] font-semibold">[ Проект склада #1 ]</span>
+              <span className="text-[#DFDFD8]">•</span>
+              <span className="font-bold text-emerald-700">
+                [ Статус: Моделирование / Симуляция ]
+              </span>
+            </>
+          )}
         </div>
 
         {/* Column Toggles & Export Actions */}
@@ -365,41 +373,43 @@ export default function App() {
         {/* ================= ZONE 2: CENTER COLUMN (DIGITAL TWIN VIEWPORT) ================= */}
         <section className="flex-1 flex flex-col bg-[#EAEAE6] overflow-hidden relative border-r border-[#D4AF37]/40 rounded-none">
 
-          {/* Telemetry Header Strip */}
-          <div className="h-10 bg-[#FFFFFF] border-b border-[#D4AF37]/40 px-4 flex items-center justify-between text-xs font-mono shrink-0 shadow-xs rounded-none">
-            <div className="flex items-center gap-4">
-              <span className="flex items-center gap-1.5 font-semibold text-[#1A1A1A]">
-                <span className="w-2 h-2 bg-[#D4AF37]"></span>
-                ФАКТ КВОТЫ: <span className="text-[#8A6826] font-bold tabular-nums">{activeEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour} шт/ч</span>
-              </span>
-              <span className="text-[#DFDFD8]">|</span>
-              <span className="text-[#4F4F47]">
-                ПАРК: <strong className="text-[#1A1A1A] font-bold tabular-nums">{activeFleetSize} ед.</strong>
-              </span>
-              <span className="text-[#DFDFD8]">|</span>
-              <span className="text-[#4F4F47]">
-                СВЯЗНОСТЬ (λ₂):{' '}
-                <strong
-                  className={`font-bold tabular-nums ${
-                    spectralResult.algebraicConnectivity < 0.15
-                      ? 'text-rose-800'
-                      : spectralResult.algebraicConnectivity < 0.35
-                      ? 'text-[#8A6826]'
-                      : 'text-emerald-800'
-                  }`}
-                >
-                  {spectralResult.algebraicConnectivity.toFixed(3)}
-                </strong>
-              </span>
-            </div>
+          {/* Telemetry Header Strip (Only in SIMULATION mode) */}
+          {appMode === 'SIMULATION' && (
+            <div className="h-10 bg-[#FFFFFF] border-b border-[#D4AF37]/40 px-4 flex items-center justify-between text-xs font-mono shrink-0 shadow-xs rounded-none">
+              <div className="flex items-center gap-4">
+                <span className="flex items-center gap-1.5 font-semibold text-[#1A1A1A]">
+                  <span className="w-2 h-2 bg-[#D4AF37]"></span>
+                  ФАКТ КВОТЫ: <span className="text-[#8A6826] font-bold tabular-nums">{activeEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour} шт/ч</span>
+                </span>
+                <span className="text-[#DFDFD8]">|</span>
+                <span className="text-[#4F4F47]">
+                  ПАРК: <strong className="text-[#1A1A1A] font-bold tabular-nums">{activeFleetSize} ед.</strong>
+                </span>
+                <span className="text-[#DFDFD8]">|</span>
+                <span className="text-[#4F4F47]">
+                  СВЯЗНОСТЬ (λ₂):{' '}
+                  <strong
+                    className={`font-bold tabular-nums ${
+                      spectralResult.algebraicConnectivity < 0.15
+                        ? 'text-rose-800'
+                        : spectralResult.algebraicConnectivity < 0.35
+                        ? 'text-[#8A6826]'
+                        : 'text-emerald-800'
+                    }`}
+                  >
+                    {spectralResult.algebraicConnectivity.toFixed(3)}
+                  </strong>
+                </span>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F4F4F0] border border-[#D4AF37]/30 text-[10px] font-semibold text-[#4F4F47] uppercase rounded-none">
-                <span className="w-1.5 h-1.5 bg-emerald-600"></span>
-                CAD ВЬЮПОРТ ГОТОВ
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F4F4F0] border border-[#D4AF37]/30 text-[10px] font-semibold text-[#4F4F47] uppercase rounded-none">
+                  <span className="w-1.5 h-1.5 bg-emerald-600"></span>
+                  СИМУЛЯЦИЯ АКТИВНА
+                </span>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Interactive Simulation Viewport Stage */}
           <div className="flex-1 overflow-hidden relative rounded-none">

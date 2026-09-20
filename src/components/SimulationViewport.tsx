@@ -99,6 +99,7 @@ export function SimulationViewport({
   // Selected Object & Popover State
   const [selectedTileKey, setSelectedTileKey] = useState<string | null>(null);
   const [popoverPos, setPopoverPos] = useState<{ x: number; y: number } | null>(null);
+  const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // SKU & Supply Schedule State
   const [skuList, setSkuList] = useState<SkuItem[]>(DEFAULT_SKU_LIST);
@@ -174,26 +175,49 @@ export function SimulationViewport({
   // Derived active topology
   const topology: FacilityTopology = useMemo(() => {
     if (isConstructorMode) {
+      return {
+        widthM: facilityDims.widthM,
+        lengthM: facilityDims.lengthM,
+        nodes: [],
+        edges: [],
+        zones: [],
+      };
+    }
+    if (gridElementCounts.racks > 0 && gridElementCounts.inboundDocks > 0) {
       return rebuildTopologyFromGrid(grid, facilityDims.widthM, facilityDims.lengthM);
     }
     return generateFacilityTopology(facility);
-  }, [isConstructorMode, grid, facilityDims, facility]);
+  }, [isConstructorMode, grid, facilityDims, facility, gridElementCounts]);
 
-  // Check graph isolation warning
+  // Check graph isolation warning (ONLY in SIMULATION mode)
   const isIsolatedZone = useMemo(() => {
+    if (isConstructorMode) return false;
     return checkGraphIsolation(topology);
-  }, [topology]);
+  }, [isConstructorMode, topology]);
 
-  // Spectral Analysis result
+  // Spectral Analysis result (ONLY in SIMULATION mode)
   const spectralAnalysis: SpectralAnalysisResult = useMemo(() => {
+    if (isConstructorMode) {
+      return {
+        algebraicConnectivity: 0,
+        fiedlerVector: [],
+        criticalNodes: [],
+        criticalNodeIds: [],
+        bottleneckEdges: [],
+        networkStatus: 'OPTIMAL',
+        status: 'OPTIMAL',
+        recommendation: '',
+      };
+    }
     return analyzeTopologyBottlenecks(topology);
-  }, [topology]);
+  }, [isConstructorMode, topology]);
 
   const totalPathLengthM = useMemo(() => {
+    if (isConstructorMode) return 0;
     return Math.round(
       topology.edges.reduce((sum, edge) => sum + edge.distanceM, 0)
     );
-  }, [topology]);
+  }, [isConstructorMode, topology]);
 
   // Simulation Engine Instance ref
   const engineRef = useRef<SimulationEngine | null>(null);
@@ -227,10 +251,16 @@ export function SimulationViewport({
       return;
     }
 
+    const testTopology = rebuildTopologyFromGrid(grid, facilityDims.widthM, facilityDims.lengthM);
+    if (checkGraphIsolation(testTopology)) {
+      showToast('⚠️ Внимание: изолированная зона. Роботы не могут построить маршрут к доку или зарядной станции.');
+      return;
+    }
+
     onTriggerSimulationRun();
     onAppModeChange('SIMULATION');
     setIsPlaying(true);
-  }, [gridElementCounts, onTriggerSimulationRun, onAppModeChange, showToast]);
+  }, [gridElementCounts, grid, facilityDims, onTriggerSimulationRun, onAppModeChange, showToast]);
 
   // Return to CAD Editor Handler
   const handleReturnToEditor = useCallback(() => {
@@ -282,7 +312,10 @@ export function SimulationViewport({
         return;
       }
 
-      if (e.key === 'g' || e.key === 'G' || e.key === 'п' || e.key === 'П') {
+      if (e.key === 'Escape') {
+        setSelectedTileKey(null);
+        setPopoverPos(null);
+      } else if (e.key === 'g' || e.key === 'G' || e.key === 'п' || e.key === 'П') {
         setShowGrid((prev) => !prev);
       } else if (e.key === 's' || e.key === 'S' || e.key === 'ы' || e.key === 'Ы') {
         setSnappingEnabled((prev) => !prev);
@@ -378,6 +411,24 @@ export function SimulationViewport({
     controls.enableRotate = true;
     controls.minPolarAngle = Math.PI / 8;
     controls.maxPolarAngle = Math.PI / 3.2;
+
+    // Configure mouse buttons according to interaction mode
+    if (isConstructorMode && interactionMode !== 'SELECT') {
+      // Disable LMB camera orbit so drawing/placing works without camera spinning.
+      // RMB rotates, MMB pans.
+      controls.mouseButtons = {
+        LEFT: undefined as unknown as THREE.MOUSE,
+        MIDDLE: THREE.MOUSE.PAN,
+        RIGHT: THREE.MOUSE.ROTATE,
+      };
+    } else {
+      // Default controls (LMB rotates, MMB zooms, RMB pans)
+      controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN,
+      };
+    }
     controls.update();
 
     const raycaster = new THREE.Raycaster();
@@ -666,32 +717,24 @@ export function SimulationViewport({
       }
     };
 
-    // Pointer Click Handler
+    // Track pointerdown position to ensure popover fires strictly on click (< 3px movement)
     const handleCanvasPointerDown = (event: MouseEvent) => {
       if (!isConstructorMode) return;
+      mouseDownPosRef.current = { x: event.clientX, y: event.clientY };
+    };
 
-      // Ignore right-click for placement
-      if (event.button === 2) {
-        // Right-Click Inspection Popover
-        const rect = renderer.domElement.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    const handleCanvasPointerUp = (event: MouseEvent) => {
+      if (!isConstructorMode) return;
+      const downPos = mouseDownPosRef.current;
+      mouseDownPosRef.current = null;
 
-        raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObject(floorMesh);
-
-        if (intersects.length > 0) {
-          const point = intersects[0].point;
-          const gx = Math.floor(point.x / grid.cellSizeM);
-          const gy = Math.floor(point.z / grid.cellSizeM);
-          const key = getTileKey(gx, gy);
-
-          if (grid.tiles.get(key) === 'RACK') {
-            setSelectedTileKey(key);
-            setPopoverPos({ x: event.clientX, y: event.clientY });
-          }
+      // If mouse moved > 3px during click/drag, cancel click selection/popover
+      if (downPos) {
+        const dx = event.clientX - downPos.x;
+        const dy = event.clientY - downPos.y;
+        if (Math.sqrt(dx * dx + dy * dy) >= 3) {
+          return;
         }
-        return;
       }
 
       const rect = renderer.domElement.getBoundingClientRect();
@@ -723,7 +766,7 @@ export function SimulationViewport({
         const gy = Math.floor(point.z / grid.cellSizeM);
 
         // Floor Contour Drawing Modes
-        if (interactionMode === 'DRAW_RECT') {
+        if (event.button === 0 && interactionMode === 'DRAW_RECT') {
           if (!isDrawingActive) {
             setDrawingPoints([{ x: point.x, z: point.z }]);
             setIsDrawingActive(true);
@@ -747,7 +790,7 @@ export function SimulationViewport({
           return;
         }
 
-        if (interactionMode === 'DRAW_POLY') {
+        if (event.button === 0 && interactionMode === 'DRAW_POLY') {
           const nextPts = [...drawingPoints, { x: point.x, z: point.z }];
           setDrawingPoints(nextPts);
           setIsDrawingActive(true);
@@ -762,22 +805,28 @@ export function SimulationViewport({
         }
 
         // Element Placement Mode
-        if (interactionMode === 'PLACE_ELEMENT' && gx >= 0 && gx < grid.cols && gy >= 0 && gy < grid.rows) {
+        if (event.button === 0 && interactionMode === 'PLACE_ELEMENT' && gx >= 0 && gx < grid.cols && gy >= 0 && gy < grid.rows) {
           const key = getTileKey(gx, gy);
           setGrid((prev) => {
             const updatedTiles = new Map(prev.tiles);
             updatedTiles.set(key, selectedTileType);
             return { ...prev, tiles: updatedTiles };
           });
-          setSelectedTileKey(key);
-          setPopoverPos(null);
+
+          if (selectedTileType === 'RACK') {
+            setSelectedTileKey(key);
+            setPopoverPos({ x: event.clientX, y: event.clientY });
+          } else {
+            setSelectedTileKey(null);
+            setPopoverPos(null);
+          }
           return;
         }
 
-        // Select Mode
-        if (interactionMode === 'SELECT' && gx >= 0 && gx < grid.cols && gy >= 0 && gy < grid.rows) {
+        // Select / Click Inspection Mode (LMB or RMB click on RACK strictly)
+        if (gx >= 0 && gx < grid.cols && gy >= 0 && gy < grid.rows) {
           const key = getTileKey(gx, gy);
-          if (grid.tiles.get(key) !== 'EMPTY_FLOOR') {
+          if (grid.tiles.get(key) === 'RACK') {
             setSelectedTileKey(key);
             setPopoverPos({ x: event.clientX, y: event.clientY });
           } else {
@@ -785,12 +834,16 @@ export function SimulationViewport({
             setPopoverPos(null);
           }
         }
+      } else {
+        setSelectedTileKey(null);
+        setPopoverPos(null);
       }
     };
 
     const domElem = renderer.domElement;
     domElem.addEventListener('mousemove', handlePointerMove);
     domElem.addEventListener('pointerdown', handleCanvasPointerDown);
+    domElem.addEventListener('pointerup', handleCanvasPointerUp);
 
     // Context Menu Prevent Default for Right Click Inspection
     const handleContextMenu = (e: MouseEvent) => {
@@ -923,6 +976,7 @@ export function SimulationViewport({
       cancelAnimationFrame(animationFrameId);
       domElem.removeEventListener('mousemove', handlePointerMove);
       domElem.removeEventListener('pointerdown', handleCanvasPointerDown);
+      domElem.removeEventListener('pointerup', handleCanvasPointerUp);
       domElem.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('resize', handleResize);
       controls.dispose();

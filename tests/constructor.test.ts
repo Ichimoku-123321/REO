@@ -99,9 +99,17 @@ describe('3D CAD Constructor Engine & Topology Rebuilder', () => {
 
   it('calculates warehouse rack capacity live', () => {
     const grid = createInitialConstructorGrid(30, 30, 2.0);
+    // Initially empty grid has 0 racks
+    const initialCapacity = calculateWarehouseCapacity(grid);
+    assert.strictEqual(initialCapacity.totalRacks, 0);
+    assert.strictEqual(initialCapacity.totalPalletCapacity, 0);
+
+    // Add 2 racks
+    grid.tiles.set(getTileKey(1, 1), 'RACK');
+    grid.tiles.set(getTileKey(1, 2), 'RACK');
     const capacity = calculateWarehouseCapacity(grid);
-    assert.ok(capacity.totalRacks > 0);
-    assert.strictEqual(capacity.totalPalletCapacity, capacity.totalRacks * 12);
+    assert.strictEqual(capacity.totalRacks, 2);
+    assert.strictEqual(capacity.totalPalletCapacity, 24);
   });
 
   it('assigns custom SKU to rack element details map', () => {

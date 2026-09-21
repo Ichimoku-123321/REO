@@ -4,12 +4,12 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { FacilityRequirements } from '../types/facility.js';
 import type { Robot } from '../types/robot.js';
 import { generateFacilityTopology, calculateFacilityDimensions } from '../engine/topology_generator.js';
-import type { FacilityTopology, NodeType } from '../types/topology.js';
+import type { FacilityTopology } from '../types/topology.js';
 import {
   SimulationEngine,
   type SimulationTelemetry,
-  type AgentFSMState,
   type SimulationReplayFrame,
+  type AgentFSMState,
 } from '../engine/simulation_engine.js';
 import type { FleetCompositionItem } from '../engine/fleet_optimizer.js';
 import { analyzeTopologyBottlenecks, type SpectralAnalysisResult } from '../engine/spectral_analyzer.js';
@@ -72,6 +72,14 @@ function angleLerp(a: number, b: number, t: number): number {
   return a + diff * t;
 }
 
+interface AgentMeshGroup {
+  group: THREE.Group;
+  chassisMesh: THREE.Mesh;
+  haloMesh: THREE.Mesh;
+  cargoMesh: THREE.Mesh;
+  haloMat: THREE.MeshBasicMaterial;
+}
+
 export function SimulationViewport({
   appMode,
   onAppModeChange,
@@ -94,7 +102,6 @@ export function SimulationViewport({
   const [selectedTileType, setSelectedTileType] = useState<ConstructorTileType>('RACK');
   const [showGrid, setShowGrid] = useState<boolean>(true);
   const [snappingEnabled, setSnappingEnabled] = useState<boolean>(true);
-  const [showBottleneckHeatmap, setShowBottleneckHeatmap] = useState<boolean>(false);
 
   // Selected Object & Popover State
   const [selectedTileKey, setSelectedTileKey] = useState<string | null>(null);
@@ -221,6 +228,75 @@ export function SimulationViewport({
 
   // Simulation Engine Instance ref
   const engineRef = useRef<SimulationEngine | null>(null);
+
+  // Persistent Three.js References
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const floorMeshRef = useRef<THREE.Mesh | null>(null);
+  const gridHelperRef = useRef<THREE.GridHelper | null>(null);
+  const objectsGroupRef = useRef<THREE.Group | null>(null);
+  const agentsGroupRef = useRef<THREE.Group | null>(null);
+  const ghostGroupRef = useRef<THREE.Group | null>(null);
+  const guideLineRef = useRef<THREE.LineSegments | null>(null);
+  const guideGeoRef = useRef<THREE.BufferGeometry | null>(null);
+  const agentMeshMapRef = useRef<Map<string, AgentMeshGroup>>(new Map());
+
+  // Ref to hold current state for interaction listeners
+  const stateRef = useRef({
+    isConstructorMode,
+    interactionMode,
+    selectedTileType,
+    showGrid,
+    snappingEnabled,
+    selectedTileKey,
+    drawingPoints,
+    isDrawingActive,
+    grid,
+    facility,
+    facilityDims,
+    isPlaying,
+    speedMultiplier,
+    replayFrames,
+    targetThroughputPerHour,
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      isConstructorMode,
+      interactionMode,
+      selectedTileType,
+      showGrid,
+      snappingEnabled,
+      selectedTileKey,
+      drawingPoints,
+      isDrawingActive,
+      grid,
+      facility,
+      facilityDims,
+      isPlaying,
+      speedMultiplier,
+      replayFrames,
+      targetThroughputPerHour,
+    };
+  }, [
+    isConstructorMode,
+    interactionMode,
+    selectedTileType,
+    showGrid,
+    snappingEnabled,
+    selectedTileKey,
+    drawingPoints,
+    isDrawingActive,
+    grid,
+    facility,
+    facilityDims,
+    isPlaying,
+    speedMultiplier,
+    replayFrames,
+    targetThroughputPerHour,
+  ]);
 
   // Initialize/Re-initialize Engine on topology or fleetConfig change
   useEffect(() => {
@@ -356,7 +432,7 @@ export function SimulationViewport({
     }
   }, []);
 
-  // Main Three.js Scene Setup & Interaction Loop
+  // ONE-TIME INITIALIZATION OF THREE.JS SCENE, CAMERA & ORBITCONTROLS (Fix #1)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -368,11 +444,12 @@ export function SimulationViewport({
 
     // 1. Scene setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#EAEAE6'); // Alabaster CAD background
+    scene.background = new THREE.Color('#EAEAE6'); // Clean alabaster CAD grid background (No dark grey slab)
+    sceneRef.current = scene;
 
     // 2. Camera setup
     const aspect = width / height;
-    const viewSize = Math.max(topology.widthM, topology.lengthM) * 1.15;
+    const viewSize = Math.max(facilityDims.widthM, facilityDims.lengthM) * 1.15;
     const camera = new THREE.OrthographicCamera(
       (-viewSize * aspect) / 2,
       (viewSize * aspect) / 2,
@@ -381,13 +458,15 @@ export function SimulationViewport({
       0.1,
       1000
     );
+    cameraRef.current = camera;
 
-    const centerX = topology.widthM / 2;
-    const centerZ = topology.lengthM / 2;
+    const centerX = facilityDims.widthM / 2;
+    const centerZ = facilityDims.lengthM / 2;
 
-    const cameraDistance = Math.max(topology.widthM, topology.lengthM) * 1.5;
+    const cameraDistance = Math.max(facilityDims.widthM, facilityDims.lengthM) * 1.5;
     const pitchAngleRad = THREE.MathUtils.degToRad(30);
 
+    // Initial positioning strictly once
     camera.position.set(
       centerX,
       cameraDistance * Math.cos(pitchAngleRad),
@@ -402,6 +481,7 @@ export function SimulationViewport({
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
 
     // 4. OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -411,25 +491,8 @@ export function SimulationViewport({
     controls.enableRotate = true;
     controls.minPolarAngle = Math.PI / 8;
     controls.maxPolarAngle = Math.PI / 3.2;
-
-    // Configure mouse buttons according to interaction mode
-    if (isConstructorMode && interactionMode !== 'SELECT') {
-      // Disable LMB camera orbit so drawing/placing works without camera spinning.
-      // RMB rotates, MMB pans.
-      controls.mouseButtons = {
-        LEFT: undefined as unknown as THREE.MOUSE,
-        MIDDLE: THREE.MOUSE.PAN,
-        RIGHT: THREE.MOUSE.ROTATE,
-      };
-    } else {
-      // Default controls (LMB rotates, MMB zooms, RMB pans)
-      controls.mouseButtons = {
-        LEFT: THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.DOLLY,
-        RIGHT: THREE.MOUSE.PAN,
-      };
-    }
     controls.update();
+    controlsRef.current = controls;
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -446,9 +509,9 @@ export function SimulationViewport({
     scene.add(dirLight);
 
     // 6. CAD Floor Plane
-    const floorGeo = new THREE.PlaneGeometry(topology.widthM, topology.lengthM);
+    const floorGeo = new THREE.PlaneGeometry(facilityDims.widthM * 2, facilityDims.lengthM * 2);
     const floorMat = new THREE.MeshStandardMaterial({
-      color: 0xf4f4f0, // Light CAD floor
+      color: 0xf4f4f0,
       roughness: 0.9,
       metalness: 0.05,
     });
@@ -457,23 +520,20 @@ export function SimulationViewport({
     floorMesh.position.set(centerX, -0.01, centerZ);
     floorMesh.receiveShadow = true;
     scene.add(floorMesh);
+    floorMeshRef.current = floorMesh;
 
-    // Grid Helper
-    let gridHelper: THREE.GridHelper | null = null;
-    if (showGrid) {
-      gridHelper = new THREE.GridHelper(
-        Math.max(topology.widthM, topology.lengthM),
-        Math.max(10, Math.floor(Math.max(topology.widthM, topology.lengthM) / (isConstructorMode ? grid.cellSizeM : 5))),
-        0xd4af37, // Gold primary lines
-        0xc0c0b8  // Fine secondary lines
-      );
-      gridHelper.position.set(centerX, 0, centerZ);
-      scene.add(gridHelper);
-    }
+    // 7. Groups for Objects, Agents, Ghost, and Guides
+    const objectsGroup = new THREE.Group();
+    scene.add(objectsGroup);
+    objectsGroupRef.current = objectsGroup;
 
-    // Ghost Preview Mesh for Drag & Drop / Hover
+    const agentsGroup = new THREE.Group();
+    scene.add(agentsGroup);
+    agentsGroupRef.current = agentsGroup;
+
+    // Ghost Preview Mesh for Element Placement Hover
     const ghostGroup = new THREE.Group();
-    const ghostGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.85, 2.0, grid.cellSizeM * 0.85);
+    const ghostGeo = new THREE.BoxGeometry(1.0 * 0.85, 2.0, 1.0 * 0.85);
     const ghostMat = new THREE.MeshStandardMaterial({
       color: 0xd4af37,
       transparent: true,
@@ -484,6 +544,7 @@ export function SimulationViewport({
     ghostGroup.add(ghostMesh);
     ghostGroup.visible = false;
     scene.add(ghostGroup);
+    ghostGroupRef.current = ghostGroup;
 
     // Visual Magnetic Snapping Guide Lines
     const guideLineMat = new THREE.LineDashedMaterial({
@@ -493,173 +554,16 @@ export function SimulationViewport({
       linewidth: 2,
     });
     const guideGeo = new THREE.BufferGeometry();
+    guideGeoRef.current = guideGeo;
     const guideLine = new THREE.LineSegments(guideGeo, guideLineMat);
     guideLine.visible = false;
     scene.add(guideLine);
+    guideLineRef.current = guideLine;
 
-    // Render Tiles / Elements in Constructor Mode
-    if (isConstructorMode) {
-      grid.tiles.forEach((type, key) => {
-        const [gxStr, gyStr] = key.split('_');
-        const gx = parseInt(gxStr, 10);
-        const gy = parseInt(gyStr, 10);
-        const tileX = (gx + 0.5) * grid.cellSizeM;
-        const tileY = (gy + 0.5) * grid.cellSizeM;
-
-        const isSelected = selectedTileKey === key;
-        const details = grid.elementDetails?.get(key);
-        const rotRad = THREE.MathUtils.degToRad(details?.rotationDeg || 0);
-
-        if (type === 'RACK') {
-          const rackGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.85, 2.2, grid.cellSizeM * 0.85);
-          const rackMat = new THREE.MeshStandardMaterial({
-            color: isSelected ? 0xd4af37 : details?.skuId ? 0x0284c7 : 0x334155,
-            roughness: 0.4,
-            metalness: 0.3,
-          });
-          const rackMesh = new THREE.Mesh(rackGeo, rackMat);
-          rackMesh.position.set(tileX, 1.1, tileY);
-          rackMesh.rotation.y = rotRad;
-          rackMesh.castShadow = true;
-          rackMesh.receiveShadow = true;
-          scene.add(rackMesh);
-
-          const rackEdges = new THREE.EdgesGeometry(rackGeo);
-          const rackLineMat = new THREE.LineBasicMaterial({
-            color: isSelected ? 0x1a1a1a : 0x64748b,
-          });
-          const rackLine = new THREE.LineSegments(rackEdges, rackLineMat);
-          rackLine.position.copy(rackMesh.position);
-          rackLine.rotation.y = rotRad;
-          scene.add(rackLine);
-        } else if (type === 'OBSTACLE') {
-          const obsGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 3.0, grid.cellSizeM * 0.9);
-          const obsMat = new THREE.MeshStandardMaterial({
-            color: isSelected ? 0xd4af37 : 0xef4444,
-            roughness: 0.3,
-            metalness: 0.1,
-          });
-          const obsMesh = new THREE.Mesh(obsGeo, obsMat);
-          obsMesh.position.set(tileX, 1.5, tileY);
-          obsMesh.rotation.y = rotRad;
-          obsMesh.castShadow = true;
-          scene.add(obsMesh);
-        } else if (type === 'CHARGER') {
-          const cGeo = new THREE.CylinderGeometry(grid.cellSizeM * 0.35, grid.cellSizeM * 0.35, 0.4, 16);
-          const cMat = new THREE.MeshStandardMaterial({
-            color: isSelected ? 0xd4af37 : 0xf59e0b,
-            emissive: 0xf59e0b,
-            emissiveIntensity: 0.3,
-          });
-          const cMesh = new THREE.Mesh(cGeo, cMat);
-          cMesh.position.set(tileX, 0.2, tileY);
-          scene.add(cMesh);
-        } else if (type === 'DOCK_INBOUND') {
-          const dGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 0.1, grid.cellSizeM * 0.9);
-          const dMat = new THREE.MeshStandardMaterial({
-            color: isSelected ? 0xd4af37 : 0x3b82f6,
-            transparent: true,
-            opacity: 0.7,
-          });
-          const dMesh = new THREE.Mesh(dGeo, dMat);
-          dMesh.position.set(tileX, 0.02, tileY);
-          scene.add(dMesh);
-        } else if (type === 'DOCK_OUTBOUND') {
-          const dGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 0.1, grid.cellSizeM * 0.9);
-          const dMat = new THREE.MeshStandardMaterial({
-            color: isSelected ? 0xd4af37 : 0x0284c7,
-            transparent: true,
-            opacity: 0.7,
-          });
-          const dMesh = new THREE.Mesh(dGeo, dMat);
-          dMesh.position.set(tileX, 0.02, tileY);
-          scene.add(dMesh);
-        }
-      });
-    }
-
-    // Dynamic Robot Fleet Meshes
-    interface AgentMeshGroup {
-      group: THREE.Group;
-      chassisMesh: THREE.Mesh;
-      haloMesh: THREE.Mesh;
-      cargoMesh: THREE.Mesh;
-      haloMat: THREE.MeshBasicMaterial;
-    }
-
-    const agentMeshMap = new Map<string, AgentMeshGroup>();
-
-    const getHaloColorFromSnapshot = (a0: {
-      state: AgentFSMState;
-      isQueued?: boolean;
-      isDeadlocked?: boolean;
-      speedMps?: number;
-    }): number => {
-      if (a0.isDeadlocked) return 0xef4444;
-      const hasActiveTask = a0.state !== 'IDLE' && a0.state !== 'CHARGING';
-      const isSlowMoving = hasActiveTask && typeof a0.speedMps === 'number' && a0.speedMps < 0.05;
-      if (a0.isQueued || isSlowMoving) return 0xf59e0b;
-      switch (a0.state) {
-        case 'TRANSPORTING':
-        case 'MOVING_TO_PICKUP':
-          return 0x10b981;
-        case 'LOADING':
-        case 'UNLOADING':
-          return 0xf59e0b;
-        case 'MOVING_TO_CHARGE':
-        case 'CHARGING':
-          return 0x06b6d4;
-        case 'IDLE':
-        default:
-          return 0x64748b;
-      }
-    };
-
-    const createRobotMeshGroup = (): AgentMeshGroup => {
-      const group = new THREE.Group();
-
-      const chassisGeo = new THREE.BoxGeometry(1.2, 0.4, 1.2);
-      const chassisMat = new THREE.MeshStandardMaterial({
-        color: 0x2563eb,
-        roughness: 0.3,
-        metalness: 0.6,
-      });
-      const chassisMesh = new THREE.Mesh(chassisGeo, chassisMat);
-      chassisMesh.position.y = 0.2;
-      chassisMesh.castShadow = true;
-      chassisMesh.receiveShadow = true;
-      group.add(chassisMesh);
-
-      const haloGeo = new THREE.RingGeometry(0.8, 1.1, 24);
-      const haloMat = new THREE.MeshBasicMaterial({
-        color: 0x10b981,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.8,
-      });
-      const haloMesh = new THREE.Mesh(haloGeo, haloMat);
-      haloMesh.rotation.x = -Math.PI / 2;
-      haloMesh.position.y = 0.03;
-      group.add(haloMesh);
-
-      const cargoGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
-      const cargoMat = new THREE.MeshStandardMaterial({
-        color: 0x0284c7,
-        roughness: 0.5,
-      });
-      const cargoMesh = new THREE.Mesh(cargoGeo, cargoMat);
-      cargoMesh.position.set(0, 0.7, 0);
-      cargoMesh.visible = false;
-      group.add(cargoMesh);
-
-      scene.add(group);
-
-      return { group, chassisMesh, haloMesh, cargoMesh, haloMat };
-    };
-
-    // Pointer Interaction Handler for Pointer Move & Hover
+    // Pointer Move Handler for Hover Preview and Snapping Guides
     const handlePointerMove = (event: MouseEvent) => {
-      if (!isConstructorMode) return;
+      const st = stateRef.current;
+      if (!st.isConstructorMode) return;
 
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -671,15 +575,14 @@ export function SimulationViewport({
       if (intersects.length > 0) {
         let point = intersects[0].point;
 
-        // Snapping check
-        if (snappingEnabled) {
+        if (st.snappingEnabled) {
           const existingPositions: Point2D[] = [];
-          grid.tiles.forEach((type, key) => {
+          st.grid.tiles.forEach((type, key) => {
             if (type !== 'EMPTY_FLOOR') {
               const [gx, gy] = key.split('_').map((s) => parseInt(s, 10));
               existingPositions.push({
-                x: (gx + 0.5) * grid.cellSizeM,
-                z: (gy + 0.5) * grid.cellSizeM,
+                x: (gx + 0.5) * st.grid.cellSizeM,
+                z: (gy + 0.5) * st.grid.cellSizeM,
               });
             }
           });
@@ -687,16 +590,15 @@ export function SimulationViewport({
           const snapRes = findMagneticSnapPosition({ x: point.x, z: point.z }, existingPositions, 0.35);
           point = new THREE.Vector3(snapRes.snapped.x, 0, snapRes.snapped.z);
 
-          // Render magnetic snap guide line if snapped
           if (snapRes.guideX !== null || snapRes.guideZ !== null) {
             const guidePoints: THREE.Vector3[] = [];
             if (snapRes.guideX !== null) {
               guidePoints.push(new THREE.Vector3(snapRes.guideX, 0.05, 0));
-              guidePoints.push(new THREE.Vector3(snapRes.guideX, 0.05, topology.lengthM));
+              guidePoints.push(new THREE.Vector3(snapRes.guideX, 0.05, st.facilityDims.lengthM));
             }
             if (snapRes.guideZ !== null) {
               guidePoints.push(new THREE.Vector3(0, 0.05, snapRes.guideZ));
-              guidePoints.push(new THREE.Vector3(topology.widthM, 0.05, snapRes.guideZ));
+              guidePoints.push(new THREE.Vector3(st.facilityDims.widthM, 0.05, snapRes.guideZ));
             }
             guideGeo.setFromPoints(guidePoints);
             guideLine.computeLineDistances();
@@ -708,8 +610,14 @@ export function SimulationViewport({
           guideLine.visible = false;
         }
 
-        if (interactionMode === 'PLACE_ELEMENT') {
-          ghostGroup.position.set(point.x, 1.0, point.z);
+        if (st.interactionMode === 'PLACE_ELEMENT') {
+          // Snap ghost to grid cell center
+          const gx = Math.floor(point.x / st.grid.cellSizeM);
+          const gy = Math.floor(point.z / st.grid.cellSizeM);
+          const snappedX = (gx + 0.5) * st.grid.cellSizeM;
+          const snappedZ = (gy + 0.5) * st.grid.cellSizeM;
+
+          ghostGroup.position.set(snappedX, 1.0, snappedZ);
           ghostGroup.visible = true;
         } else {
           ghostGroup.visible = false;
@@ -717,18 +625,19 @@ export function SimulationViewport({
       }
     };
 
-    // Track pointerdown position to ensure popover fires strictly on click (< 3px movement)
     const handleCanvasPointerDown = (event: MouseEvent) => {
-      if (!isConstructorMode) return;
+      const st = stateRef.current;
+      if (!st.isConstructorMode) return;
       mouseDownPosRef.current = { x: event.clientX, y: event.clientY };
     };
 
     const handleCanvasPointerUp = (event: MouseEvent) => {
-      if (!isConstructorMode) return;
+      const st = stateRef.current;
+      if (!st.isConstructorMode) return;
+
       const downPos = mouseDownPosRef.current;
       mouseDownPosRef.current = null;
 
-      // If mouse moved > 3px during click/drag, cancel click selection/popover
       if (downPos) {
         const dx = event.clientX - downPos.x;
         const dy = event.clientY - downPos.y;
@@ -747,14 +656,14 @@ export function SimulationViewport({
       if (intersects.length > 0) {
         let point = intersects[0].point;
 
-        if (snappingEnabled) {
+        if (st.snappingEnabled) {
           const existingPositions: Point2D[] = [];
-          grid.tiles.forEach((type, key) => {
+          st.grid.tiles.forEach((type, key) => {
             if (type !== 'EMPTY_FLOOR') {
               const [gx, gy] = key.split('_').map((s) => parseInt(s, 10));
               existingPositions.push({
-                x: (gx + 0.5) * grid.cellSizeM,
-                z: (gy + 0.5) * grid.cellSizeM,
+                x: (gx + 0.5) * st.grid.cellSizeM,
+                z: (gy + 0.5) * st.grid.cellSizeM,
               });
             }
           });
@@ -762,16 +671,15 @@ export function SimulationViewport({
           point = new THREE.Vector3(snapRes.snapped.x, 0, snapRes.snapped.z);
         }
 
-        const gx = Math.floor(point.x / grid.cellSizeM);
-        const gy = Math.floor(point.z / grid.cellSizeM);
+        const gx = Math.floor(point.x / st.grid.cellSizeM);
+        const gy = Math.floor(point.z / st.grid.cellSizeM);
 
-        // Floor Contour Drawing Modes
-        if (event.button === 0 && interactionMode === 'DRAW_RECT') {
-          if (!isDrawingActive) {
+        if (event.button === 0 && st.interactionMode === 'DRAW_RECT') {
+          if (!st.isDrawingActive) {
             setDrawingPoints([{ x: point.x, z: point.z }]);
             setIsDrawingActive(true);
           } else {
-            const startPt = drawingPoints[0];
+            const startPt = st.drawingPoints[0];
             const endPt = { x: point.x, z: point.z };
             const rectPoly = [
               startPt,
@@ -781,7 +689,7 @@ export function SimulationViewport({
             ];
             const areaSqm = calculateShoelaceArea(rectPoly);
             if (areaSqm > 0 && onChangeFacility) {
-              onChangeFacility({ ...facility, totalAreaSqm: areaSqm });
+              onChangeFacility({ ...st.facility, totalAreaSqm: areaSqm });
             }
             setDrawingPoints([]);
             setIsDrawingActive(false);
@@ -790,30 +698,29 @@ export function SimulationViewport({
           return;
         }
 
-        if (event.button === 0 && interactionMode === 'DRAW_POLY') {
-          const nextPts = [...drawingPoints, { x: point.x, z: point.z }];
+        if (event.button === 0 && st.interactionMode === 'DRAW_POLY') {
+          const nextPts = [...st.drawingPoints, { x: point.x, z: point.z }];
           setDrawingPoints(nextPts);
           setIsDrawingActive(true);
 
           if (nextPts.length >= 3) {
             const areaSqm = calculateShoelaceArea(nextPts);
             if (areaSqm > 0 && onChangeFacility) {
-              onChangeFacility({ ...facility, totalAreaSqm: areaSqm });
+              onChangeFacility({ ...st.facility, totalAreaSqm: areaSqm });
             }
           }
           return;
         }
 
-        // Element Placement Mode
-        if (event.button === 0 && interactionMode === 'PLACE_ELEMENT' && gx >= 0 && gx < grid.cols && gy >= 0 && gy < grid.rows) {
+        if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT' && gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
           const key = getTileKey(gx, gy);
           setGrid((prev) => {
             const updatedTiles = new Map(prev.tiles);
-            updatedTiles.set(key, selectedTileType);
+            updatedTiles.set(key, st.selectedTileType);
             return { ...prev, tiles: updatedTiles };
           });
 
-          if (selectedTileType === 'RACK') {
+          if (st.selectedTileType === 'RACK') {
             setSelectedTileKey(key);
             setPopoverPos({ x: event.clientX, y: event.clientY });
           } else {
@@ -823,10 +730,9 @@ export function SimulationViewport({
           return;
         }
 
-        // Select / Click Inspection Mode (LMB or RMB click on RACK strictly)
-        if (gx >= 0 && gx < grid.cols && gy >= 0 && gy < grid.rows) {
+        if (gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
           const key = getTileKey(gx, gy);
-          if (grid.tiles.get(key) === 'RACK') {
+          if (st.grid.tiles.get(key) === 'RACK') {
             setSelectedTileKey(key);
             setPopoverPos({ x: event.clientX, y: event.clientY });
           } else {
@@ -845,13 +751,12 @@ export function SimulationViewport({
     domElem.addEventListener('pointerdown', handleCanvasPointerDown);
     domElem.addEventListener('pointerup', handleCanvasPointerUp);
 
-    // Context Menu Prevent Default for Right Click Inspection
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
     };
     domElem.addEventListener('contextmenu', handleContextMenu);
 
-    // Animation Loop
+    // Animation Render Loop
     const clock = new THREE.Clock();
     let animationFrameId: number;
     let telemetryTimer = 0;
@@ -860,22 +765,23 @@ export function SimulationViewport({
       animationFrameId = requestAnimationFrame(animate);
 
       const deltaReal = clock.getDelta();
+      const st = stateRef.current;
 
-      if (isPlaying) {
+      if (st.isPlaying) {
         setCurrentTimeSec((prevTime) => {
-          let nextTime = prevTime + deltaReal * speedMultiplier;
+          let nextTime = prevTime + deltaReal * st.speedMultiplier;
           if (nextTime >= 3600) {
             nextTime = 0;
           }
 
-          if (replayFrames && replayFrames.length > 0) {
+          if (st.replayFrames && st.replayFrames.length > 0) {
             const frameIndex = Math.min(
-              replayFrames.length - 2,
+              st.replayFrames.length - 2,
               Math.max(0, Math.floor(nextTime * 2))
             );
 
-            const frame0 = replayFrames[frameIndex];
-            const frame1 = replayFrames[frameIndex + 1] || frame0;
+            const frame0 = st.replayFrames[frameIndex];
+            const frame1 = st.replayFrames[frameIndex + 1] || frame0;
 
             const alpha = Math.max(0, Math.min(1, (nextTime - frame0.timestampSec) / 0.5));
 
@@ -910,10 +816,48 @@ export function SimulationViewport({
               const a0 = frame0.agents[i];
               const a1 = frame1.agents[i];
 
-              let meshGroup = agentMeshMap.get(a0.id);
+              let meshGroup = agentMeshMapRef.current.get(a0.id);
               if (!meshGroup) {
-                meshGroup = createRobotMeshGroup();
-                agentMeshMap.set(a0.id, meshGroup);
+                // Create Robot Mesh
+                const group = new THREE.Group();
+
+                const chassisGeo = new THREE.BoxGeometry(1.2, 0.4, 1.2);
+                const chassisMat = new THREE.MeshStandardMaterial({
+                  color: 0x2563eb,
+                  roughness: 0.3,
+                  metalness: 0.6,
+                });
+                const chassisMesh = new THREE.Mesh(chassisGeo, chassisMat);
+                chassisMesh.position.y = 0.2;
+                chassisMesh.castShadow = true;
+                chassisMesh.receiveShadow = true;
+                group.add(chassisMesh);
+
+                const haloGeo = new THREE.RingGeometry(0.8, 1.1, 24);
+                const haloMat = new THREE.MeshBasicMaterial({
+                  color: 0x10b981,
+                  side: THREE.DoubleSide,
+                  transparent: true,
+                  opacity: 0.8,
+                });
+                const haloMesh = new THREE.Mesh(haloGeo, haloMat);
+                haloMesh.rotation.x = -Math.PI / 2;
+                haloMesh.position.y = 0.03;
+                group.add(haloMesh);
+
+                const cargoGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
+                const cargoMat = new THREE.MeshStandardMaterial({
+                  color: 0x0284c7,
+                  roughness: 0.5,
+                });
+                const cargoMesh = new THREE.Mesh(cargoGeo, cargoMat);
+                cargoMesh.position.set(0, 0.7, 0);
+                cargoMesh.visible = false;
+                group.add(cargoMesh);
+
+                agentsGroup.add(group);
+                meshGroup = { group, chassisMesh, haloMesh, cargoMesh, haloMat };
+                agentMeshMapRef.current.set(a0.id, meshGroup);
               }
 
               const interpX = lerp(a0.x, a1.x, alpha);
@@ -927,7 +871,26 @@ export function SimulationViewport({
                 meshGroup.group.rotation.y = -interpHeading + Math.PI / 2;
               }
 
-              const colorHex = getHaloColorFromSnapshot(a0);
+              let colorHex = 0x64748b;
+              if (a0.isDeadlocked) colorHex = 0xef4444;
+              else if (a0.isQueued || (a0.state !== 'IDLE' && a0.state !== 'CHARGING' && typeof a0.speedMps === 'number' && a0.speedMps < 0.05)) colorHex = 0xf59e0b;
+              else switch (a0.state) {
+                case 'TRANSPORTING':
+                case 'MOVING_TO_PICKUP':
+                  colorHex = 0x10b981;
+                  break;
+                case 'LOADING':
+                case 'UNLOADING':
+                  colorHex = 0xf59e0b;
+                  break;
+                case 'MOVING_TO_CHARGE':
+                case 'CHARGING':
+                  colorHex = 0x06b6d4;
+                  break;
+                default:
+                  colorHex = 0x64748b;
+              }
+
               meshGroup.haloMat.color.setHex(colorHex);
               meshGroup.cargoMesh.visible = a0.cargoPayload;
             }
@@ -940,7 +903,7 @@ export function SimulationViewport({
         if (telemetryTimer >= 0.3) {
           telemetryTimer = 0;
           if (engineRef.current) {
-            setTelemetry(engineRef.current.getTelemetry(targetThroughputPerHour));
+            setTelemetry(engineRef.current.getTelemetry(st.targetThroughputPerHour));
           }
         }
       }
@@ -982,26 +945,145 @@ export function SimulationViewport({
       controls.dispose();
       renderer.dispose();
     };
-  }, [
-    topology,
-    facility,
-    isPlaying,
-    speedMultiplier,
-    targetThroughputPerHour,
-    isConstructorMode,
-    interactionMode,
-    grid,
-    selectedTileType,
-    showGrid,
-    snappingEnabled,
-    showBottleneckHeatmap,
-    spectralAnalysis,
-    replayFrames,
-    selectedTileKey,
-    drawingPoints,
-    isDrawingActive,
-    onChangeFacility,
-  ]);
+  }, []); // Strictly ONE-TIME effect: Camera and OrbitControls never reset!
+
+  // Update OrbitControls Mouse Bindings dynamically based on mode without touching camera
+  useEffect(() => {
+    if (!controlsRef.current) return;
+    if (isConstructorMode && interactionMode !== 'SELECT') {
+      controlsRef.current.mouseButtons = {
+        LEFT: undefined as unknown as THREE.MOUSE,
+        MIDDLE: THREE.MOUSE.PAN,
+        RIGHT: THREE.MOUSE.ROTATE,
+      };
+    } else {
+      controlsRef.current.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN,
+      };
+    }
+  }, [isConstructorMode, interactionMode]);
+
+  // Update Grid Helper dynamically without reinitializing camera
+  useEffect(() => {
+    if (!sceneRef.current) return;
+
+    if (gridHelperRef.current) {
+      sceneRef.current.remove(gridHelperRef.current);
+      gridHelperRef.current.dispose();
+      gridHelperRef.current = null;
+    }
+
+    if (showGrid) {
+      const size = Math.max(facilityDims.widthM, facilityDims.lengthM);
+      const divisions = Math.max(10, Math.floor(size / (isConstructorMode ? grid.cellSizeM : 5)));
+      const gh = new THREE.GridHelper(size, divisions, 0xd4af37, 0xc0c0b8);
+      const centerX = facilityDims.widthM / 2;
+      const centerZ = facilityDims.lengthM / 2;
+      gh.position.set(centerX, 0, centerZ);
+      sceneRef.current.add(gh);
+      gridHelperRef.current = gh;
+    }
+  }, [showGrid, facilityDims, isConstructorMode, grid.cellSizeM]);
+
+  // Re-render Objects in objectsGroupRef dynamically when grid or selectedTileKey changes
+  useEffect(() => {
+    if (!objectsGroupRef.current) return;
+
+    const group = objectsGroupRef.current;
+
+    // Clear existing objects
+    while (group.children.length > 0) {
+      const child = group.children[0];
+      group.remove(child);
+      if ('geometry' in child && child.geometry) (child.geometry as THREE.BufferGeometry).dispose();
+      if ('material' in child && child.material) {
+        if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+        else (child.material as THREE.Material).dispose();
+      }
+    }
+
+    if (!isConstructorMode) return;
+
+    grid.tiles.forEach((type, key) => {
+      const [gxStr, gyStr] = key.split('_');
+      const gx = parseInt(gxStr, 10);
+      const gy = parseInt(gyStr, 10);
+      const tileX = (gx + 0.5) * grid.cellSizeM;
+      const tileY = (gy + 0.5) * grid.cellSizeM;
+
+      const isSelected = selectedTileKey === key;
+      const details = grid.elementDetails?.get(key);
+      const rotRad = THREE.MathUtils.degToRad(details?.rotationDeg || 0);
+
+      if (type === 'RACK') {
+        const rackGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.85, 2.2, grid.cellSizeM * 0.85);
+        const rackMat = new THREE.MeshStandardMaterial({
+          color: isSelected ? 0xd4af37 : details?.skuId ? 0x0284c7 : 0x334155,
+          roughness: 0.4,
+          metalness: 0.3,
+        });
+        const rackMesh = new THREE.Mesh(rackGeo, rackMat);
+        rackMesh.position.set(tileX, 1.1, tileY);
+        rackMesh.rotation.y = rotRad;
+        rackMesh.castShadow = true;
+        rackMesh.receiveShadow = true;
+        group.add(rackMesh);
+
+        const rackEdges = new THREE.EdgesGeometry(rackGeo);
+        const rackLineMat = new THREE.LineBasicMaterial({
+          color: isSelected ? 0x1a1a1a : 0x64748b,
+        });
+        const rackLine = new THREE.LineSegments(rackEdges, rackLineMat);
+        rackLine.position.copy(rackMesh.position);
+        rackLine.rotation.y = rotRad;
+        group.add(rackLine);
+      } else if (type === 'OBSTACLE') {
+        const obsGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 3.0, grid.cellSizeM * 0.9);
+        const obsMat = new THREE.MeshStandardMaterial({
+          color: isSelected ? 0xd4af37 : 0xef4444,
+          roughness: 0.3,
+          metalness: 0.1,
+        });
+        const obsMesh = new THREE.Mesh(obsGeo, obsMat);
+        obsMesh.position.set(tileX, 1.5, tileY);
+        obsMesh.rotation.y = rotRad;
+        obsMesh.castShadow = true;
+        group.add(obsMesh);
+      } else if (type === 'CHARGER') {
+        const cGeo = new THREE.CylinderGeometry(grid.cellSizeM * 0.35, grid.cellSizeM * 0.35, 0.4, 16);
+        const cMat = new THREE.MeshStandardMaterial({
+          color: isSelected ? 0xd4af37 : 0xf59e0b,
+          emissive: 0xf59e0b,
+          emissiveIntensity: 0.3,
+        });
+        const cMesh = new THREE.Mesh(cGeo, cMat);
+        cMesh.position.set(tileX, 0.2, tileY);
+        group.add(cMesh);
+      } else if (type === 'DOCK_INBOUND') {
+        const dGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 0.1, grid.cellSizeM * 0.9);
+        const dMat = new THREE.MeshStandardMaterial({
+          color: isSelected ? 0xd4af37 : 0x3b82f6,
+          transparent: true,
+          opacity: 0.7,
+        });
+        const dMesh = new THREE.Mesh(dGeo, dMat);
+        dMesh.position.set(tileX, 0.02, tileY);
+        group.add(dMesh);
+      } else if (type === 'DOCK_OUTBOUND') {
+        const dGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 0.1, grid.cellSizeM * 0.9);
+        const dMat = new THREE.MeshStandardMaterial({
+          color: isSelected ? 0xd4af37 : 0x0284c7,
+          transparent: true,
+          opacity: 0.7,
+        });
+        const dMesh = new THREE.Mesh(dGeo, dMat);
+        dMesh.position.set(tileX, 0.02, tileY);
+        group.add(dMesh);
+      }
+    });
+  }, [grid, selectedTileKey, isConstructorMode]);
 
   let selectedRobotFullName: string | null = null;
   if (Array.isArray(fleetConfig)) {
@@ -1012,9 +1094,9 @@ export function SimulationViewport({
     selectedRobotFullName = `${fleetConfig.vendor} ${fleetConfig.model}`;
   }
 
-  // Handle Box Marquee Dragging over 3D Viewport
+  // Handle Box Marquee Dragging over 3D Viewport when interactionMode === 'SELECT'
   const handleMarqueeMouseDown = (e: React.MouseEvent) => {
-    if (interactionMode !== 'BOX_SELECT_SKU' || !selectedSkuForBox) return;
+    if (interactionMode !== 'SELECT') return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     setMarqueeBox({
@@ -1042,32 +1124,33 @@ export function SimulationViewport({
   };
 
   const handleMarqueeMouseUp = () => {
-    if (!marqueeBox || !marqueeBox.isDragging || !selectedSkuForBox) return;
+    if (!marqueeBox || !marqueeBox.isDragging) return;
 
-    const minX = Math.min(marqueeBox.startX, marqueeBox.currentX);
-    const maxX = Math.max(marqueeBox.startX, marqueeBox.currentX);
-    const minY = Math.min(marqueeBox.startY, marqueeBox.currentY);
-    const maxY = Math.max(marqueeBox.startY, marqueeBox.currentY);
+    const dx = Math.abs(marqueeBox.currentX - marqueeBox.startX);
+    const dy = Math.abs(marqueeBox.currentY - marqueeBox.startY);
 
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (rect) {
-      // Bulk assign SKU to racks inside bounding box
-      setGrid((prev) => {
-        const detailsMap = new Map(prev.elementDetails || []);
-        prev.tiles.forEach((type, key) => {
+    // Only trigger bulk box select if drag distance > 10px
+    if (dx > 10 && dy > 10) {
+      const minX = Math.min(marqueeBox.startX, marqueeBox.currentX);
+      const maxX = Math.max(marqueeBox.startX, marqueeBox.currentX);
+      const minY = Math.min(marqueeBox.startY, marqueeBox.currentY);
+      const maxY = Math.max(marqueeBox.startY, marqueeBox.currentY);
+
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        // Find first rack or element inside bounding box
+        grid.tiles.forEach((type, key) => {
           if (type === 'RACK') {
             const [gx, gy] = key.split('_').map((s) => parseInt(s, 10));
-            const posX = ((gx + 0.5) / prev.cols) * rect.width;
-            const posY = ((gy + 0.5) / prev.rows) * rect.height;
+            const posX = ((gx + 0.5) / grid.cols) * rect.width;
+            const posY = ((gy + 0.5) / grid.rows) * rect.height;
 
             if (posX >= minX && posX <= maxX && posY >= minY && posY <= maxY) {
-              const existing = detailsMap.get(key) || {};
-              detailsMap.set(key, { ...existing, skuId: selectedSkuForBox.id });
+              setSelectedTileKey(key);
             }
           }
         });
-        return { ...prev, elementDetails: detailsMap };
-      });
+      }
     }
 
     setMarqueeBox(null);
@@ -1076,7 +1159,7 @@ export function SimulationViewport({
   return (
     <div
       ref={outerContainerRef}
-      className="bg-[#EAEAE6] h-full flex flex-col overflow-hidden font-sans text-[#1A1A1A] rounded-none"
+      className="bg-[#EAEAE6] h-full flex flex-col overflow-hidden font-sans text-[#1A1A1A] rounded-none select-none"
     >
       {/* Viewport Header */}
       <div className="bg-[#FFFFFF] border-b border-[#D4AF37]/40 px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0 font-mono text-xs rounded-none">
@@ -1144,7 +1227,7 @@ export function SimulationViewport({
         onMouseMove={handleMarqueeMouseMove}
         onMouseUp={handleMarqueeMouseUp}
       >
-        {/* Floating Constructor Toolbar */}
+        {/* Floating Single-Row Constructor Toolbar & Zone 2 Geometry Status Bar */}
         {isConstructorMode && (
           <ConstructorToolbar
             interactionMode={interactionMode}
@@ -1155,8 +1238,6 @@ export function SimulationViewport({
             onToggleGrid={() => setShowGrid((prev) => !prev)}
             snappingEnabled={snappingEnabled}
             onToggleSnapping={() => setSnappingEnabled((prev) => !prev)}
-            showBottleneckHeatmap={showBottleneckHeatmap}
-            onToggleBottleneckHeatmap={() => setShowBottleneckHeatmap((prev) => !prev)}
             onResetGrid={handleResetGrid}
             selectedElementId={selectedTileKey}
             onRotateSelected={handleRotateSelected}
@@ -1168,12 +1249,14 @@ export function SimulationViewport({
             onSelectSkuForBox={setSelectedSkuForBox}
             totalRacks={warehouseCapacity.totalRacks}
             totalPalletCapacity={warehouseCapacity.totalPalletCapacity}
-            supplySchedule={supplySchedule}
+            inboundDocksCount={gridElementCounts.inboundDocks}
+            outboundDocksCount={gridElementCounts.outboundDocks}
             calculatedAreaSqm={facility.totalAreaSqm}
+            ceilingHeightM={facility.ceilingHeightM ?? 8.0}
           />
         )}
 
-        {/* 2D Marquee Box Overlay for Bulk SKU Assignment */}
+        {/* 2D Marquee Box Overlay for Bulk Selection */}
         {marqueeBox && marqueeBox.isDragging && (
           <div
             style={{
@@ -1248,9 +1331,8 @@ export function SimulationViewport({
 
       {/* BOTTOM ACTION / SIMULATION PLAYER AREA */}
       {isConstructorMode ? (
-        /* Bottom CAD Status & Action Bar */
+        /* Bottom CAD Action Bar */
         <div className="h-14 bg-[#FFFFFF] border-t border-[#D4AF37]/40 px-4 flex items-center justify-between shrink-0 font-mono text-xs shadow-md z-20 rounded-none">
-          {/* Left Side: Live Layout Metrics */}
           <div className="flex items-center gap-3 text-[#1A1A1A]">
             <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
               Площадь: <strong className="text-[#8A6826] font-bold tabular-nums">{facility.totalAreaSqm} м²</strong>
@@ -1261,12 +1343,8 @@ export function SimulationViewport({
             <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
               Вместимость: <strong className="text-[#8A6826] font-bold tabular-nums">{warehouseCapacity.totalPalletCapacity} паллет</strong>
             </span>
-            <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
-              Доков: <strong className="text-[#8A6826] font-bold tabular-nums">{gridElementCounts.inboundDocks + gridElementCounts.outboundDocks}</strong> (Приемка: {gridElementCounts.inboundDocks}, Отгрузка: {gridElementCounts.outboundDocks})
-            </span>
           </div>
 
-          {/* Right Side: Primary CTA Button */}
           <button
             type="button"
             onClick={handleFinishConstructionAndSimulate}

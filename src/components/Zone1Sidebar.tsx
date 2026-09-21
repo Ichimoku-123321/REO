@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import type { FacilityRequirements, FacilityType, FloorSurfaceQuality, CleanlinessClass } from '../types/facility.js';
-import type { Robot } from '../types/robot.js';
 import type { FleetCompositionItem, HeterogeneousOptimizationResult } from '../engine/fleet_optimizer.js';
 import { SEED_ROBOTS } from '../data/robots.seed.js';
 import { isRobotEligible } from '../engine/dss.js';
@@ -18,8 +17,6 @@ import {
   HardDrive,
   AlertTriangle,
   Check,
-  Plus,
-  Minus,
 } from 'lucide-react';
 
 interface Zone1SidebarProps {
@@ -96,7 +93,7 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
       <div className="p-3 bg-[#EAEAE5] border-b border-[#D4AF37]/40 flex items-center justify-between shrink-0 rounded-none">
         <span className="text-xs font-semibold uppercase tracking-wider text-[#1A1A1A] flex items-center gap-1.5">
           <span className="w-2 h-2 bg-[#D4AF37]"></span>
-          Входные условия объекта
+          Экономика и правила объекта
         </span>
         <span className="text-[10px] font-mono font-bold text-[#8A6826]">REO • ZONE 1</span>
       </div>
@@ -104,7 +101,7 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
       {/* Scrollable Accordions List */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3 text-xs text-[#1A1A1A] rounded-none">
 
-        {/* 1. Facility Geometry & Operational Environment Accordion */}
+        {/* 1. Operational Rules & Environment Accordion (Geometry parameters live in Zone 2) */}
         <div className="bg-[#FFFFFF] border border-[#D4AF37]/30 rounded-none">
           <button
             type="button"
@@ -115,7 +112,7 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
               <span className="w-2 h-2 bg-[#D4AF37]"></span>
               <Building2 className="w-3.5 h-3.5 text-[#8A6826]" />
               <h4 className="font-bold text-xs uppercase tracking-wider text-[#1A1A1A]">
-                1. Геометрия и среда объекта
+                1. Профиль и условия среды
               </h4>
             </div>
             {openSections.geometry ? (
@@ -147,62 +144,37 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
                 </select>
               </div>
 
-              {/* Area & Ceiling Height */}
-              <div className="grid grid-cols-2 gap-2 font-mono">
-                <div>
-                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Площадь S (м²)</span>
-                  <input
-                    type="number"
-                    min="10"
-                    value={facility.totalAreaSqm}
-                    onChange={(e) =>
-                      updateFacility({ totalAreaSqm: Math.max(10, Number(e.target.value) || 10) })
-                    }
-                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 text-xs text-[#1A1A1A] font-bold tabular-nums focus:outline-none focus:border-[#D4AF37] rounded-none"
-                  />
+              {/* Read-Only Geometry derived live from Zone 2 CAD */}
+              <div className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/30 font-mono text-[11px] space-y-1 rounded-none">
+                <span className="text-[10px] text-[#8A6826] font-bold block uppercase mb-1">
+                  Геометрия (авто-расчет из Зоны 2 CAD):
+                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#4F4F47]">Площадь S:</span>
+                  <strong className="text-[#8A6826] font-bold tabular-nums">{facility.totalAreaSqm} м²</strong>
                 </div>
-                <div>
-                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Высота H (м)</span>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="1"
-                    value={facility.ceilingHeightM ?? 8.0}
-                    onChange={(e) =>
-                      updateFacility({ ceilingHeightM: Math.max(1, Number(e.target.value) || 1) })
-                    }
-                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 text-xs text-[#1A1A1A] font-bold tabular-nums focus:outline-none focus:border-[#D4AF37] rounded-none"
-                  />
+                <div className="flex items-center justify-between">
+                  <span className="text-[#4F4F47]">Высота H:</span>
+                  <strong className="text-[#8A6826] font-bold tabular-nums">{facility.ceilingHeightM ?? 8.0} м</strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#4F4F47]">Проезд W_aisle:</span>
+                  <strong className="text-[#8A6826] font-bold tabular-nums">{facility.aisleWidthM} м</strong>
                 </div>
               </div>
 
-              {/* Aisle Width & Payload */}
-              <div className="grid grid-cols-2 gap-2 font-mono">
-                <div>
-                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Проезд W_aisle (м)</span>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0.5"
-                    value={facility.aisleWidthM}
-                    onChange={(e) =>
-                      updateFacility({ aisleWidthM: Math.max(0.5, Number(e.target.value) || 0.5) })
-                    }
-                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 text-xs text-[#1A1A1A] font-bold tabular-nums focus:outline-none focus:border-[#D4AF37] rounded-none"
-                  />
-                </div>
-                <div>
-                  <span className="text-[10px] text-[#4F4F47] font-semibold block">Груз P_req (кг)</span>
-                  <input
-                    type="number"
-                    min="1"
-                    value={facility.requiredPayloadKg}
-                    onChange={(e) =>
-                      updateFacility({ requiredPayloadKg: Math.max(1, Number(e.target.value) || 1) })
-                    }
-                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 text-xs text-[#1A1A1A] font-bold tabular-nums focus:outline-none focus:border-[#D4AF37] rounded-none"
-                  />
-                </div>
+              {/* Required Payload */}
+              <div>
+                <span className="text-[10px] text-[#4F4F47] font-semibold block mb-0.5">Груз P_req (кг)</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={facility.requiredPayloadKg}
+                  onChange={(e) =>
+                    updateFacility({ requiredPayloadKg: Math.max(1, Number(e.target.value) || 1) })
+                  }
+                  className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] font-bold tabular-nums focus:outline-none focus:border-[#D4AF37] rounded-none"
+                />
               </div>
 
               {/* Floor Surface Quality (DIN 18202) */}

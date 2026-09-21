@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { ConstructorTileType, SkuItem, SupplySchedule } from '../engine/constructor_engine.js';
 import {
   Boxes,
@@ -7,7 +7,6 @@ import {
   ArrowRightCircle,
   ArrowLeftCircle,
   Eraser,
-  Eye,
   RotateCcw,
   Grid,
   Magnet,
@@ -18,16 +17,13 @@ import {
   RotateCw,
   Trash2,
   MousePointer,
-  BoxSelect,
-  AlertTriangle,
-  CheckCircle2,
+  ChevronDown,
 } from 'lucide-react';
 
 export type CtorInteractionMode =
   | 'SELECT'
   | 'DRAW_RECT'
   | 'DRAW_POLY'
-  | 'BOX_SELECT_SKU'
   | 'PLACE_ELEMENT';
 
 interface ConstructorToolbarProps {
@@ -39,8 +35,6 @@ interface ConstructorToolbarProps {
   onToggleGrid: () => void;
   snappingEnabled: boolean;
   onToggleSnapping: () => void;
-  showBottleneckHeatmap: boolean;
-  onToggleBottleneckHeatmap: () => void;
   onResetGrid: () => void;
 
   // Selected Object Actions
@@ -55,11 +49,13 @@ interface ConstructorToolbarProps {
   skuList: SkuItem[];
   onSelectSkuForBox: (sku: SkuItem) => void;
 
-  // Capacity & Buffer Metrics
+  // Facility / Geometry Metrics for Zone 2 Bar
   totalRacks: number;
   totalPalletCapacity: number;
-  supplySchedule: SupplySchedule;
+  inboundDocksCount: number;
+  outboundDocksCount: number;
   calculatedAreaSqm: number;
+  ceilingHeightM: number;
 }
 
 export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
@@ -71,23 +67,22 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
   onToggleGrid,
   snappingEnabled,
   onToggleSnapping,
-  showBottleneckHeatmap,
-  onToggleBottleneckHeatmap,
   onResetGrid,
   selectedElementId,
   onRotateSelected,
   onDeleteSelected,
   onOpenSkuModal,
   onOpenSchedulePanel,
-  selectedSkuForBox,
-  skuList,
-  onSelectSkuForBox,
   totalRacks,
   totalPalletCapacity,
-  supplySchedule,
+  inboundDocksCount,
+  outboundDocksCount,
   calculatedAreaSqm,
+  ceilingHeightM,
 }) => {
-  const isOverflow = totalPalletCapacity > 0 && supplySchedule.inboundBatchVolume > totalPalletCapacity;
+  const [isFloorDropdownOpen, setIsFloorDropdownOpen] = useState(false);
+
+  const isFloorActive = interactionMode === 'DRAW_RECT' || interactionMode === 'DRAW_POLY';
 
   const paletteTools: Array<{
     type: ConstructorTileType;
@@ -101,12 +96,12 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
     },
     {
       type: 'OBSTACLE',
-      label: 'Стена / Колонна',
+      label: 'Стена',
       icon: <ShieldAlert className="w-3.5 h-3.5 text-red-600" />,
     },
     {
       type: 'CHARGER',
-      label: 'Зарядный пост',
+      label: 'Зарядка',
       icon: <Zap className="w-3.5 h-3.5 text-amber-500" />,
     },
     {
@@ -127,94 +122,119 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
   ];
 
   return (
-    <div className="absolute top-3 left-3 right-3 z-20 flex flex-col gap-2 pointer-events-auto">
-      {/* Top Bar: Primary CAD Tools & Palette */}
-      <div className="bg-[#FFFFFF] border border-[#D4AF37]/40 p-2 shadow-lg flex flex-wrap items-center justify-between gap-2 text-xs font-mono rounded-none">
+    <div className="absolute top-3 left-3 right-3 z-20 flex flex-col gap-2 pointer-events-auto select-none font-mono">
+      {/* SINGLE HORIZONTAL CAD TOOLBAR */}
+      <div className="bg-[#FFFFFF] border border-[#D4AF37]/40 p-1.5 shadow-lg flex flex-wrap items-center justify-between gap-2 text-xs rounded-none">
 
-        {/* Left Section: Modes, Floor Tool, Palette */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {/* Select Mode */}
+        {/* Left Section: Single Row Tools */}
+        <div className="flex flex-wrap items-center gap-1">
+          {/* 1. Select Tool (2-in-1: Click object -> select, Drag empty floor -> marquee box) */}
           <button
             type="button"
-            onClick={() => onChangeInteractionMode('SELECT')}
-            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase transition rounded-none cursor-pointer border ${
+            onClick={() => {
+              setIsFloorDropdownOpen(false);
+              onChangeInteractionMode('SELECT');
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase transition rounded-none cursor-pointer border ${
               interactionMode === 'SELECT'
                 ? 'bg-[#D4AF37] text-[#1A1A1A] border-[#BFA02E]'
                 : 'bg-[#F9F9F6] text-[#4F4F47] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
             }`}
-            title="Выделение и перемещение объектов"
+            title="Выбор объектов кликом или рамка выделения по пустому полу"
           >
             <MousePointer className="w-3.5 h-3.5" />
-            <span>Выделить</span>
+            <span>[ ↖ Выбор ]</span>
           </button>
 
-          {/* Draw Floor Dropdown/Buttons */}
-          <div className="flex items-center border border-[#D4AF37]/40 bg-[#F9F9F6] rounded-none p-0.5">
+          <div className="h-4 w-px bg-[#D4AF37]/30 mx-0.5" />
+
+          {/* 2. Draw Floor Dropdown/Button */}
+          <div className="relative">
             <button
               type="button"
-              onClick={() => onChangeInteractionMode('DRAW_RECT')}
-              className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase transition rounded-none cursor-pointer ${
-                interactionMode === 'DRAW_RECT'
-                  ? 'bg-[#D4AF37] text-[#1A1A1A]'
-                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
+              onClick={() => {
+                setIsFloorDropdownOpen((prev) => !prev);
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase transition rounded-none cursor-pointer border ${
+                isFloorActive
+                  ? 'bg-[#D4AF37] text-[#1A1A1A] border-[#BFA02E]'
+                  : 'bg-[#F9F9F6] text-[#4F4F47] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
               }`}
-              title="Нарисовать прямоугольный пол (клик и протягивание)"
+              title="Нарисовать контур пола склада"
             >
-              <Square className="w-3 h-3 text-[#8A6826]" />
-              <span>Прямоугольник</span>
+              <Square className="w-3.5 h-3.5 text-[#8A6826]" />
+              <span>
+                {interactionMode === 'DRAW_POLY' ? '[ 📐 Пол: Полигон ]' : '[ 📐 Пол ]'}
+              </span>
+              <ChevronDown className="w-3 h-3 text-[#8A6826]" />
             </button>
-            <div className="w-px h-3 bg-[#D4AF37]/30 mx-0.5" />
-            <button
-              type="button"
-              onClick={() => onChangeInteractionMode('DRAW_POLY')}
-              className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase transition rounded-none cursor-pointer ${
-                interactionMode === 'DRAW_POLY'
-                  ? 'bg-[#D4AF37] text-[#1A1A1A]'
-                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
-              }`}
-              title="Нарисовать полигональный пол произвольного контура"
-            >
-              <Pentagon className="w-3 h-3 text-[#8A6826]" />
-              <span>Полигон</span>
-            </button>
+
+            {/* Floor Dropdown Options */}
+            {isFloorDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1 bg-[#FFFFFF] border border-[#D4AF37] shadow-xl z-30 py-1 min-w-[160px] rounded-none">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChangeInteractionMode('DRAW_RECT');
+                    setIsFloorDropdownOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-1.5 text-[11px] font-bold uppercase flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
+                    interactionMode === 'DRAW_RECT' ? 'text-[#8A6826] bg-[#D4AF37]/10' : 'text-[#1A1A1A]'
+                  }`}
+                >
+                  <Square className="w-3.5 h-3.5 text-[#8A6826]" />
+                  <span>Прямоугольник</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChangeInteractionMode('DRAW_POLY');
+                    setIsFloorDropdownOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-1.5 text-[11px] font-bold uppercase flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
+                    interactionMode === 'DRAW_POLY' ? 'text-[#8A6826] bg-[#D4AF37]/10' : 'text-[#1A1A1A]'
+                  }`}
+                >
+                  <Pentagon className="w-3.5 h-3.5 text-[#8A6826]" />
+                  <span>Полигон</span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="h-4 w-px bg-[#D4AF37]/30 mx-0.5" />
 
-          {/* Palette Elements */}
-          <div className="flex items-center gap-1">
-            {paletteTools.map((tool) => {
-              const isSelected =
-                interactionMode === 'PLACE_ELEMENT' && selectedTileType === tool.type;
-              return (
-                <button
-                  key={tool.type}
-                  type="button"
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('text/plain', tool.type);
-                  }}
-                  onClick={() => {
-                    onSelectTileType(tool.type);
-                    onChangeInteractionMode('PLACE_ELEMENT');
-                  }}
-                  className={`flex items-center gap-1 px-2 py-1 text-[11px] font-bold transition rounded-none cursor-grab active:cursor-grabbing border ${
-                    isSelected
-                      ? 'bg-[#1A1A1A] text-[#F9F9F6] border-[#1A1A1A]'
-                      : 'bg-[#F9F9F6] text-[#1A1A1A] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
-                  }`}
-                  title={`Перетащите или кликните для установки (${tool.label})`}
-                >
-                  {tool.icon}
-                  <span>{tool.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          {/* 3. Palette Elements */}
+          {paletteTools.map((tool) => {
+            const isSelected =
+              interactionMode === 'PLACE_ELEMENT' && selectedTileType === tool.type;
+            return (
+              <button
+                key={tool.type}
+                type="button"
+                onClick={() => {
+                  setIsFloorDropdownOpen(false);
+                  onSelectTileType(tool.type);
+                  onChangeInteractionMode('PLACE_ELEMENT');
+                }}
+                className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-bold transition rounded-none cursor-pointer border ${
+                  isSelected
+                    ? 'bg-[#1A1A1A] text-[#F9F9F6] border-[#1A1A1A]'
+                    : 'bg-[#F9F9F6] text-[#1A1A1A] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
+                }`}
+                title={`Разместить элемент (${tool.label})`}
+              >
+                {tool.icon}
+                <span>[{tool.label}]</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Right Section: Toggles, Hotkeys & Modals */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1">
+          <div className="h-4 w-px bg-[#D4AF37]/30 mx-0.5" />
+
           {/* Snapping Toggle */}
           <button
             type="button"
@@ -224,10 +244,10 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                 ? 'bg-[#D4AF37]/20 text-[#8A6826] border-[#D4AF37]'
                 : 'bg-[#F9F9F6] text-[#4F4F47] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
             }`}
-            title="Магнитный снаппинг по осям (Клавиша [S])"
+            title="Магнитный снаппинг по осям [S]"
           >
             <Magnet className="w-3.5 h-3.5 text-[#D4AF37]" />
-            <span>[S] Снаппинг</span>
+            <span>[ S Снаппинг ]</span>
           </button>
 
           {/* Grid Toggle */}
@@ -239,62 +259,11 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                 ? 'bg-[#D4AF37]/20 text-[#8A6826] border-[#D4AF37]'
                 : 'bg-[#F9F9F6] text-[#4F4F47] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
             }`}
-            title="Отображение сетки пола (Клавиша [G])"
+            title="Отображение сетки пола [G]"
           >
             <Grid className="w-3.5 h-3.5 text-[#8A6826]" />
-            <span>[G] Сетка</span>
+            <span>[ G Сетка ]</span>
           </button>
-
-          {/* Heatmap Toggle */}
-          <button
-            type="button"
-            onClick={onToggleBottleneckHeatmap}
-            className={`flex items-center gap-1 px-2 py-1 text-[11px] font-bold transition rounded-none cursor-pointer border ${
-              showBottleneckHeatmap
-                ? 'bg-amber-100 text-amber-900 border-amber-400'
-                : 'bg-[#F9F9F6] text-[#4F4F47] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
-            }`}
-          >
-            <Eye className="w-3.5 h-3.5 text-amber-600" />
-            <span>Узкие места</span>
-          </button>
-
-          <div className="h-4 w-px bg-[#D4AF37]/30 mx-0.5" />
-
-          {/* Box Selection Tool for Bulk SKU */}
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => onChangeInteractionMode('BOX_SELECT_SKU')}
-              className={`flex items-center gap-1 px-2 py-1 text-[11px] font-bold uppercase transition rounded-none cursor-pointer border ${
-                interactionMode === 'BOX_SELECT_SKU'
-                  ? 'bg-[#58111A] text-[#F9F9F6] border-[#58111A]'
-                  : 'bg-[#F9F9F6] text-[#1A1A1A] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
-              }`}
-              title="Выделить рамкой группу стеллажей для массового назначения SKU"
-            >
-              <BoxSelect className="w-3.5 h-3.5 text-[#D4AF37]" />
-              <span>Рамка выделения</span>
-            </button>
-
-            {/* SKU Selector Dropdown for Box Select */}
-            {interactionMode === 'BOX_SELECT_SKU' && (
-              <select
-                value={selectedSkuForBox?.id ?? ''}
-                onChange={(e) => {
-                  const sku = skuList.find((s) => s.id === e.target.value);
-                  if (sku) onSelectSkuForBox(sku);
-                }}
-                className="bg-[#FFFFFF] border border-[#D4AF37] text-[11px] font-semibold px-1.5 py-1 text-[#1A1A1A] rounded-none outline-none"
-              >
-                {skuList.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.weightPerUnitKg} кг)
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
 
           <div className="h-4 w-px bg-[#D4AF37]/30 mx-0.5" />
 
@@ -303,9 +272,10 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
             type="button"
             onClick={onOpenSkuModal}
             className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold bg-[#FFFFFF] hover:bg-[#F4F4F0] text-[#1A1A1A] border border-[#D4AF37]/50 rounded-none cursor-pointer"
+            title="Управление номенклатурой товаров"
           >
             <Package className="w-3.5 h-3.5 text-[#8A6826]" />
-            <span>Номенклатура</span>
+            <span>[ 📦 Товары ]</span>
           </button>
 
           {/* Schedule Panel Button */}
@@ -313,9 +283,10 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
             type="button"
             onClick={onOpenSchedulePanel}
             className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold bg-[#FFFFFF] hover:bg-[#F4F4F0] text-[#1A1A1A] border border-[#D4AF37]/50 rounded-none cursor-pointer"
+            title="Настройка графиков приемки и отгрузки"
           >
             <Truck className="w-3.5 h-3.5 text-[#8A6826]" />
-            <span>Приемка / Отгрузка</span>
+            <span>[ ⏱️ Расписание ]</span>
           </button>
 
           {/* Selected Actions: Rotate & Delete */}
@@ -325,7 +296,7 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                 type="button"
                 onClick={onRotateSelected}
                 className="p-1 bg-[#FFFFFF] hover:bg-[#F4F4F0] text-[#1A1A1A] border border-[#D4AF37]/30 rounded-none cursor-pointer"
-                title="Повернуть элемент на 90 градусов (Клавиша [R])"
+                title="Повернуть элемент на 90 градусов [R]"
               >
                 <RotateCw className="w-3.5 h-3.5 text-[#8A6826]" />
               </button>
@@ -333,7 +304,7 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                 type="button"
                 onClick={onDeleteSelected}
                 className="p-1 bg-red-100 hover:bg-red-200 text-red-800 border border-red-300 rounded-none cursor-pointer"
-                title="Удалить элемент (Клавиша [Delete] / [Backspace])"
+                title="Удалить элемент [Delete / Backspace]"
               >
                 <Trash2 className="w-3.5 h-3.5 text-red-700" />
               </button>
@@ -345,13 +316,38 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
             type="button"
             onClick={onResetGrid}
             className="p-1 bg-[#F9F9F6] hover:bg-[#EAEAE6] text-[#4F4F47] border border-[#D4AF37]/30 rounded-none cursor-pointer"
-            title="Сбросить схему к исходной"
+            title="Сбросить схему чертежа"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
+      {/* ZONE 2 GEOMETRY STATUS STRIP RIGHT UNDER TOOLBAR */}
+      <div className="bg-[#FFFFFF]/95 border border-[#D4AF37]/40 px-3 py-1 shadow-md flex items-center justify-between text-[11px] text-[#1A1A1A] rounded-none">
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+          <span className="font-semibold">
+            [ Площадь: <strong className="text-[#8A6826] tabular-nums">{calculatedAreaSqm} м²</strong> ]
+          </span>
+          <span className="text-[#D4AF37]">•</span>
+          <span className="font-semibold">
+            [ Высота: <strong className="text-[#8A6826] tabular-nums">{ceilingHeightM} м</strong> ]
+          </span>
+          <span className="text-[#D4AF37]">•</span>
+          <span className="font-semibold">
+            [ Стеллажей: <strong className="text-[#8A6826] tabular-nums">{totalRacks} шт.</strong> ]
+          </span>
+          <span className="text-[#D4AF37]">•</span>
+          <span className="font-semibold">
+            [ Вместимость: <strong className="text-[#8A6826] tabular-nums">{totalPalletCapacity} паллет</strong> ]
+          </span>
+          <span className="text-[#D4AF37]">•</span>
+          <span className="font-semibold">
+            [ Ворота: Вх: <strong className="text-[#8A6826] tabular-nums">{inboundDocksCount}</strong> / Вых:{' '}
+            <strong className="text-[#8A6826] tabular-nums">{outboundDocksCount}</strong> ]
+          </span>
+        </div>
+      </div>
     </div>
   );
 };

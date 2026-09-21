@@ -1,0 +1,35 @@
+--- src/components/SimulationViewport.tsx
++++ src/components/SimulationViewport.tsx
+@@ -744,14 +744,23 @@
+
+         if (event.button === 0 && st.interactionMode === 'DRAW_POLY') {
+-          const nextPts = [...st.drawingPoints, { x: point.x, z: point.z }];
+-          setDrawingPoints(nextPts);
+-          setIsDrawingActive(true);
+-
+-          if (nextPts.length >= 3) {
+-            const areaSqm = calculateShoelaceArea(nextPts);
+-            if (areaSqm > 0 && onChangeFacility) {
+-              onChangeFacility({ ...st.facility, totalAreaSqm: areaSqm });
+-            }
++          if (st.drawingPoints.length >= 3) {
++            const firstPt = st.drawingPoints[0];
++            const dist = Math.sqrt(Math.pow(point.x - firstPt.x, 2) + Math.pow(point.z - firstPt.z, 2));
++
++            if (dist < 1.0) {
++              const areaSqm = calculateShoelaceArea(st.drawingPoints);
++              if (areaSqm > 0 && onChangeFacility) {
++                onChangeFacility({ ...st.facility, totalAreaSqm: areaSqm });
++              }
++              setDrawingPoints([]);
++              setIsDrawingActive(false);
++              setInteractionMode('SELECT');
++              return;
++            }
+           }
++
++          const nextPts = [...st.drawingPoints, { x: point.x, z: point.z }];
++          setDrawingPoints(nextPts);
++          setIsDrawingActive(true);
+           return;
+         }

@@ -121,14 +121,15 @@ export function SimulationViewport({
   const [drawingPoints, setDrawingPoints] = useState<Point2D[]>([]);
   const [isDrawingActive, setIsDrawingActive] = useState<boolean>(false);
 
-  // Box Marquee Drag State
-  const [marqueeBox, setMarqueeBox] = useState<{
-    startX: number;
-    startY: number;
-    currentX: number;
-    currentY: number;
-    isDragging: boolean;
-  } | null>(null);
+  // Box Marquee Drag State via DOM Ref (Zero React Lag)
+  const marqueeRef = useRef<HTMLDivElement>(null);
+  const marqueeData = useRef({
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+    isDragging: false,
+  });
 
   // Playback & Simulation state
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -388,9 +389,16 @@ export function SimulationViewport({
         return;
       }
 
+      const st = stateRef.current;
+
       if (e.key === 'Escape') {
         setSelectedTileKey(null);
         setPopoverPos(null);
+        if (st.interactionMode !== 'SELECT') {
+          setInteractionMode('SELECT');
+          setIsDrawingActive(false);
+          setDrawingPoints([]);
+        }
       } else if (e.key === 'g' || e.key === 'G' || e.key === 'п' || e.key === 'П') {
         setShowGrid((prev) => !prev);
       } else if (e.key === 's' || e.key === 'S' || e.key === 'ы' || e.key === 'Ы') {
@@ -570,11 +578,13 @@ export function SimulationViewport({
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObject(floorMesh);
 
-      if (intersects.length > 0) {
-        let point = intersects[0].point;
+      // CRITICAL: Intersect against the infinite Y=0 plane instead of the finite floorMesh
+      const yZeroPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const intersectPoint = new THREE.Vector3();
+      const point = raycaster.ray.intersectPlane(yZeroPlane, intersectPoint);
 
+      if (point) {
         if (st.snappingEnabled) {
           const existingPositions: Point2D[] = [];
           st.grid.tiles.forEach((type, key) => {
@@ -588,17 +598,18 @@ export function SimulationViewport({
           });
 
           const snapRes = findMagneticSnapPosition({ x: point.x, z: point.z }, existingPositions, 0.35);
-          point = new THREE.Vector3(snapRes.snapped.x, 0, snapRes.snapped.z);
+          point.x = snapRes.snapped.x;
+          point.z = snapRes.snapped.z;
 
           if (snapRes.guideX !== null || snapRes.guideZ !== null) {
             const guidePoints: THREE.Vector3[] = [];
             if (snapRes.guideX !== null) {
-              guidePoints.push(new THREE.Vector3(snapRes.guideX, 0.05, 0));
-              guidePoints.push(new THREE.Vector3(snapRes.guideX, 0.05, st.facilityDims.lengthM));
+              guidePoints.push(new THREE.Vector3(snapRes.guideX, 0.05, -100));
+              guidePoints.push(new THREE.Vector3(snapRes.guideX, 0.05, 100));
             }
             if (snapRes.guideZ !== null) {
-              guidePoints.push(new THREE.Vector3(0, 0.05, snapRes.guideZ));
-              guidePoints.push(new THREE.Vector3(st.facilityDims.widthM, 0.05, snapRes.guideZ));
+              guidePoints.push(new THREE.Vector3(-100, 0.05, snapRes.guideZ));
+              guidePoints.push(new THREE.Vector3(100, 0.05, snapRes.guideZ));
             }
             guideGeo.setFromPoints(guidePoints);
             guideLine.computeLineDistances();
@@ -611,7 +622,7 @@ export function SimulationViewport({
         }
 
         if (st.interactionMode === 'PLACE_ELEMENT') {
-          // Snap ghost to grid cell center
+          // Snap ghost to grid cell center using integer grid coordinates
           const gx = Math.floor(point.x / st.grid.cellSizeM);
           const gy = Math.floor(point.z / st.grid.cellSizeM);
           const snappedX = (gx + 0.5) * st.grid.cellSizeM;
@@ -622,12 +633,26 @@ export function SimulationViewport({
         } else {
           ghostGroup.visible = false;
         }
+      } else {
+        ghostGroup.visible = false;
       }
     };
 
     const handleCanvasPointerDown = (event: MouseEvent) => {
       const st = stateRef.current;
       if (!st.isConstructorMode) return;
+
+      // If right clicking while holding a tool, intercept it to cancel the tool
+      if (event.button === 2 && st.interactionMode !== 'SELECT') {
+        event.preventDefault();
+        event.stopPropagation();
+        setInteractionMode('SELECT');
+        setIsDrawingActive(false);
+        setDrawingPoints([]);
+        ghostGroup.visible = false;
+        return;
+      }
+
       mouseDownPosRef.current = { x: event.clientX, y: event.clientY };
     };
 
@@ -646,16 +671,21 @@ export function SimulationViewport({
         }
       }
 
+      // Ignore right clicks for placement/drawing logic
+      if (event.button === 2) return;
+
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObject(floorMesh);
 
-      if (intersects.length > 0) {
-        let point = intersects[0].point;
+      // CRITICAL: Intersect against the infinite Y=0 plane
+      const yZeroPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const intersectPoint = new THREE.Vector3();
+      const point = raycaster.ray.intersectPlane(yZeroPlane, intersectPoint);
 
+      if (point) {
         if (st.snappingEnabled) {
           const existingPositions: Point2D[] = [];
           st.grid.tiles.forEach((type, key) => {
@@ -668,7 +698,8 @@ export function SimulationViewport({
             }
           });
           const snapRes = findMagneticSnapPosition({ x: point.x, z: point.z }, existingPositions, 0.35);
-          point = new THREE.Vector3(snapRes.snapped.x, 0, snapRes.snapped.z);
+          point.x = snapRes.snapped.x;
+          point.z = snapRes.snapped.z;
         }
 
         const gx = Math.floor(point.x / st.grid.cellSizeM);
@@ -950,20 +981,24 @@ export function SimulationViewport({
   // Update OrbitControls Mouse Bindings dynamically based on mode without touching camera
   useEffect(() => {
     if (!controlsRef.current) return;
-    if (isConstructorMode && interactionMode !== 'SELECT') {
+    if (isConstructorMode) {
+      // In constructor mode, ALWAYS unbind LEFT click from OrbitControls
+      // so CAD interactions (marquee, place, select) work without camera drag.
+      // RIGHT = Rotate, MIDDLE = Pan. (Scroll = Zoom is default)
       controlsRef.current.mouseButtons = {
         LEFT: undefined as unknown as THREE.MOUSE,
         MIDDLE: THREE.MOUSE.PAN,
         RIGHT: THREE.MOUSE.ROTATE,
       };
     } else {
+      // In simulation mode, use standard navigation
       controlsRef.current.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
         MIDDLE: THREE.MOUSE.DOLLY,
         RIGHT: THREE.MOUSE.PAN,
       };
     }
-  }, [isConstructorMode, interactionMode]);
+  }, [isConstructorMode]);
 
   // Update Grid Helper dynamically without reinitializing camera
   useEffect(() => {
@@ -1096,64 +1131,87 @@ export function SimulationViewport({
 
   // Handle Box Marquee Dragging over 3D Viewport when interactionMode === 'SELECT'
   const handleMarqueeMouseDown = (e: React.MouseEvent) => {
-    if (interactionMode !== 'SELECT') return;
+    if (interactionMode !== 'SELECT' || e.button !== 0) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setMarqueeBox({
+
+    marqueeData.current = {
       startX: e.clientX - rect.left,
       startY: e.clientY - rect.top,
       currentX: e.clientX - rect.left,
       currentY: e.clientY - rect.top,
       isDragging: true,
-    });
+    };
   };
 
   const handleMarqueeMouseMove = (e: React.MouseEvent) => {
-    if (!marqueeBox || !marqueeBox.isDragging) return;
+    if (!marqueeData.current.isDragging) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setMarqueeBox((prev) =>
-      prev
-        ? {
-            ...prev,
-            currentX: e.clientX - rect.left,
-            currentY: e.clientY - rect.top,
-          }
-        : null
-    );
+
+    marqueeData.current.currentX = e.clientX - rect.left;
+    marqueeData.current.currentY = e.clientY - rect.top;
+
+    if (marqueeRef.current) {
+      const { startX, startY, currentX, currentY } = marqueeData.current;
+      const minX = Math.min(startX, currentX);
+      const minY = Math.min(startY, currentY);
+      const width = Math.abs(currentX - startX);
+      const height = Math.abs(currentY - startY);
+
+      if (width > 5 || height > 5) {
+        marqueeRef.current.style.display = 'block';
+        marqueeRef.current.style.left = `${minX}px`;
+        marqueeRef.current.style.top = `${minY}px`;
+        marqueeRef.current.style.width = `${width}px`;
+        marqueeRef.current.style.height = `${height}px`;
+      }
+    }
   };
 
-  const handleMarqueeMouseUp = () => {
-    if (!marqueeBox || !marqueeBox.isDragging) return;
+  const handleMarqueeMouseUp = (e: React.MouseEvent) => {
+    if (!marqueeData.current.isDragging) return;
+    marqueeData.current.isDragging = false;
 
-    const dx = Math.abs(marqueeBox.currentX - marqueeBox.startX);
-    const dy = Math.abs(marqueeBox.currentY - marqueeBox.startY);
+    if (marqueeRef.current) {
+      marqueeRef.current.style.display = 'none';
+    }
+
+    const { startX, startY, currentX, currentY } = marqueeData.current;
+    const dx = Math.abs(currentX - startX);
+    const dy = Math.abs(currentY - startY);
 
     // Only trigger bulk box select if drag distance > 10px
-    if (dx > 10 && dy > 10) {
-      const minX = Math.min(marqueeBox.startX, marqueeBox.currentX);
-      const maxX = Math.max(marqueeBox.startX, marqueeBox.currentX);
-      const minY = Math.min(marqueeBox.startY, marqueeBox.currentY);
-      const maxY = Math.max(marqueeBox.startY, marqueeBox.currentY);
+    if (dx > 10 && dy > 10 && cameraRef.current) {
+      const minX = Math.min(startX, currentX);
+      const maxX = Math.max(startX, currentX);
+      const minY = Math.min(startY, currentY);
+      const maxY = Math.max(startY, currentY);
 
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect) {
-        // Find first rack or element inside bounding box
+        let selectedFound = false;
+        // Project 3D positions to 2D screen to find selected items
         grid.tiles.forEach((type, key) => {
-          if (type === 'RACK') {
+          if (!selectedFound && (type === 'RACK' || type === 'CHARGER' || type === 'OBSTACLE')) {
             const [gx, gy] = key.split('_').map((s) => parseInt(s, 10));
-            const posX = ((gx + 0.5) / grid.cols) * rect.width;
-            const posY = ((gy + 0.5) / grid.rows) * rect.height;
+            const worldX = (gx + 0.5) * grid.cellSizeM;
+            const worldZ = (gy + 0.5) * grid.cellSizeM;
 
-            if (posX >= minX && posX <= maxX && posY >= minY && posY <= maxY) {
+            const vec = new THREE.Vector3(worldX, 0, worldZ);
+            vec.project(cameraRef.current!);
+
+            const screenX = (vec.x * 0.5 + 0.5) * rect.width;
+            const screenY = (vec.y * -0.5 + 0.5) * rect.height;
+
+            if (screenX >= minX && screenX <= maxX && screenY >= minY && screenY <= maxY) {
               setSelectedTileKey(key);
+              selectedFound = true; // For now just select the first one we find
             }
           }
         });
       }
     }
-
-    setMarqueeBox(null);
   };
 
   return (
@@ -1257,18 +1315,11 @@ export function SimulationViewport({
         )}
 
         {/* 2D Marquee Box Overlay for Bulk Selection */}
-        {marqueeBox && marqueeBox.isDragging && (
-          <div
-            style={{
-              position: 'absolute',
-              left: `${Math.min(marqueeBox.startX, marqueeBox.currentX)}px`,
-              top: `${Math.min(marqueeBox.startY, marqueeBox.currentY)}px`,
-              width: `${Math.abs(marqueeBox.currentX - marqueeBox.startX)}px`,
-              height: `${Math.abs(marqueeBox.currentY - marqueeBox.startY)}px`,
-            }}
-            className="border-2 border-dashed border-[#D4AF37] bg-[#D4AF37]/20 pointer-events-none z-30"
-          />
-        )}
+        <div
+          ref={marqueeRef}
+          style={{ display: 'none', position: 'absolute' }}
+          className="border-2 border-dashed border-[#D4AF37] bg-[#D4AF37]/20 pointer-events-none z-30"
+        />
 
         {/* Rack Inspection Popover */}
         {selectedTileKey && (

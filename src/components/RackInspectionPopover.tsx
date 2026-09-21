@@ -12,6 +12,7 @@ interface RackInspectionPopoverProps {
   slotsPerRack?: number;
   skuList: SkuItem[];
   onAssignSku: (rackKey: string, skuId: string | undefined) => void;
+  onChangeCapacity: (rackKey: string, capacity: number) => void;
   onDeleteRack: (rackKey: string) => void;
   screenPos?: { x: number; y: number };
 }
@@ -26,6 +27,7 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverProps> = ({
   slotsPerRack = 12,
   skuList,
   onAssignSku,
+  onChangeCapacity,
   onDeleteRack,
   screenPos,
 }) => {
@@ -67,9 +69,24 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverProps> = ({
 
       {/* Rack Capacity Metric */}
       <div className="p-2 bg-[#F9F9F6] border border-[#D4AF37]/30 mb-2.5 space-y-1">
-        <div className="flex justify-between font-bold text-[11px]">
+        <div className="flex justify-between items-center font-bold text-[11px]">
           <span className="text-[#4F4F47]">Вместимость:</span>
-          <span className="text-[#8A6826] tabular-nums">{slotsPerRack} паллет</span>
+          <div className="flex items-center gap-1 text-[#8A6826] tabular-nums">
+            <input
+              type="number"
+              min="1"
+              max="200"
+              value={slotsPerRack}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val) && val > 0) {
+                  onChangeCapacity(rackKey, val);
+                }
+              }}
+              className="w-14 bg-[#FFFFFF] border border-[#D4AF37]/50 px-1 py-0.5 text-right outline-none"
+            />
+            <span>паллет</span>
+          </div>
         </div>
       </div>
 

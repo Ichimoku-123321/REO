@@ -39,7 +39,7 @@ interface ConstructorToolbarProps {
   onResetGrid: () => void;
 
   // Selected Object Actions
-  selectedElementId: string | null;
+  selectedTileKeys: Set<string>;
   onRotateSelected: () => void;
   onDeleteSelected: () => void;
 
@@ -69,7 +69,7 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
   snappingEnabled,
   onToggleSnapping,
   onResetGrid,
-  selectedElementId,
+  selectedTileKeys,
   onRotateSelected,
   onDeleteSelected,
   onOpenSkuModal,
@@ -245,28 +245,6 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
         </div>
           <div className="h-4 w-px bg-[#D4AF37]/30 mx-0.5" />
 
-          {/* 4. Eraser Tool */}
-          <button
-            type="button"
-            onClick={() => {
-              setIsFloorDropdownOpen(false);
-              if (interactionMode === 'ERASE') {
-                onChangeInteractionMode('SELECT');
-              } else {
-                onChangeInteractionMode('ERASE');
-              }
-            }}
-            className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-bold uppercase transition rounded-none cursor-pointer border ${
-              interactionMode === 'ERASE'
-                ? 'bg-[#1A1A1A] text-[#F9F9F6] border-[#1A1A1A]'
-                : 'bg-[#F9F9F6] text-[#1A1A1A] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
-            }`}
-            title="Стереть элемент [Ластик]"
-          >
-            <Eraser className="w-3.5 h-3.5" />
-            <span>[ 🧹 Ластик ]</span>
-          </button>
-
 
 
         {/* Right Section: Toggles, Hotkeys & Modals */}
@@ -328,7 +306,7 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
           </button>
 
           {/* Selected Actions: Rotate & Delete */}
-          {selectedElementId && (
+          {selectedTileKeys.size > 0 && (
             <div className="flex items-center gap-1 bg-[#D4AF37]/15 p-0.5 border border-[#D4AF37]/40">
               <button
                 type="button"

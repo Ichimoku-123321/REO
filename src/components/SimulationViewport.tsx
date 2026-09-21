@@ -104,7 +104,9 @@ export function SimulationViewport({
   const [snappingEnabled, setSnappingEnabled] = useState<boolean>(true);
 
   // Selected Object & Popover State
-  const [selectedTileKey, setSelectedTileKey] = useState<string | null>(null);
+  const [selectedTileKeys, setSelectedTileKeys] = useState<Set<string>>(new Set());
+  const [selectedSkuChip, setSelectedSkuChip] = useState<string | null>(null);
+  const SKU_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
   const [popoverPos, setPopoverPos] = useState<{ x: number; y: number } | null>(null);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -182,7 +184,7 @@ export function SimulationViewport({
     let racks = 0;
     let chargers = 0;
 
-    grid.tiles.forEach((type) => {
+    grid.tiles.forEach((type: any) => {
       if (type === 'DOCK_INBOUND') inboundDocks++;
       if (type === 'DOCK_OUTBOUND') outboundDocks++;
       if (type === 'RACK') racks++;
@@ -265,7 +267,7 @@ export function SimulationViewport({
     selectedTileType,
     showGrid,
     snappingEnabled,
-    selectedTileKey,
+    selectedTileKeys,
     drawingPoints,
     isDrawingActive,
     grid,
@@ -284,7 +286,7 @@ export function SimulationViewport({
       selectedTileType,
       showGrid,
       snappingEnabled,
-      selectedTileKey,
+      selectedTileKeys,
       drawingPoints,
       isDrawingActive,
       grid,
@@ -301,7 +303,7 @@ export function SimulationViewport({
     selectedTileType,
     showGrid,
     snappingEnabled,
-    selectedTileKey,
+    selectedTileKeys,
     drawingPoints,
     isDrawingActive,
     grid,
@@ -361,36 +363,41 @@ export function SimulationViewport({
   }, [onAppModeChange]);
 
   const handleResetGrid = useCallback(() => {
+    if (!window.confirm("Очистить весь чертеж склада?")) return;
     const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
     setGrid(createInitialConstructorGrid(facilityDims.widthM, facilityDims.lengthM, cellSize));
-    setSelectedTileKey(null);
+    setSelectedTileKeys(new Set());
     setPopoverPos(null);
   }, [facilityDims, facility.totalAreaSqm]);
 
   const handleRotateSelected = useCallback(() => {
-    if (!selectedTileKey) return;
+    if (selectedTileKeys.size === 0) return;
     setGrid((prev) => {
       const detailsMap = new Map(prev.elementDetails || []);
-      const existing = detailsMap.get(selectedTileKey) || {};
-      const currentRot = existing.rotationDeg || 0;
-      const nextRot = (currentRot + 90) % 360;
-      detailsMap.set(selectedTileKey, { ...existing, rotationDeg: nextRot });
+      for (const key of selectedTileKeys) {
+        const existing = detailsMap.get(key) || {};
+        const currentRot = existing.rotationDeg ?? 0;
+        const nextRot = (currentRot + 90) % 360;
+        detailsMap.set(key, { ...existing, rotationDeg: nextRot });
+      }
       return { ...prev, elementDetails: detailsMap };
     });
-  }, [selectedTileKey]);
+  }, [selectedTileKeys]);
 
   const handleDeleteSelected = useCallback(() => {
-    if (!selectedTileKey) return;
+    if (selectedTileKeys.size === 0) return;
     setGrid((prev) => {
       const updatedTiles = new Map(prev.tiles);
-      updatedTiles.set(selectedTileKey, 'EMPTY_FLOOR');
       const detailsMap = new Map(prev.elementDetails || []);
-      detailsMap.delete(selectedTileKey);
+      for (const key of selectedTileKeys) {
+        updatedTiles.set(key, 'EMPTY_FLOOR');
+        detailsMap.delete(key);
+      }
       return { ...prev, tiles: updatedTiles, elementDetails: detailsMap };
     });
-    setSelectedTileKey(null);
+    setSelectedTileKeys(new Set());
     setPopoverPos(null);
-  }, [selectedTileKey]);
+  }, [selectedTileKeys]);
 
   // Hotkey keyboard event listener [G], [S], [R], [Del]
   useEffect(() => {
@@ -406,7 +413,8 @@ export function SimulationViewport({
       const st = stateRef.current;
 
       if (e.key === 'Escape') {
-        setSelectedTileKey(null);
+        setSelectedSkuChip(null);
+        setSelectedTileKeys(new Set());
         setPopoverPos(null);
         if (st.interactionMode !== 'SELECT') {
           setInteractionMode('SELECT');
@@ -599,12 +607,12 @@ export function SimulationViewport({
       if (point) {
         if (st.snappingEnabled) {
           const existingPositions: Point2D[] = [];
-          st.grid.tiles.forEach((type, key) => {
+          stateRef.current.grid.tiles.forEach((type: any, key: any) => {
             if (type !== 'EMPTY_FLOOR') {
-              const [gx, gy] = key.split('_').map((s) => parseInt(s, 10));
+              const [gx, gy] = key.split('_').map((s: any) => parseInt(s, 10));
               existingPositions.push({
-                x: (gx + 0.5) * st.grid.cellSizeM,
-                z: (gy + 0.5) * st.grid.cellSizeM,
+                x: (gx + 0.5) * stateRef.current.grid.cellSizeM,
+                z: (gy + 0.5) * stateRef.current.grid.cellSizeM,
               });
             }
           });
@@ -635,15 +643,15 @@ export function SimulationViewport({
 
         if (st.interactionMode === 'PLACE_ELEMENT') {
           // Snap ghost to grid cell center using integer grid coordinates
-          const gx = Math.floor(point.x / st.grid.cellSizeM);
-          const gy = Math.floor(point.z / st.grid.cellSizeM);
-          const snappedX = (gx + 0.5) * st.grid.cellSizeM;
-          const snappedZ = (gy + 0.5) * st.grid.cellSizeM;
+          const gx = Math.floor(point.x / stateRef.current.grid.cellSizeM);
+          const gy = Math.floor(point.z / stateRef.current.grid.cellSizeM);
+          const snappedX = (gx + 0.5) * stateRef.current.grid.cellSizeM;
+          const snappedZ = (gy + 0.5) * stateRef.current.grid.cellSizeM;
 
           ghostGroup.position.set(snappedX, 1.0, snappedZ);
           ghostGroup.visible = true;
 
-          if (event.buttons === 1 && st.selectedTileType === 'OBSTACLE' && gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
+          if (event.buttons === 1 && st.selectedTileType === 'OBSTACLE' && gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
             const key = getTileKey(gx, gy);
             setGrid((prev) => {
               if (prev.tiles.get(key) !== 'OBSTACLE') {
@@ -657,9 +665,9 @@ export function SimulationViewport({
         } else if (st.interactionMode === 'ERASE') {
           ghostGroup.visible = false;
           if (event.buttons === 1) {
-            const gx = Math.floor(point.x / st.grid.cellSizeM);
-            const gy = Math.floor(point.z / st.grid.cellSizeM);
-            if (gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
+            const gx = Math.floor(point.x / stateRef.current.grid.cellSizeM);
+            const gy = Math.floor(point.z / stateRef.current.grid.cellSizeM);
+            if (gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
               const key = getTileKey(gx, gy);
               setGrid((prev) => {
                 if (prev.tiles.has(key) && prev.tiles.get(key) !== 'EMPTY_FLOOR') {
@@ -765,12 +773,12 @@ export function SimulationViewport({
       if (point) {
         if (st.snappingEnabled) {
           const existingPositions: Point2D[] = [];
-          st.grid.tiles.forEach((type, key) => {
+          stateRef.current.grid.tiles.forEach((type: any, key: any) => {
             if (type !== 'EMPTY_FLOOR') {
-              const [gx, gy] = key.split('_').map((s) => parseInt(s, 10));
+              const [gx, gy] = key.split('_').map((s: any) => parseInt(s, 10));
               existingPositions.push({
-                x: (gx + 0.5) * st.grid.cellSizeM,
-                z: (gy + 0.5) * st.grid.cellSizeM,
+                x: (gx + 0.5) * stateRef.current.grid.cellSizeM,
+                z: (gy + 0.5) * stateRef.current.grid.cellSizeM,
               });
             }
           });
@@ -779,8 +787,8 @@ export function SimulationViewport({
           point.z = snapRes.snapped.z;
         }
 
-        const gx = Math.floor(point.x / st.grid.cellSizeM);
-        const gy = Math.floor(point.z / st.grid.cellSizeM);
+        const gx = Math.floor(point.x / stateRef.current.grid.cellSizeM);
+        const gy = Math.floor(point.z / stateRef.current.grid.cellSizeM);
 
         if (event.button === 0 && st.interactionMode === 'DRAW_RECT') {
           if (!st.isDrawingActive) {
@@ -829,7 +837,7 @@ export function SimulationViewport({
           return;
         }
 
-        if (event.button === 0 && st.interactionMode === 'ERASE' && gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
+        if (event.button === 0 && st.interactionMode === 'ERASE' && gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
           const key = getTileKey(gx, gy);
           setGrid((prev) => {
              const updatedTiles = new Map(prev.tiles);
@@ -838,27 +846,27 @@ export function SimulationViewport({
              updatedDetails.delete(key);
              return { ...prev, tiles: updatedTiles, elementDetails: updatedDetails };
           });
-          setSelectedTileKey(null);
+          setSelectedTileKeys(new Set());
           setPopoverPos(null);
           return;
         }
 
-        if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT' && gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
+        if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT' && gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
           const key = getTileKey(gx, gy);
 
           if (st.selectedTileType === 'DOCK_INBOUND' || st.selectedTileType === 'DOCK_OUTBOUND') {
             let inboundCount = 0;
             let outboundCount = 0;
-            st.grid.tiles.forEach((type) => {
+            stateRef.current.grid.tiles.forEach((type: any) => {
               if (type === 'DOCK_INBOUND') inboundCount++;
               if (type === 'DOCK_OUTBOUND') outboundCount++;
             });
 
-            if (st.selectedTileType === 'DOCK_INBOUND' && inboundCount >= 1 && st.grid.tiles.get(key) !== 'DOCK_INBOUND') {
+            if (st.selectedTileType === 'DOCK_INBOUND' && inboundCount >= 1 && stateRef.current.grid.tiles.get(key) !== 'DOCK_INBOUND') {
               showToast('⚠️ На складе уже размещены ворота приемки (максимум 1)');
               return;
             }
-            if (st.selectedTileType === 'DOCK_OUTBOUND' && outboundCount >= 1 && st.grid.tiles.get(key) !== 'DOCK_OUTBOUND') {
+            if (st.selectedTileType === 'DOCK_OUTBOUND' && outboundCount >= 1 && stateRef.current.grid.tiles.get(key) !== 'DOCK_OUTBOUND') {
               showToast('⚠️ На складе уже размещены ворота отгрузки (максимум 1)');
               return;
             }
@@ -870,27 +878,38 @@ export function SimulationViewport({
             return { ...prev, tiles: updatedTiles };
           });
 
-          setSelectedTileKey(null);
+          setSelectedTileKeys(new Set());
           setPopoverPos(null);
           return;
         }
 
-        if (gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
+        if (gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
           const key = getTileKey(gx, gy);
           if (st.interactionMode === 'SELECT') {
-            const tileType = st.grid.tiles.get(key);
+            const tileType = stateRef.current.grid.tiles.get(key);
             // Select RACK, DOCK, CHARGER, OBSTACLE, never place
             if (tileType && tileType !== 'EMPTY_FLOOR') {
-              setSelectedTileKey(key);
-              setPopoverPos({ x: event.clientX, y: event.clientY });
+              if ((stateRef.current as any).selectedSkuChip) {
+                setGrid((prev) => {
+                  const detailsMap = new Map(prev.elementDetails || []);
+                  const existing = detailsMap.get(key) || {};
+                  detailsMap.set(key, { ...existing, skuId: (stateRef.current as any).selectedSkuChip || undefined });
+                  return { ...prev, elementDetails: detailsMap };
+                });
+              }
+              setSelectedTileKeys(new Set([key]));
+              setPopoverPos({
+                x: Math.min(Math.max(16, event.clientX), window.innerWidth - 320 - 16),
+                y: Math.min(Math.max(16, event.clientY), window.innerHeight - 240 - 16)
+              });
             } else {
-              setSelectedTileKey(null);
+              setSelectedTileKeys(new Set());
               setPopoverPos(null);
             }
           }
         }
       } else {
-        setSelectedTileKey(null);
+        setSelectedTileKeys(new Set());
         setPopoverPos(null);
       }
     };
@@ -938,7 +957,7 @@ export function SimulationViewport({
               lastProcessedFrameIndexRef.current = frameIndex;
 
               if (frame0.events && frame0.events.length > 0) {
-                frame0.events.forEach((evt) => {
+                frame0.events.forEach((evt: any) => {
                   switch (evt) {
                     case 'CHARGE_START':
                       audioEngine.playChargeStart();
@@ -1144,7 +1163,7 @@ export function SimulationViewport({
     }
   }, [showGrid, facilityDims, isConstructorMode, grid.cellSizeM]);
 
-  // Re-render Objects in objectsGroupRef dynamically when grid or selectedTileKey changes
+  // Re-render Objects in objectsGroupRef dynamically when grid or selectedTileKeys changes
   useEffect(() => {
     if (!objectsGroupRef.current) return;
 
@@ -1163,14 +1182,14 @@ export function SimulationViewport({
 
     if (!isConstructorMode) return;
 
-    grid.tiles.forEach((type, key) => {
+    grid.tiles.forEach((type: any, key: any) => {
       const [gxStr, gyStr] = key.split('_');
       const gx = parseInt(gxStr, 10);
       const gy = parseInt(gyStr, 10);
       const tileX = (gx + 0.5) * grid.cellSizeM;
       const tileY = (gy + 0.5) * grid.cellSizeM;
 
-      const isSelected = selectedTileKey === key;
+      const isSelected = stateRef.current.selectedTileKeys.has(key);
       const details = grid.elementDetails?.get(key);
       const rotRad = THREE.MathUtils.degToRad(details?.rotationDeg || 0);
 
@@ -1240,7 +1259,7 @@ export function SimulationViewport({
         group.add(dMesh);
       }
     });
-  }, [grid, selectedTileKey, isConstructorMode]);
+  }, [grid, selectedTileKeys, isConstructorMode]);
 
   let selectedRobotFullName: string | null = null;
   if (Array.isArray(fleetConfig)) {
@@ -1313,10 +1332,11 @@ export function SimulationViewport({
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect) {
         let selectedFound = false;
+          const newSelected = new Set<string>();
         // Project 3D positions to 2D screen to find selected items
-        grid.tiles.forEach((type, key) => {
+        grid.tiles.forEach((type: any, key: any) => {
           if (!selectedFound && (type === 'RACK' || type === 'CHARGER' || type === 'OBSTACLE')) {
-            const [gx, gy] = key.split('_').map((s) => parseInt(s, 10));
+            const [gx, gy] = key.split('_').map((s: any) => parseInt(s, 10));
             const worldX = (gx + 0.5) * grid.cellSizeM;
             const worldZ = (gy + 0.5) * grid.cellSizeM;
 
@@ -1327,11 +1347,29 @@ export function SimulationViewport({
             const screenY = (vec.y * -0.5 + 0.5) * rect.height;
 
             if (screenX >= minX && screenX <= maxX && screenY >= minY && screenY <= maxY) {
-              setSelectedTileKey(key);
-              selectedFound = true; // For now just select the first one we find
+              const tileType = stateRef.current.grid.tiles.get(key);
+              if (tileType && tileType !== 'EMPTY_FLOOR') {
+                newSelected.add(key);
+                selectedFound = true;
+              }
             }
           }
         });
+
+        if (selectedFound) {
+          if ((stateRef.current as any).selectedSkuChip && newSelected.size > 0) {
+            setGrid((prev) => {
+              const detailsMap = new Map(prev.elementDetails || []);
+              for (const k of newSelected) {
+                const existing = detailsMap.get(k) || {};
+                detailsMap.set(k, { ...existing, skuId: (stateRef.current as any).selectedSkuChip || undefined });
+              }
+              return { ...prev, elementDetails: detailsMap };
+            });
+          }
+          setSelectedTileKeys(newSelected);
+          setPopoverPos(null);
+        }
       }
     }
   };
@@ -1432,7 +1470,7 @@ export function SimulationViewport({
             snappingEnabled={snappingEnabled}
             onToggleSnapping={() => setSnappingEnabled((prev) => !prev)}
             onResetGrid={handleResetGrid}
-            selectedElementId={selectedTileKey}
+            selectedTileKeys={selectedTileKeys}
             onRotateSelected={handleRotateSelected}
             onDeleteSelected={handleDeleteSelected}
             onOpenSkuModal={() => setIsSkuModalOpen(true)}
@@ -1456,20 +1494,113 @@ export function SimulationViewport({
           className="border-2 border-dashed border-[#D4AF37] bg-[#D4AF37]/20 pointer-events-none z-30"
         />
 
+        {/* Quick SKU Palette on the right edge */}
+        {isConstructorMode && skuList.length > 0 && (
+          <div className="absolute top-16 right-3 flex flex-col gap-1.5 z-20">
+            {skuList.map((sku, index) => {
+              const color = SKU_PALETTE[index % SKU_PALETTE.length];
+              const isActive = selectedSkuChip === sku.id;
+              return (
+                <button
+                  key={sku.id}
+                  onClick={() => setSelectedSkuChip(isActive ? null : sku.id)}
+                  title={sku.name}
+                  className={`w-8 h-8 rounded-none flex items-center justify-center font-bold text-white shadow-md cursor-pointer transition ${
+                    isActive ? 'border-2 border-[#D4AF37] ring-2 ring-[#D4AF37]/30 scale-110' : 'border border-transparent'
+                  }`}
+                  style={{ backgroundColor: color }}
+                >
+                  {sku.name.charAt(0).toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Bulk Inspector Banner */}
+        {isConstructorMode && selectedTileKeys.size > 1 && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-[#FFFFFF] border-2 border-[#D4AF37] p-2 shadow-2xl flex items-center gap-4 z-30 text-xs font-mono">
+            <span className="font-bold text-[#8A6826]">Выбрано: {selectedTileKeys.size} стеллажей</span>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[#4F4F47]">SKU:</span>
+              <select
+                onChange={(e) => {
+                  const val = e.target.value || undefined;
+                  setGrid((prev) => {
+                    const detailsMap = new Map(prev.elementDetails || []);
+                    for (const key of selectedTileKeys) {
+                      const existing = detailsMap.get(key) || {};
+                      detailsMap.set(key, { ...existing, skuId: val || undefined });
+                    }
+                    return { ...prev, elementDetails: detailsMap };
+                  });
+                }}
+                className="bg-[#F4F4F0] border border-[#D4AF37]/50 px-2 py-0.5 outline-none"
+              >
+                <option value="">-- Назначить товар --</option>
+                {skuList.map((sku) => (
+                  <option key={sku.id} value={sku.id}>{sku.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[#4F4F47]">Вместимость:</span>
+              <input
+                type="number"
+                min="1"
+                max="200"
+                defaultValue={12}
+                onBlur={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val) && val > 0) {
+                    setGrid((prev) => {
+                      const detailsMap = new Map(prev.elementDetails || []);
+                      for (const key of selectedTileKeys) {
+                        const existing = detailsMap.get(key) || {};
+                        detailsMap.set(key, { ...existing, slotsPerRack: val });
+                      }
+                      return { ...prev, elementDetails: detailsMap };
+                    });
+                  }
+                }}
+                className="w-16 bg-[#F4F4F0] border border-[#D4AF37]/50 px-2 py-0.5 outline-none"
+              />
+              <span className="text-[#4F4F47]">паллет</span>
+            </div>
+
+            <button
+              onClick={handleDeleteSelected}
+              className="px-2 py-0.5 bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 transition"
+            >
+              Удалить (Del)
+            </button>
+          </div>
+        )}
+
         {/* Rack Inspection Popover */}
-        {selectedTileKey && (
+        {selectedTileKeys.size === 1 && (
           <RackInspectionPopover
             isOpen={true}
             onClose={() => {
-              setSelectedTileKey(null);
+              setSelectedTileKeys(new Set());
               setPopoverPos(null);
             }}
-            rackKey={selectedTileKey}
-            gridX={parseInt(selectedTileKey.split('_')[0], 10)}
-            gridY={parseInt(selectedTileKey.split('_')[1], 10)}
-            currentSkuId={grid.elementDetails?.get(selectedTileKey)?.skuId}
-            slotsPerRack={grid.elementDetails?.get(selectedTileKey)?.slotsPerRack ?? 12}
+            rackKey={Array.from(selectedTileKeys)[0]}
+            gridX={parseInt(Array.from(selectedTileKeys)[0].split('_')[0], 10)}
+            gridY={parseInt(Array.from(selectedTileKeys)[0].split('_')[1], 10)}
+            currentSkuId={grid.elementDetails?.get(Array.from(selectedTileKeys)[0])?.skuId}
+            slotsPerRack={grid.elementDetails?.get(Array.from(selectedTileKeys)[0])?.slotsPerRack ?? 12}
             skuList={skuList}
+            onChangeCapacity={(key, capacity) => {
+              setGrid((prev) => {
+                const detailsMap = new Map(prev.elementDetails || []);
+                const existing = detailsMap.get(key) || {};
+                detailsMap.set(key, { ...existing, slotsPerRack: capacity });
+                return { ...prev, elementDetails: detailsMap };
+              });
+            }}
             onAssignSku={(key, skuId) => {
               setGrid((prev) => {
                 const detailsMap = new Map(prev.elementDetails || []);

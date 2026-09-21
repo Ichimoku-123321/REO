@@ -22,6 +22,7 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
   if (!isOpen) return null;
 
   const isOverflow = schedule.inboundBatchVolume > totalPalletCapacity;
+  const isAccumulating = schedule.inboundBatchVolume > 0 && schedule.outboundBatchVolume === 0;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 font-mono text-xs">
@@ -196,8 +197,17 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
           </div>
         </div>
 
+
         {/* Overflow Alert Banner */}
-        {isOverflow ? (
+        {isAccumulating ? (
+          <div className="p-3 bg-red-100 border border-red-400 text-red-900 font-bold mb-4 flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="uppercase text-xs tracking-tight">⚠️ Внимание: отсутствует исходящий поток (Q_out = 0). Склад будет непрерывно заполняться.</div>
+            </div>
+          </div>
+        ) : isOverflow ? (
+
           <div className="p-3 bg-red-100 border border-red-400 text-red-900 font-bold mb-4 flex items-start gap-2">
             <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
             <div>

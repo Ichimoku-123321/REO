@@ -412,6 +412,9 @@ export function SimulationViewport({
           setInteractionMode('SELECT');
           setIsDrawingActive(false);
           setDrawingPoints([]);
+          if (ghostGroupRef.current) {
+            ghostGroupRef.current.visible = false;
+          }
         }
       } else if (e.key === 'g' || e.key === 'G' || e.key === 'п' || e.key === 'П') {
         setShowGrid((prev) => !prev);
@@ -530,19 +533,7 @@ export function SimulationViewport({
     dirLight.shadow.mapSize.height = 1024;
     scene.add(dirLight);
 
-    // 6. CAD Floor Plane
-    const floorGeo = new THREE.PlaneGeometry(facilityDims.widthM * 2, facilityDims.lengthM * 2);
-    const floorMat = new THREE.MeshStandardMaterial({
-      color: 0xf4f4f0,
-      roughness: 0.9,
-      metalness: 0.05,
-    });
-    const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-    floorMesh.rotation.x = -Math.PI / 2;
-    floorMesh.position.set(centerX, -0.01, centerZ);
-    floorMesh.receiveShadow = true;
-    scene.add(floorMesh);
-    floorMeshRef.current = floorMesh;
+    // 6. CAD Floor Plane (Removed as requested)
 
     // 7. Groups for Objects, Agents, Ghost, and Guides
     const objectsGroup = new THREE.Group();
@@ -651,6 +642,37 @@ export function SimulationViewport({
 
           ghostGroup.position.set(snappedX, 1.0, snappedZ);
           ghostGroup.visible = true;
+
+          if (event.buttons === 1 && st.selectedTileType === 'OBSTACLE' && gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
+            const key = getTileKey(gx, gy);
+            setGrid((prev) => {
+              if (prev.tiles.get(key) !== 'OBSTACLE') {
+                const updatedTiles = new Map(prev.tiles);
+                updatedTiles.set(key, 'OBSTACLE');
+                return { ...prev, tiles: updatedTiles };
+              }
+              return prev;
+            });
+          }
+        } else if (st.interactionMode === 'ERASE') {
+          ghostGroup.visible = false;
+          if (event.buttons === 1) {
+            const gx = Math.floor(point.x / st.grid.cellSizeM);
+            const gy = Math.floor(point.z / st.grid.cellSizeM);
+            if (gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
+              const key = getTileKey(gx, gy);
+              setGrid((prev) => {
+                if (prev.tiles.has(key) && prev.tiles.get(key) !== 'EMPTY_FLOOR') {
+                  const updatedTiles = new Map(prev.tiles);
+                  updatedTiles.set(key, 'EMPTY_FLOOR');
+                  const updatedDetails = new Map(prev.elementDetails || []);
+                  updatedDetails.delete(key);
+                  return { ...prev, tiles: updatedTiles, elementDetails: updatedDetails };
+                }
+                return prev;
+              });
+            }
+          }
         } else {
           ghostGroup.visible = false;
         }
@@ -699,7 +721,9 @@ export function SimulationViewport({
         setInteractionMode('SELECT');
         setIsDrawingActive(false);
         setDrawingPoints([]);
-        ghostGroup.visible = false;
+        if (ghostGroupRef.current) {
+          ghostGroupRef.current.visible = false;
+        }
         return;
       }
 
@@ -805,8 +829,41 @@ export function SimulationViewport({
           return;
         }
 
+        if (event.button === 0 && st.interactionMode === 'ERASE' && gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
+          const key = getTileKey(gx, gy);
+          setGrid((prev) => {
+             const updatedTiles = new Map(prev.tiles);
+             updatedTiles.set(key, 'EMPTY_FLOOR');
+             const updatedDetails = new Map(prev.elementDetails || []);
+             updatedDetails.delete(key);
+             return { ...prev, tiles: updatedTiles, elementDetails: updatedDetails };
+          });
+          setSelectedTileKey(null);
+          setPopoverPos(null);
+          return;
+        }
+
         if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT' && gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
           const key = getTileKey(gx, gy);
+
+          if (st.selectedTileType === 'DOCK_INBOUND' || st.selectedTileType === 'DOCK_OUTBOUND') {
+            let inboundCount = 0;
+            let outboundCount = 0;
+            st.grid.tiles.forEach((type) => {
+              if (type === 'DOCK_INBOUND') inboundCount++;
+              if (type === 'DOCK_OUTBOUND') outboundCount++;
+            });
+
+            if (st.selectedTileType === 'DOCK_INBOUND' && inboundCount >= 1 && st.grid.tiles.get(key) !== 'DOCK_INBOUND') {
+              showToast('⚠️ На складе уже размещены ворота приемки (максимум 1)');
+              return;
+            }
+            if (st.selectedTileType === 'DOCK_OUTBOUND' && outboundCount >= 1 && st.grid.tiles.get(key) !== 'DOCK_OUTBOUND') {
+              showToast('⚠️ На складе уже размещены ворота отгрузки (максимум 1)');
+              return;
+            }
+          }
+
           setGrid((prev) => {
             const updatedTiles = new Map(prev.tiles);
             updatedTiles.set(key, st.selectedTileType);
@@ -820,12 +877,16 @@ export function SimulationViewport({
 
         if (gx >= 0 && gx < st.grid.cols && gy >= 0 && gy < st.grid.rows) {
           const key = getTileKey(gx, gy);
-          if (st.interactionMode === 'SELECT' && st.grid.tiles.get(key) === 'RACK') {
-            setSelectedTileKey(key);
-            setPopoverPos({ x: event.clientX, y: event.clientY });
-          } else {
-            setSelectedTileKey(null);
-            setPopoverPos(null);
+          if (st.interactionMode === 'SELECT') {
+            const tileType = st.grid.tiles.get(key);
+            // Select RACK, DOCK, CHARGER, OBSTACLE, never place
+            if (tileType && tileType !== 'EMPTY_FLOOR') {
+              setSelectedTileKey(key);
+              setPopoverPos({ x: event.clientX, y: event.clientY });
+            } else {
+              setSelectedTileKey(null);
+              setPopoverPos(null);
+            }
           }
         }
       } else {
@@ -1160,7 +1221,7 @@ export function SimulationViewport({
       } else if (type === 'DOCK_INBOUND') {
         const dGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 0.1, grid.cellSizeM * 0.9);
         const dMat = new THREE.MeshStandardMaterial({
-          color: isSelected ? 0xd4af37 : 0x3b82f6,
+          color: isSelected ? 0xd4af37 : 0x10b981,
           transparent: true,
           opacity: 0.7,
         });
@@ -1170,7 +1231,7 @@ export function SimulationViewport({
       } else if (type === 'DOCK_OUTBOUND') {
         const dGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 0.1, grid.cellSizeM * 0.9);
         const dMat = new THREE.MeshStandardMaterial({
-          color: isSelected ? 0xd4af37 : 0x0284c7,
+          color: isSelected ? 0xd4af37 : 0xf59e0b,
           transparent: true,
           opacity: 0.7,
         });

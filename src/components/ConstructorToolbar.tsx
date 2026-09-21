@@ -24,7 +24,8 @@ export type CtorInteractionMode =
   | 'SELECT'
   | 'DRAW_RECT'
   | 'DRAW_POLY'
-  | 'PLACE_ELEMENT';
+  | 'PLACE_ELEMENT'
+  | 'ERASE';
 
 interface ConstructorToolbarProps {
   interactionMode: CtorInteractionMode;
@@ -175,7 +176,11 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    onChangeInteractionMode('DRAW_RECT');
+                    if (interactionMode === 'DRAW_RECT') {
+                      onChangeInteractionMode('SELECT');
+                    } else {
+                      onChangeInteractionMode('DRAW_RECT');
+                    }
                     setIsFloorDropdownOpen(false);
                   }}
                   className={`w-full text-left px-3 py-1.5 text-[11px] font-bold uppercase flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
@@ -188,7 +193,11 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    onChangeInteractionMode('DRAW_POLY');
+                    if (interactionMode === 'DRAW_POLY') {
+                      onChangeInteractionMode('SELECT');
+                    } else {
+                      onChangeInteractionMode('DRAW_POLY');
+                    }
                     setIsFloorDropdownOpen(false);
                   }}
                   className={`w-full text-left px-3 py-1.5 text-[11px] font-bold uppercase flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
@@ -214,8 +223,12 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                 type="button"
                 onClick={() => {
                   setIsFloorDropdownOpen(false);
+                  if (interactionMode === 'PLACE_ELEMENT' && selectedTileType === tool.type) {
+                  onChangeInteractionMode('SELECT');
+                } else {
                   onSelectTileType(tool.type);
                   onChangeInteractionMode('PLACE_ELEMENT');
+                }
                 }}
                 className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-bold transition rounded-none cursor-pointer border ${
                   isSelected
@@ -230,6 +243,31 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
             );
           })}
         </div>
+          <div className="h-4 w-px bg-[#D4AF37]/30 mx-0.5" />
+
+          {/* 4. Eraser Tool */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsFloorDropdownOpen(false);
+              if (interactionMode === 'ERASE') {
+                onChangeInteractionMode('SELECT');
+              } else {
+                onChangeInteractionMode('ERASE');
+              }
+            }}
+            className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-bold uppercase transition rounded-none cursor-pointer border ${
+              interactionMode === 'ERASE'
+                ? 'bg-[#1A1A1A] text-[#F9F9F6] border-[#1A1A1A]'
+                : 'bg-[#F9F9F6] text-[#1A1A1A] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
+            }`}
+            title="Стереть элемент [Ластик]"
+          >
+            <Eraser className="w-3.5 h-3.5" />
+            <span>[ 🧹 Ластик ]</span>
+          </button>
+
+
 
         {/* Right Section: Toggles, Hotkeys & Modals */}
         <div className="flex flex-wrap items-center gap-1">

@@ -1,0 +1,69 @@
+--- src/components/SimulationViewport.tsx
++++ src/components/SimulationViewport.tsx
+@@ -244,6 +244,8 @@
+   const ghostGroupRef = useRef<THREE.Group | null>(null);
+   const guideLineRef = useRef<THREE.LineSegments | null>(null);
+   const guideGeoRef = useRef<THREE.BufferGeometry | null>(null);
++  const drawingLineRef = useRef<THREE.Line | null>(null);
++  const drawingGeoRef = useRef<THREE.BufferGeometry | null>(null);
+   const agentMeshMapRef = useRef<Map<string, AgentMeshGroup>>(new Map());
+
+   // Ref to hold current state for interaction listeners
+@@ -570,6 +572,13 @@
+     scene.add(guideLine);
+     guideLineRef.current = guideLine;
+
++    // Drawing Contours Preview Line
++    const drawingGeo = new THREE.BufferGeometry();
++    drawingGeoRef.current = drawingGeo;
++    const drawingLine = new THREE.Line(drawingGeo, new THREE.LineBasicMaterial({ color: 0x8a6826, linewidth: 2 }));
++    scene.add(drawingLine);
++    drawingLineRef.current = drawingLine;
++
+     // Pointer Move Handler for Hover Preview and Snapping Guides
+     const handlePointerMove = (event: MouseEvent) => {
+       const st = stateRef.current;
+@@ -628,6 +637,32 @@
+             }
+           }
+         }
++
++        // Render Active Drawing Lines
++        if (st.isDrawingActive && st.drawingPoints.length > 0 && drawingGeoRef.current && drawingLineRef.current) {
++          const pts: THREE.Vector3[] = [];
++          for (const p of st.drawingPoints) {
++            pts.push(new THREE.Vector3(p.x, 0.1, p.z));
++          }
++
++          if (st.interactionMode === 'DRAW_RECT') {
++            // Draw dynamic rectangle
++            const startPt = st.drawingPoints[0];
++            pts.push(new THREE.Vector3(point.x, 0.1, startPt.z));
++            pts.push(new THREE.Vector3(point.x, 0.1, point.z));
++            pts.push(new THREE.Vector3(startPt.x, 0.1, point.z));
++            pts.push(new THREE.Vector3(startPt.x, 0.1, startPt.z)); // close loop
++          } else if (st.interactionMode === 'DRAW_POLY') {
++            // Draw rubber band to current mouse pos
++            pts.push(new THREE.Vector3(point.x, 0.1, point.z));
++          }
++
++          drawingGeoRef.current.setFromPoints(pts);
++          drawingLineRef.current.visible = true;
++        } else if (drawingLineRef.current) {
++          drawingLineRef.current.visible = false;
++        }
++
+       }
+     };
+
+@@ -835,6 +870,10 @@
+       if (st.interactionMode === 'SELECT' && ghostGroupRef.current) {
+         ghostGroupRef.current.clear();
+       }
++
++      if (!st.isDrawingActive && drawingLineRef.current) {
++        drawingLineRef.current.visible = false;
++      }
+
+       renderer.render(scene, camera);
+     };

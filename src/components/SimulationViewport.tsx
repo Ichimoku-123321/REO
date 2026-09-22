@@ -106,7 +106,7 @@ export function SimulationViewport({
 
   // Selected Object & Popover State
   const [selectedTileKeys, setSelectedTileKeys] = useState<Set<string>>(new Set());
-  const [selectedSkuChip, setSelectedSkuChip] = useState<string | null>(null);
+  const [selectedSkuChip, setSelectedSkuChip] = useState<string | null>('CLEAR_SKU');
   const SKU_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
   const [inspectorWindowPos, setInspectorWindowPos] = useState<{ x: number; y: number } | null>(null);
   const [targetScreenPos, setTargetScreenPos] = useState<{ x: number; y: number } | null>(null);
@@ -830,6 +830,7 @@ export function SimulationViewport({
     const handleCanvasPointerDown = (event: MouseEvent) => {
       const st = stateRef.current;
       if (!st.isConstructorMode) return;
+      if (event.target !== domElem) return;
 
       if (event.button === 0) {
         isMouseDownRef.current = true;
@@ -841,6 +842,7 @@ export function SimulationViewport({
     const handleCanvasPointerUp = (event: MouseEvent) => {
       const st = stateRef.current;
       if (!st.isConstructorMode) return;
+      if (event.target !== domElem) return;
 
       if (event.button === 0) {
         isMouseDownRef.current = false;
@@ -1309,27 +1311,62 @@ export function SimulationViewport({
     }
   }, [isConstructorMode]);
 
-  // Update Grid Helper dynamically without reinitializing camera
+  // Update Grid Helper dynamically (strictly for active drawn floor tiles)
   useEffect(() => {
     if (!sceneRef.current) return;
 
     if (gridHelperRef.current) {
       sceneRef.current.remove(gridHelperRef.current);
-      gridHelperRef.current.dispose();
+      if ((gridHelperRef.current as any).geometry) {
+        (gridHelperRef.current as any).geometry.dispose();
+      }
       gridHelperRef.current = null;
     }
 
-    if (showGrid) {
-      const size = Math.max(facilityDims.widthM, facilityDims.lengthM);
-      const divisions = Math.max(10, Math.floor(size / (isConstructorMode ? grid.cellSizeM : 5)));
-      const gh = new THREE.GridHelper(size, divisions, 0xd4af37, 0xc0c0b8);
-      const centerX = facilityDims.widthM / 2;
-      const centerZ = facilityDims.lengthM / 2;
-      gh.position.set(centerX, 0, centerZ);
-      sceneRef.current.add(gh);
-      gridHelperRef.current = gh;
+    if (showGrid && grid.tiles.size > 0) {
+      const points: THREE.Vector3[] = [];
+      const cellSize = grid.cellSizeM;
+      const addedSegments = new Set<string>();
+
+      const addSegment = (x1: number, z1: number, x2: number, z2: number) => {
+        const segKey = x1 < x2 || (x1 === x2 && z1 < z2) ? `${x1},${z1}_${x2},${z2}` : `${x2},${z2}_${x1},${z1}`;
+        if (!addedSegments.has(segKey)) {
+          addedSegments.add(segKey);
+          points.push(new THREE.Vector3(x1, 0.01, z1));
+          points.push(new THREE.Vector3(x2, 0.01, z2));
+        }
+      };
+
+      grid.tiles.forEach((_, key) => {
+        const [gxStr, gyStr] = key.split('_');
+        const gx = parseInt(gxStr, 10);
+        const gy = parseInt(gyStr, 10);
+        if (isNaN(gx) || isNaN(gy)) return;
+
+        const x0 = gx * cellSize;
+        const x1 = (gx + 1) * cellSize;
+        const z0 = gy * cellSize;
+        const z1 = (gy + 1) * cellSize;
+
+        addSegment(x0, z0, x1, z0);
+        addSegment(x1, z0, x1, z1);
+        addSegment(x1, z1, x0, z1);
+        addSegment(x0, z1, x0, z0);
+      });
+
+      if (points.length > 0) {
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+        const lineMat = new THREE.LineBasicMaterial({
+          color: 0xd4af37,
+          opacity: 0.6,
+          transparent: true,
+        });
+        const lineSegments = new THREE.LineSegments(lineGeo, lineMat);
+        sceneRef.current.add(lineSegments as unknown as THREE.GridHelper);
+        gridHelperRef.current = lineSegments as unknown as THREE.GridHelper;
+      }
     }
-  }, [showGrid, facilityDims, isConstructorMode, grid.cellSizeM]);
+  }, [showGrid, grid.tiles, grid.cellSizeM]);
 
   // Re-render Objects in objectsGroupRef dynamically when grid or selectedTileKeys changes
   useEffect(() => {
@@ -1445,6 +1482,7 @@ export function SimulationViewport({
   // Handle Box Marquee Dragging over 3D Viewport when interactionMode === 'SELECT'
   const handleMarqueeMouseDown = (e: React.MouseEvent) => {
     if (interactionMode !== 'SELECT' || e.button !== 0) return;
+    if (e.target !== containerRef.current && (e.target as HTMLElement).tagName !== 'CANVAS') return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -1656,6 +1694,11 @@ export function SimulationViewport({
             outboundDocksCount={gridElementCounts.outboundDocks}
             calculatedAreaSqm={facility.totalAreaSqm}
             ceilingHeightM={facility.ceilingHeightM ?? 8.0}
+            onChangeCeilingHeight={(heightM) => {
+              if (onChangeFacility) {
+                onChangeFacility({ ...facility, ceilingHeightM: heightM });
+              }
+            }}
           />
         )}
 
@@ -1933,7 +1976,23 @@ export function SimulationViewport({
         onClose={() => setIsSkuModalOpen(false)}
         skuList={skuList}
         onAddSku={(newSku) => setSkuList((prev) => [...prev, newSku])}
-        onDeleteSku={(id) => setSkuList((prev) => prev.filter((s) => s.id !== id))}
+        onDeleteSku={(id) => {
+          setSkuList((prev) => prev.filter((s) => s.id !== id));
+          setGrid((prev) => {
+            const detailsMap = new Map(prev.elementDetails || []);
+            let changed = false;
+            detailsMap.forEach((det, key) => {
+              if (det.skuId === id) {
+                detailsMap.set(key, { ...det, skuId: undefined });
+                changed = true;
+              }
+            });
+            return changed ? { ...prev, elementDetails: detailsMap } : prev;
+          });
+          if (selectedSkuChip === id) {
+            setSelectedSkuChip('CLEAR_SKU');
+          }
+        }}
       />
 
       {/* Supply Schedule Panel Modal */}

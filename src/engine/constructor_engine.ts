@@ -161,13 +161,7 @@ export function createInitialConstructorGrid(
   const rows = Math.max(2, Math.floor(lengthM / cellSizeM));
   const tiles = new Map<string, ConstructorTileType>();
 
-  for (let x = 0; x < cols; x++) {
-    for (let y = 0; y < rows; y++) {
-      const key = getTileKey(x, y);
-      tiles.set(key, 'EMPTY_FLOOR');
-    }
-  }
-
+  // Grid starts clean and empty. Tiles are added when user draws floor.
   return { cols, rows, cellSizeM, tiles };
 }
 

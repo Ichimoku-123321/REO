@@ -1,5 +1,6 @@
 import type { FacilityRequirements } from '../types/facility.js';
 import type { FacilityTopology, FacilityZone, GraphEdge, GraphNode, NodeType } from '../types/topology.js';
+import { buildElementsMap, StorageElement } from './cad_entities.js';
 
 export type ConstructorTileType =
   | 'EMPTY_FLOOR'
@@ -116,12 +117,11 @@ export function calculateWarehouseCapacity(grid: ConstructorGrid): {
   let totalRacks = 0;
   let totalPalletCapacity = 0;
 
-  grid.tiles.forEach((type, key) => {
-    if (type === 'RACK') {
+  const elementsMap = buildElementsMap(grid);
+  elementsMap.forEach((el) => {
+    if (el instanceof StorageElement) {
       totalRacks++;
-      const details = grid.elementDetails?.get(key);
-      const slots = details?.slotsPerRack ?? 12;
-      totalPalletCapacity += slots;
+      totalPalletCapacity += el.slotsPerRack;
     }
   });
 

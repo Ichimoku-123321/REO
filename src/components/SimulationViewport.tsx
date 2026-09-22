@@ -109,6 +109,7 @@ export function SimulationViewport({
   const SKU_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
   const [popoverPos, setPopoverPos] = useState<{ x: number; y: number } | null>(null);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const isMouseDownRef = useRef<boolean>(false);
 
   // SKU & Supply Schedule State
   const [skuList, setSkuList] = useState<SkuItem[]>(DEFAULT_SKU_LIST);
@@ -651,7 +652,7 @@ export function SimulationViewport({
           ghostGroup.position.set(snappedX, 1.0, snappedZ);
           ghostGroup.visible = true;
 
-          if (event.buttons === 1 && st.selectedTileType === 'OBSTACLE' && gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
+          if (isMouseDownRef.current && st.selectedTileType === 'OBSTACLE' && gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
             const key = getTileKey(gx, gy);
             setGrid((prev) => {
               if (prev.tiles.get(key) !== 'OBSTACLE') {
@@ -664,7 +665,7 @@ export function SimulationViewport({
           }
         } else if (st.interactionMode === 'ERASE') {
           ghostGroup.visible = false;
-          if (event.buttons === 1) {
+          if (isMouseDownRef.current) {
             const gx = Math.floor(point.x / stateRef.current.grid.cellSizeM);
             const gy = Math.floor(point.z / stateRef.current.grid.cellSizeM);
             if (gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
@@ -719,6 +720,9 @@ export function SimulationViewport({
     };
 
     const handleCanvasPointerDown = (event: MouseEvent) => {
+      if (event.button === 0) {
+        isMouseDownRef.current = true;
+      }
       const st = stateRef.current;
       if (!st.isConstructorMode) return;
 
@@ -898,10 +902,14 @@ export function SimulationViewport({
                 });
               }
               setSelectedTileKeys(new Set([key]));
-              setPopoverPos({
-                x: Math.min(Math.max(16, event.clientX), window.innerWidth - 320 - 16),
-                y: Math.min(Math.max(16, event.clientY), window.innerHeight - 240 - 16)
-              });
+              if (rect) {
+                setPopoverPos({
+                  x: Math.max(16, Math.min(event.clientX - rect.left, rect.width - 280 - 16)),
+                  y: Math.max(16, Math.min(event.clientY - rect.top, rect.height - 260 - 16))
+                });
+              } else {
+                setPopoverPos({ x: event.clientX, y: event.clientY });
+              }
             } else {
               setSelectedTileKeys(new Set());
               setPopoverPos(null);
@@ -1194,9 +1202,27 @@ export function SimulationViewport({
       const rotRad = THREE.MathUtils.degToRad(details?.rotationDeg || 0);
 
       if (type === 'RACK') {
+        let rackColor = 0x334155;
+        let emissiveColor = 0x000000;
+        let emissiveIntensity = 0;
+
+        if (isSelected) {
+          rackColor = 0xd4af37;
+          emissiveColor = 0xd4af37;
+          emissiveIntensity = 0.2;
+        } else if (details?.skuId) {
+          const skuIdx = skuList.findIndex((s: SkuItem) => s.id === details.skuId);
+          if (skuIdx >= 0) {
+            const hexStr = SKU_PALETTE[skuIdx % SKU_PALETTE.length].replace('#', '0x');
+            rackColor = parseInt(hexStr, 16);
+          }
+        }
+
         const rackGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.85, 2.2, grid.cellSizeM * 0.85);
         const rackMat = new THREE.MeshStandardMaterial({
-          color: isSelected ? 0xd4af37 : details?.skuId ? 0x0284c7 : 0x334155,
+          color: rackColor,
+          emissive: emissiveColor,
+          emissiveIntensity: emissiveIntensity,
           roughness: 0.4,
           metalness: 0.3,
         });
@@ -1496,21 +1522,29 @@ export function SimulationViewport({
 
         {/* Quick SKU Palette on the right edge */}
         {isConstructorMode && skuList.length > 0 && (
-          <div className="absolute top-16 right-3 flex flex-col gap-1.5 z-20">
-            {skuList.map((sku, index) => {
-              const color = SKU_PALETTE[index % SKU_PALETTE.length];
-              const isActive = selectedSkuChip === sku.id;
+          <div className="absolute right-3 top-20 z-20 flex flex-col gap-1.5 p-2 bg-[#FFFFFF]/95 border border-[#D4AF37]/40 shadow-lg rounded-none font-mono">
+            <div className="text-[10px] uppercase font-bold text-[#8A6826] tracking-wider pb-1 border-b border-[#D4AF37]/20">
+              Товары (SKU)
+            </div>
+            {skuList.map((sku, idx) => {
+              const color = SKU_PALETTE[idx % SKU_PALETTE.length];
+              const isSelected = selectedSkuChip === sku.id;
               return (
                 <button
                   key={sku.id}
-                  onClick={() => setSelectedSkuChip(isActive ? null : sku.id)}
-                  title={sku.name}
-                  className={`w-8 h-8 rounded-none flex items-center justify-center font-bold text-white shadow-md cursor-pointer transition ${
-                    isActive ? 'border-2 border-[#D4AF37] ring-2 ring-[#D4AF37]/30 scale-110' : 'border border-transparent'
+                  type="button"
+                  title={`${sku.name} (${sku.weightPerUnitKg} кг) — Кликните для назначения`}
+                  onClick={() => setSelectedSkuChip(isSelected ? null : sku.id)}
+                  className={`group relative w-8 h-8 flex items-center justify-center font-bold text-xs text-white transition rounded-none cursor-pointer border ${
+                    isSelected ? 'ring-2 ring-[#D4AF37] border-white scale-105' : 'border-black/20 hover:scale-105'
                   }`}
                   style={{ backgroundColor: color }}
                 >
                   {sku.name.charAt(0).toUpperCase()}
+                  {/* Tooltip on hover */}
+                  <span className="absolute right-10 hidden group-hover:block bg-[#1A1A1A] text-[#F9F9F6] text-[11px] px-2 py-1 whitespace-nowrap shadow-md pointer-events-none z-30">
+                    {sku.name} ({sku.weightPerUnitKg} кг)
+                  </span>
                 </button>
               );
             })}

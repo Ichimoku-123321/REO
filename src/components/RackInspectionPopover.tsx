@@ -17,7 +17,11 @@ interface RackInspectionPopoverProps {
   screenPos?: { x: number; y: number };
 }
 
-export const RackInspectionPopover: React.FC<RackInspectionPopoverProps> = ({
+interface RackInspectionPopoverPropsExtended extends RackInspectionPopoverProps {
+  onStartDrag?: (e: React.PointerEvent) => void;
+}
+
+export const RackInspectionPopover: React.FC<RackInspectionPopoverPropsExtended> = ({
   isOpen,
   onClose,
   rackKey,
@@ -30,32 +34,39 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverProps> = ({
   onChangeCapacity,
   onDeleteRack,
   screenPos,
+  onStartDrag,
 }) => {
   if (!isOpen) return null;
 
   const currentSku = skuList.find((s) => s.id === currentSkuId);
 
-  const popoverW = 280;
-  const popoverH = 260;
-  const style: React.CSSProperties = screenPos
-    ? {
-        position: 'absolute',
-        left: `${Math.max(16, Math.min(screenPos.x, window.innerWidth - popoverW - 16))}px`,
-        top: `${Math.max(16, Math.min(screenPos.y, window.innerHeight - popoverH - 16))}px`,
-      }
-    : {
-        position: 'absolute',
-        top: '80px',
-        left: '20px',
-      };
+  const popoverW = 288;
+  const popoverH = 280;
+
+  // Clamp screenPos so that the window never leaves the viewport by even 1 pixel
+  const posX = screenPos
+    ? Math.max(0, Math.min(screenPos.x, window.innerWidth - popoverW))
+    : Math.max(0, (window.innerWidth - popoverW) / 2);
+  const posY = screenPos
+    ? Math.max(0, Math.min(screenPos.y, window.innerHeight - popoverH))
+    : Math.max(0, (window.innerHeight - popoverH) / 2);
+
+  const style: React.CSSProperties = {
+    position: 'fixed',
+    left: `${posX}px`,
+    top: `${posY}px`,
+  };
 
   return (
     <div
       style={style}
       className="z-30 w-72 bg-[#FFFFFF] border-2 border-[#D4AF37] p-3.5 shadow-2xl font-mono text-xs text-[#1A1A1A] rounded-none pointer-events-auto"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between pb-2 border-b border-[#D4AF37]/40 mb-2.5">
+      {/* Header - Drag Handle */}
+      <div
+        onPointerDown={onStartDrag}
+        className="flex items-center justify-between pb-2 border-b border-[#D4AF37]/40 mb-2.5 cursor-grab active:cursor-grabbing select-none bg-[#F9F9F6] -mx-3.5 -mt-3.5 p-2.5 mb-2.5 border-b border-[#D4AF37]/30"
+      >
         <div className="flex items-center gap-1.5 font-bold uppercase text-[11px] text-[#8A6826]">
           <Boxes className="w-4 h-4 text-[#D4AF37]" />
           <span>Стеллаж ({gridX}, {gridY})</span>
@@ -63,7 +74,8 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="p-0.5 hover:bg-[#F4F4F0] text-[#4F4F47] hover:text-[#1A1A1A] transition rounded-none"
+          onPointerDown={(e) => e.stopPropagation()}
+          className="p-0.5 hover:bg-[#F4F4F0] text-[#4F4F47] hover:text-[#1A1A1A] transition rounded-none cursor-pointer"
         >
           <X className="w-3.5 h-3.5" />
         </button>

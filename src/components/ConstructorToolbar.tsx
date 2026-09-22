@@ -18,6 +18,7 @@ import {
   Trash2,
   MousePointer,
   ChevronDown,
+  X,
 } from 'lucide-react';
 
 export type CtorInteractionMode =
@@ -137,11 +138,28 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
 
         {/* Left Section: Single Row Tools */}
         <div className="flex flex-wrap items-center gap-1">
+          {/* 0. Square Reset Button [ ✕ ] at the very start of the list */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsFloorDropdownOpen(false);
+              setIsSkuDropdownOpen(false);
+              onChangeInteractionMode('SELECT');
+            }}
+            className="p-1 px-2 text-[11px] font-bold bg-[#F9F9F6] hover:bg-[#EAEAE6] text-[#4F4F47] border border-[#D4AF37]/30 rounded-none cursor-pointer flex items-center justify-center"
+            title="Сбросить выбранный инструмент в режим [ ↖ Выбор ]"
+          >
+            <X className="w-3.5 h-3.5 text-[#1A1A1A]" />
+          </button>
+
+          <div className="h-4 w-px bg-[#D4AF37]/30 mx-0.5" />
+
           {/* 1. Select Tool (2-in-1: Click object -> select, Drag empty floor -> marquee box) */}
           <button
             type="button"
             onClick={() => {
               setIsFloorDropdownOpen(false);
+              setIsSkuDropdownOpen(false);
               onChangeInteractionMode('SELECT');
             }}
             className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase transition rounded-none cursor-pointer border ${
@@ -278,7 +296,7 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                 setIsSkuDropdownOpen((prev) => !prev);
               }}
               className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase transition rounded-none cursor-pointer border ${
-                selectedSkuChip !== null
+                selectedSkuChip && selectedSkuChip !== 'CLEAR_SKU'
                   ? 'bg-[#1A1A1A] text-[#F9F9F6] border-[#1A1A1A]'
                   : 'bg-[#F9F9F6] text-[#1A1A1A] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
               }`}
@@ -286,11 +304,9 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
             >
               <Package className="w-3.5 h-3.5 text-[#D4AF37]" />
               <span>
-                {selectedSkuChip === 'CLEAR_SKU'
-                  ? '[ 🧹 Снятие товара ]'
-                  : selectedSkuChip
+                {selectedSkuChip && selectedSkuChip !== 'CLEAR_SKU'
                   ? `[ 📦 Товар: ${skuList.find((s) => s.id === selectedSkuChip)?.name || selectedSkuChip} ]`
-                  : '[ 📦 Товар не выбран ]'}
+                  : '[ 🧹 Снятие товара ]'}
               </span>
               <ChevronDown className="w-3 h-3 text-[#D4AF37]" />
             </button>
@@ -300,25 +316,13 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    onSelectSkuChip(null);
-                    setIsSkuDropdownOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-1.5 text-[11px] font-bold uppercase flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
-                    selectedSkuChip === null ? 'bg-[#D4AF37]/10 text-[#8A6826]' : 'text-[#1A1A1A]'
-                  }`}
-                >
-                  <span className="w-3 h-3 rounded-full border border-gray-400 bg-gray-200 inline-block shrink-0" />
-                  <span>Товар не выбран</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
                     onSelectSkuChip('CLEAR_SKU');
                     setIsSkuDropdownOpen(false);
                   }}
                   className={`w-full text-left px-3 py-1.5 text-[11px] font-bold uppercase flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
-                    selectedSkuChip === 'CLEAR_SKU' ? 'bg-[#D4AF37]/10 text-[#8A6826]' : 'text-[#1A1A1A]'
+                    selectedSkuChip === null || selectedSkuChip === 'CLEAR_SKU'
+                      ? 'bg-[#D4AF37]/10 text-[#8A6826]'
+                      : 'text-[#1A1A1A]'
                   }`}
                 >
                   <Eraser className="w-3.5 h-3.5 text-red-600 shrink-0" />

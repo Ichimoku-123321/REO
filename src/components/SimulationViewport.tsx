@@ -1445,6 +1445,7 @@ export function SimulationViewport({
   // Handle Box Marquee Dragging over 3D Viewport when interactionMode === 'SELECT'
   const handleMarqueeMouseDown = (e: React.MouseEvent) => {
     if (interactionMode !== 'SELECT' || e.button !== 0) return;
+    if ((e.target as HTMLElement)?.tagName !== 'CANVAS') return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -1933,7 +1934,24 @@ export function SimulationViewport({
         onClose={() => setIsSkuModalOpen(false)}
         skuList={skuList}
         onAddSku={(newSku) => setSkuList((prev) => [...prev, newSku])}
-        onDeleteSku={(id) => setSkuList((prev) => prev.filter((s) => s.id !== id))}
+        onDeleteSku={(id) => {
+          setSkuList((prev) => prev.filter((s) => s.id !== id));
+          if (selectedSkuChip === id) {
+            setSelectedSkuChip('CLEAR_SKU');
+          }
+          setGrid((prevGrid) => {
+            if (!prevGrid.elementDetails) return prevGrid;
+            let changed = false;
+            const updatedDetails = new Map(prevGrid.elementDetails);
+            updatedDetails.forEach((details, key) => {
+              if (details.skuId === id) {
+                updatedDetails.set(key, { ...details, skuId: undefined });
+                changed = true;
+              }
+            });
+            return changed ? { ...prevGrid, elementDetails: updatedDetails } : prevGrid;
+          });
+        }}
       />
 
       {/* Supply Schedule Panel Modal */}

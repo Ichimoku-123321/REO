@@ -22,14 +22,63 @@ import {
 } from '../src/engine/cad_entities.js';
 
 describe('3D CAD Constructor Engine & Topology Rebuilder', () => {
-  it('creates initial grid matching dimensions and cell size with empty floor tiles', () => {
+  it('creates clean initial grid with zero floor tiles until user draws floor', () => {
     const grid = createInitialConstructorGrid(20, 20, 2.0);
     assert.strictEqual(grid.cols, 10);
     assert.strictEqual(grid.rows, 10);
     assert.strictEqual(grid.cellSizeM, 2.0);
-    assert.strictEqual(grid.tiles.size, 100);
-    // All initial tiles are EMPTY_FLOOR
-    assert.ok(Array.from(grid.tiles.values()).every((t) => t === 'EMPTY_FLOOR'));
+    assert.strictEqual(grid.tiles.size, 0);
+  });
+
+  it('supports multi-corner L-shape floor additions and subtractions', () => {
+    const grid = createInitialConstructorGrid(20, 20, 2.0);
+    // Add section 1 (3x3 block)
+    for (let x = 0; x < 3; x++) {
+      for (let y = 0; y < 3; y++) {
+        grid.tiles.set(getTileKey(x, y), 'EMPTY_FLOOR');
+      }
+    }
+    // Add section 2 to create L-shape (2x2 wing attached at 2,2)
+    for (let x = 2; x < 4; x++) {
+      for (let y = 2; y < 4; y++) {
+        grid.tiles.set(getTileKey(x, y), 'EMPTY_FLOOR');
+      }
+    }
+    // Total unique floor tiles = 9 + 4 - 1 (overlap at 2,2) = 12
+    assert.strictEqual(grid.tiles.size, 12);
+  });
+
+  it('replaces existing tile when placing new object on same tile', () => {
+    const grid = createInitialConstructorGrid(10, 10, 2.0);
+    const key = getTileKey(2, 2);
+    grid.tiles.set(key, 'RACK');
+    assert.strictEqual(grid.tiles.get(key), 'RACK');
+
+    // Place OBSTACLE (wall) on top of RACK -> replaces RACK
+    grid.tiles.set(key, 'OBSTACLE');
+    assert.strictEqual(grid.tiles.get(key), 'OBSTACLE');
+  });
+
+  it('clears SKU assignment from element details when SKU is deleted', () => {
+    const grid = createInitialConstructorGrid(10, 10, 2.0);
+    const rackKey = getTileKey(1, 1);
+    grid.tiles.set(rackKey, 'RACK');
+
+    const detailsMap = new Map();
+    detailsMap.set(rackKey, { skuId: 'sku-to-delete', slotsPerRack: 12 });
+    grid.elementDetails = detailsMap;
+
+    assert.strictEqual(grid.elementDetails.get(rackKey)?.skuId, 'sku-to-delete');
+
+    // Simulate SKU deletion cleanup
+    const deletedSkuId = 'sku-to-delete';
+    grid.elementDetails.forEach((det, k) => {
+      if (det.skuId === deletedSkuId) {
+        grid.elementDetails!.set(k, { ...det, skuId: undefined });
+      }
+    });
+
+    assert.strictEqual(grid.elementDetails.get(rackKey)?.skuId, undefined);
   });
 
   it('rebuilds topology nodes and passable edges when tiles are placed', () => {

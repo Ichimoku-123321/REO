@@ -61,6 +61,7 @@ interface ConstructorToolbarProps {
   outboundDocksCount: number;
   calculatedAreaSqm: number;
   ceilingHeightM: number;
+  onChangeCeilingHeight?: (heightM: number) => void;
 }
 
 export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
@@ -87,6 +88,7 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
   outboundDocksCount,
   calculatedAreaSqm,
   ceilingHeightM,
+  onChangeCeilingHeight,
 }) => {
   const [isFloorDropdownOpen, setIsFloorDropdownOpen] = useState(false);
   const [isSkuDropdownOpen, setIsSkuDropdownOpen] = useState(false);
@@ -131,7 +133,14 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
   ];
 
   return (
-    <div className="absolute top-3 left-3 right-3 z-20 flex flex-col gap-2 pointer-events-auto select-none font-mono">
+    <div
+      onMouseDown={(e) => e.stopPropagation()}
+      onMouseUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      className="absolute top-3 left-3 right-3 z-20 flex flex-col gap-2 pointer-events-auto select-none font-mono"
+    >
       {/* SINGLE HORIZONTAL CAD TOOLBAR */}
       <div className="bg-[#FFFFFF] border border-[#D4AF37]/40 p-1.5 shadow-lg flex flex-wrap items-center justify-between gap-2 text-xs rounded-none">
 
@@ -286,11 +295,9 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
             >
               <Package className="w-3.5 h-3.5 text-[#D4AF37]" />
               <span>
-                {selectedSkuChip === 'CLEAR_SKU'
-                  ? '[ 🧹 Снятие товара ]'
-                  : selectedSkuChip
+                {selectedSkuChip && selectedSkuChip !== 'CLEAR_SKU'
                   ? `[ 📦 Товар: ${skuList.find((s) => s.id === selectedSkuChip)?.name || selectedSkuChip} ]`
-                  : '[ 📦 Товар не выбран ]'}
+                  : '[ 🧹 Снятие товара ]'}
               </span>
               <ChevronDown className="w-3 h-3 text-[#D4AF37]" />
             </button>
@@ -300,25 +307,11 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    onSelectSkuChip(null);
-                    setIsSkuDropdownOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-1.5 text-[11px] font-bold uppercase flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
-                    selectedSkuChip === null ? 'bg-[#D4AF37]/10 text-[#8A6826]' : 'text-[#1A1A1A]'
-                  }`}
-                >
-                  <span className="w-3 h-3 rounded-full border border-gray-400 bg-gray-200 inline-block shrink-0" />
-                  <span>Товар не выбран</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
                     onSelectSkuChip('CLEAR_SKU');
                     setIsSkuDropdownOpen(false);
                   }}
                   className={`w-full text-left px-3 py-1.5 text-[11px] font-bold uppercase flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
-                    selectedSkuChip === 'CLEAR_SKU' ? 'bg-[#D4AF37]/10 text-[#8A6826]' : 'text-[#1A1A1A]'
+                    selectedSkuChip === 'CLEAR_SKU' || selectedSkuChip === null ? 'bg-[#D4AF37]/10 text-[#8A6826]' : 'text-[#1A1A1A]'
                   }`}
                 >
                   <Eraser className="w-3.5 h-3.5 text-red-600 shrink-0" />
@@ -453,8 +446,28 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
             [ Площадь: <strong className="text-[#8A6826] tabular-nums">{calculatedAreaSqm} м²</strong> ]
           </span>
           <span className="text-[#D4AF37]">•</span>
-          <span className="font-semibold">
-            [ Высота: <strong className="text-[#8A6826] tabular-nums">{ceilingHeightM} м</strong> ]
+          <span className="font-semibold flex items-center gap-1">
+            [ Высота:
+            <input
+              type="number"
+              min="1"
+              step="0.5"
+              value={ceilingHeightM}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val) && val >= 1 && onChangeCeilingHeight) {
+                  onChangeCeilingHeight(val);
+                }
+              }}
+              onBlur={(e) => {
+                const val = parseFloat(e.target.value);
+                if (isNaN(val) || val < 1) {
+                  if (onChangeCeilingHeight) onChangeCeilingHeight(1.0);
+                }
+              }}
+              className="w-14 px-1 py-0.5 bg-[#F9F9F6] border border-[#D4AF37]/50 font-mono font-bold text-[#8A6826] text-center focus:outline-none focus:border-[#BFA02E]"
+            />
+            м ]
           </span>
           <span className="text-[#D4AF37]">•</span>
           <span className="font-semibold">

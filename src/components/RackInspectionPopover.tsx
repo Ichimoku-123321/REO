@@ -35,11 +35,13 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverProps> = ({
 
   const currentSku = skuList.find((s) => s.id === currentSkuId);
 
+  const popoverW = 280;
+  const popoverH = 260;
   const style: React.CSSProperties = screenPos
     ? {
         position: 'absolute',
-        left: `${Math.min(window.innerWidth - 300, Math.max(10, screenPos.x))}px`,
-        top: `${Math.min(window.innerHeight - 250, Math.max(10, screenPos.y))}px`,
+        left: `${Math.max(16, Math.min(screenPos.x, window.innerWidth - popoverW - 16))}px`,
+        top: `${Math.max(16, Math.min(screenPos.y, window.innerHeight - popoverH - 16))}px`,
       }
     : {
         position: 'absolute',

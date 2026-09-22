@@ -57,14 +57,24 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverPropsExtended>
     top: `${posY}px`,
   };
 
+  const stopProp = (e: React.SyntheticEvent) => e.stopPropagation();
+
   return (
     <div
       style={style}
+      onPointerDown={stopProp}
+      onPointerUp={stopProp}
+      onMouseDown={stopProp}
+      onMouseUp={stopProp}
+      onClick={stopProp}
       className="z-30 w-72 bg-[#FFFFFF] border-2 border-[#D4AF37] p-3.5 shadow-2xl font-mono text-xs text-[#1A1A1A] rounded-none pointer-events-auto"
     >
       {/* Header - Drag Handle */}
       <div
-        onPointerDown={onStartDrag}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          onStartDrag?.(e);
+        }}
         className="flex items-center justify-between pb-2 border-b border-[#D4AF37]/40 mb-2.5 cursor-grab active:cursor-grabbing select-none bg-[#F9F9F6] -mx-3.5 -mt-3.5 p-2.5 mb-2.5 border-b border-[#D4AF37]/30"
       >
         <div className="flex items-center gap-1.5 font-bold uppercase text-[11px] text-[#8A6826]">

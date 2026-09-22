@@ -36,7 +36,7 @@ import { SkuInventoryModal } from './SkuInventoryModal.js';
 import { SupplyScheduleModal } from './SupplyScheduleModal.js';
 import { RackInspectionPopover } from './RackInspectionPopover.js';
 import { audioEngine } from '../engine/audio_synth.js';
-import { Layers, MapPin, Navigation, AlertTriangle, Edit3, Play } from 'lucide-react';
+import { Layers, MapPin, Navigation, AlertTriangle, Edit3, Play, X } from 'lucide-react';
 
 interface SimulationViewportProps {
   appMode: 'CONSTRUCTOR' | 'SIMULATION';
@@ -108,7 +108,10 @@ export function SimulationViewport({
   const [selectedTileKeys, setSelectedTileKeys] = useState<Set<string>>(new Set());
   const [selectedSkuChip, setSelectedSkuChip] = useState<string | null>(null);
   const SKU_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
-  const [popoverPos, setPopoverPos] = useState<{ x: number; y: number } | null>(null);
+  const [inspectorWindowPos, setInspectorWindowPos] = useState<{ x: number; y: number } | null>(null);
+  const [targetScreenPos, setTargetScreenPos] = useState<{ x: number; y: number } | null>(null);
+  const [isDraggingInspector, setIsDraggingInspector] = useState<boolean>(false);
+  const dragOffsetRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const isMouseDownRef = useRef<boolean>(false);
 
@@ -374,7 +377,6 @@ export function SimulationViewport({
     const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
     setGrid(createInitialConstructorGrid(facilityDims.widthM, facilityDims.lengthM, cellSize));
     setSelectedTileKeys(new Set());
-    setPopoverPos(null);
   }, [facilityDims, facility.totalAreaSqm]);
 
   const handleRotateSelected = useCallback(() => {
@@ -403,8 +405,88 @@ export function SimulationViewport({
       return { ...prev, tiles: updatedTiles, elementDetails: detailsMap };
     });
     setSelectedTileKeys(new Set());
-    setPopoverPos(null);
   }, [selectedTileKeys]);
+
+  // Window centering on selection change
+  useEffect(() => {
+    if (selectedTileKeys.size === 0) {
+      setInspectorWindowPos(null);
+      setTargetScreenPos(null);
+      return;
+    }
+
+    const isSingle = selectedTileKeys.size === 1;
+    const winW = isSingle ? 288 : 580;
+    const winH = isSingle ? 280 : 56;
+
+    const centerX = Math.max(0, (window.innerWidth - winW) / 2);
+    const centerY = Math.max(0, (window.innerHeight - winH) / 2);
+
+    setInspectorWindowPos({ x: centerX, y: centerY });
+  }, [selectedTileKeys]);
+
+  // Window dragging & strict screen boundary clamping
+  const handleStartWindowDrag = useCallback(
+    (e: React.PointerEvent) => {
+      if (!inspectorWindowPos) return;
+      dragOffsetRef.current = {
+        offsetX: e.clientX - inspectorWindowPos.x,
+        offsetY: e.clientY - inspectorWindowPos.y,
+      };
+      setIsDraggingInspector(true);
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    },
+    [inspectorWindowPos]
+  );
+
+  const handleWindowPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!isDraggingInspector || !dragOffsetRef.current) return;
+      const isSingle = selectedTileKeys.size === 1;
+      const winW = isSingle ? 288 : 580;
+      const winH = isSingle ? 280 : 56;
+
+      const rawX = e.clientX - dragOffsetRef.current.offsetX;
+      const rawY = e.clientY - dragOffsetRef.current.offsetY;
+
+      // STOIC BOUNDARY GUARANTEE: Clamp so window NEVER leaves screen by even 1px
+      const clampedX = Math.max(0, Math.min(rawX, window.innerWidth - winW));
+      const clampedY = Math.max(0, Math.min(rawY, window.innerHeight - winH));
+
+      setInspectorWindowPos({ x: clampedX, y: clampedY });
+    },
+    [isDraggingInspector, selectedTileKeys.size]
+  );
+
+  const handleWindowPointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      if (isDraggingInspector) {
+        setIsDraggingInspector(false);
+        dragOffsetRef.current = null;
+      }
+    },
+    [isDraggingInspector]
+  );
+
+  // Resize clamping effect
+  useEffect(() => {
+    const handleResizeClamp = () => {
+      if (!inspectorWindowPos || selectedTileKeys.size === 0) return;
+      const isSingle = selectedTileKeys.size === 1;
+      const winW = isSingle ? 288 : 580;
+      const winH = isSingle ? 280 : 56;
+
+      const clampedX = Math.max(0, Math.min(inspectorWindowPos.x, window.innerWidth - winW));
+      const clampedY = Math.max(0, Math.min(inspectorWindowPos.y, window.innerHeight - winH));
+
+      if (clampedX !== inspectorWindowPos.x || clampedY !== inspectorWindowPos.y) {
+        setInspectorWindowPos({ x: clampedX, y: clampedY });
+      }
+    };
+
+    window.addEventListener('resize', handleResizeClamp);
+    return () => window.removeEventListener('resize', handleResizeClamp);
+  }, [inspectorWindowPos, selectedTileKeys.size]);
 
   // Hotkey keyboard event listener [G], [S], [R], [Del]
   useEffect(() => {
@@ -422,7 +504,6 @@ export function SimulationViewport({
       if (e.key === 'Escape') {
         setSelectedSkuChip(null);
         setSelectedTileKeys(new Set());
-        setPopoverPos(null);
         if (st.interactionMode !== 'SELECT') {
           setInteractionMode('SELECT');
           setIsDrawingActive(false);
@@ -862,7 +943,6 @@ export function SimulationViewport({
              return { ...prev, tiles: updatedTiles, elementDetails: updatedDetails };
           });
           setSelectedTileKeys(new Set());
-          setPopoverPos(null);
           return;
         }
 
@@ -890,54 +970,40 @@ export function SimulationViewport({
           setGrid((prev) => {
             const updatedTiles = new Map(prev.tiles);
             updatedTiles.set(key, st.selectedTileType);
-            return { ...prev, tiles: updatedTiles };
+            const updatedDetails = new Map(prev.elementDetails || []);
+            if (st.selectedTileType !== 'RACK') {
+              updatedDetails.delete(key);
+            }
+            return { ...prev, tiles: updatedTiles, elementDetails: updatedDetails };
           });
 
           setSelectedTileKeys(new Set());
-          setPopoverPos(null);
           return;
         }
 
         if (gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
           const key = getTileKey(gx, gy);
           if (st.interactionMode === 'SELECT') {
-            const currentElementsMap = buildElementsMap(stateRef.current.grid);
-            const element = currentElementsMap.get(key);
+            const tileType = stateRef.current.grid.tiles.get(key);
 
-            if (element) {
-              if (st.selectedSkuChip && element instanceof StorageElement) {
+            if (tileType === 'RACK') {
+              if (st.selectedSkuChip) {
                 setGrid((prev) => {
                   const detailsMap = new Map(prev.elementDetails || []);
                   const existing = detailsMap.get(key) || {};
                   detailsMap.set(key, { ...existing, skuId: st.selectedSkuChip || undefined });
                   return { ...prev, elementDetails: detailsMap };
                 });
-                setSelectedTileKeys(new Set([key]));
-                setPopoverPos(null);
-                return;
               }
-
               setSelectedTileKeys(new Set([key]));
-
-              if (element instanceof StorageElement) {
-                const clampedCoords = {
-                  x: Math.min(Math.max(16, event.clientX), window.innerWidth - 320 - 16),
-                  y: Math.min(Math.max(16, event.clientY), window.innerHeight - 240 - 16),
-                };
-                setPopoverPos(clampedCoords);
-              } else {
-                // Walls, Docks, Chargers: select for rotation/deletion only, NEVER open popover!
-                setPopoverPos(null);
-              }
             } else {
+              // Non-rack elements (walls, chargers, docks, empty floor) cannot be selected
               setSelectedTileKeys(new Set());
-              setPopoverPos(null);
             }
           }
         }
       } else {
         setSelectedTileKeys(new Set());
-        setPopoverPos(null);
       }
     };
 
@@ -1109,6 +1175,46 @@ export function SimulationViewport({
 
       if (!st.isDrawingActive && drawingLineRef.current) {
         drawingLineRef.current.visible = false;
+      }
+
+      // Compute 2D Projected Screen Position for Inspector Connector Beam Line
+      const currentSelected = stateRef.current.selectedTileKeys;
+      if (currentSelected.size > 0 && cameraRef.current && containerRef.current) {
+        let sumX = 0;
+        let sumZ = 0;
+        let count = 0;
+        const currentGrid = stateRef.current.grid;
+
+        currentSelected.forEach((key) => {
+          const [gxStr, gyStr] = key.split('_');
+          const gx = parseInt(gxStr, 10);
+          const gy = parseInt(gyStr, 10);
+          if (!isNaN(gx) && !isNaN(gy)) {
+            sumX += (gx + 0.5) * currentGrid.cellSizeM;
+            sumZ += (gy + 0.5) * currentGrid.cellSizeM;
+            count++;
+          }
+        });
+
+        if (count > 0) {
+          const avgX = sumX / count;
+          const avgZ = sumZ / count;
+          const targetVec = new THREE.Vector3(avgX, 1.0, avgZ);
+          targetVec.project(cameraRef.current);
+
+          const rect = containerRef.current.getBoundingClientRect();
+          const screenX = ((targetVec.x + 1) / 2) * rect.width + rect.left;
+          const screenY = ((-targetVec.y + 1) / 2) * rect.height + rect.top;
+
+          setTargetScreenPos((prev) => {
+            if (!prev || Math.abs(prev.x - screenX) > 0.5 || Math.abs(prev.y - screenY) > 0.5) {
+              return { x: screenX, y: screenY };
+            }
+            return prev;
+          });
+        }
+      } else {
+        setTargetScreenPos(null);
       }
 
       controls.update();
@@ -1368,9 +1474,9 @@ export function SimulationViewport({
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect) {
         const newSelected = new Set<string>();
-        // Project 3D positions to 2D screen to find selected items
+        // Project 3D positions to 2D screen to find selected items (RACKS ONLY)
         grid.tiles.forEach((type: any, key: any) => {
-          if (type && type !== 'EMPTY_FLOOR') {
+          if (type === 'RACK') {
             const [gx, gy] = key.split('_').map((s: any) => parseInt(s, 10));
             const worldX = (gx + 0.5) * grid.cellSizeM;
             const worldZ = (gy + 0.5) * grid.cellSizeM;
@@ -1401,10 +1507,8 @@ export function SimulationViewport({
             });
           }
           setSelectedTileKeys(newSelected);
-          setPopoverPos(null);
         } else {
           setSelectedTileKeys(new Set());
-          setPopoverPos(null);
         }
       }
     }
@@ -1553,10 +1657,46 @@ export function SimulationViewport({
           </div>
         )}
 
+        {/* SVG Connector Beam Line to 3D object/zone */}
+        {isConstructorMode && selectedTileKeys.size > 0 && inspectorWindowPos && targetScreenPos && (
+          <svg className="fixed inset-0 w-full h-full pointer-events-none z-20">
+            <line
+              x1={inspectorWindowPos.x + (selectedTileKeys.size === 1 ? 144 : 290)}
+              y1={inspectorWindowPos.y + (selectedTileKeys.size === 1 ? 140 : 28)}
+              x2={targetScreenPos.x}
+              y2={targetScreenPos.y}
+              stroke="#D4AF37"
+              strokeWidth="2"
+              strokeDasharray="4 4"
+            />
+            <circle cx={targetScreenPos.x} cy={targetScreenPos.y} r="6" fill="#D4AF37" stroke="#FFFFFF" strokeWidth="2" />
+            <circle
+              cx={inspectorWindowPos.x + (selectedTileKeys.size === 1 ? 144 : 290)}
+              cy={inspectorWindowPos.y + (selectedTileKeys.size === 1 ? 140 : 28)}
+              r="4"
+              fill="#D4AF37"
+            />
+          </svg>
+        )}
+
         {/* Bulk Inspector Banner */}
-        {isConstructorMode && selectedTileKeys.size > 1 && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-[#FFFFFF] border-2 border-[#D4AF37] p-2 shadow-2xl flex items-center gap-4 z-30 text-xs font-mono">
-            <span className="font-bold text-[#8A6826]">Выбрано: {selectedTileKeys.size} стеллажей</span>
+        {isConstructorMode && selectedTileKeys.size > 1 && inspectorWindowPos && (
+          <div
+            style={{
+              position: 'fixed',
+              left: `${inspectorWindowPos.x}px`,
+              top: `${inspectorWindowPos.y}px`,
+            }}
+            className="z-30 bg-[#FFFFFF] border-2 border-[#D4AF37] p-2 shadow-2xl flex items-center gap-4 text-xs font-mono select-none pointer-events-auto"
+            onPointerMove={handleWindowPointerMove}
+            onPointerUp={handleWindowPointerUp}
+          >
+            <div
+              onPointerDown={handleStartWindowDrag}
+              className="cursor-grab active:cursor-grabbing font-bold text-[#8A6826] flex items-center gap-1 bg-[#F9F9F6] px-2 py-1 border border-[#D4AF37]/30"
+            >
+              <span>Выбрано: {selectedTileKeys.size} стеллажей</span>
+            </div>
 
             <div className="flex items-center gap-2">
               <span className="text-[#4F4F47]">SKU:</span>
@@ -1608,46 +1748,57 @@ export function SimulationViewport({
 
             <button
               onClick={handleDeleteSelected}
-              className="px-2 py-0.5 bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 transition"
+              className="px-2 py-0.5 bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 transition cursor-pointer"
             >
               Удалить (Del)
+            </button>
+
+            <button
+              onClick={() => setSelectedTileKeys(new Set())}
+              className="p-1 text-[#4F4F47] hover:text-[#1A1A1A] transition cursor-pointer"
+              title="Закрыть"
+            >
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
 
         {/* Rack Inspection Popover */}
-        {selectedTileKeys.size === 1 && popoverPos !== null && (
-          <RackInspectionPopover
-            isOpen={true}
-            onClose={() => {
-              setSelectedTileKeys(new Set());
-              setPopoverPos(null);
-            }}
-            rackKey={Array.from(selectedTileKeys)[0]}
-            gridX={parseInt(Array.from(selectedTileKeys)[0].split('_')[0], 10)}
-            gridY={parseInt(Array.from(selectedTileKeys)[0].split('_')[1], 10)}
-            currentSkuId={grid.elementDetails?.get(Array.from(selectedTileKeys)[0])?.skuId}
-            slotsPerRack={grid.elementDetails?.get(Array.from(selectedTileKeys)[0])?.slotsPerRack ?? 12}
-            skuList={skuList}
-            onChangeCapacity={(key, capacity) => {
-              setGrid((prev) => {
-                const detailsMap = new Map(prev.elementDetails || []);
-                const existing = detailsMap.get(key) || {};
-                detailsMap.set(key, { ...existing, slotsPerRack: capacity });
-                return { ...prev, elementDetails: detailsMap };
-              });
-            }}
-            onAssignSku={(key, skuId) => {
-              setGrid((prev) => {
-                const detailsMap = new Map(prev.elementDetails || []);
-                const existing = detailsMap.get(key) || {};
-                detailsMap.set(key, { ...existing, skuId });
-                return { ...prev, elementDetails: detailsMap };
-              });
-            }}
-            onDeleteRack={handleDeleteSelected}
-            screenPos={popoverPos ?? undefined}
-          />
+        {isConstructorMode && selectedTileKeys.size === 1 && inspectorWindowPos && (
+          <div
+            onPointerMove={handleWindowPointerMove}
+            onPointerUp={handleWindowPointerUp}
+          >
+            <RackInspectionPopover
+              isOpen={true}
+              onClose={() => setSelectedTileKeys(new Set())}
+              rackKey={Array.from(selectedTileKeys)[0]}
+              gridX={parseInt(Array.from(selectedTileKeys)[0].split('_')[0], 10)}
+              gridY={parseInt(Array.from(selectedTileKeys)[0].split('_')[1], 10)}
+              currentSkuId={grid.elementDetails?.get(Array.from(selectedTileKeys)[0])?.skuId}
+              slotsPerRack={grid.elementDetails?.get(Array.from(selectedTileKeys)[0])?.slotsPerRack ?? 12}
+              skuList={skuList}
+              onChangeCapacity={(key, capacity) => {
+                setGrid((prev) => {
+                  const detailsMap = new Map(prev.elementDetails || []);
+                  const existing = detailsMap.get(key) || {};
+                  detailsMap.set(key, { ...existing, slotsPerRack: capacity });
+                  return { ...prev, elementDetails: detailsMap };
+                });
+              }}
+              onAssignSku={(key, skuId) => {
+                setGrid((prev) => {
+                  const detailsMap = new Map(prev.elementDetails || []);
+                  const existing = detailsMap.get(key) || {};
+                  detailsMap.set(key, { ...existing, skuId });
+                  return { ...prev, elementDetails: detailsMap };
+                });
+              }}
+              onDeleteRack={handleDeleteSelected}
+              screenPos={inspectorWindowPos}
+              onStartDrag={handleStartWindowDrag}
+            />
+          </div>
         )}
 
         <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />

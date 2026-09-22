@@ -163,7 +163,11 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
               type="button"
               onClick={() => {
                 setIsSkuDropdownOpen(false);
-                setIsFloorDropdownOpen((prev) => !prev);
+                if (isFloorActive && !isFloorDropdownOpen) {
+                  onChangeInteractionMode('SELECT');
+                } else {
+                  setIsFloorDropdownOpen((prev) => !prev);
+                }
               }}
               className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase transition rounded-none cursor-pointer border ${
                 isFloorActive

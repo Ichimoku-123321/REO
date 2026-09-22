@@ -1001,7 +1001,11 @@ export function SimulationViewport({
             const updatedTiles = new Map(prev.tiles);
             updatedTiles.set(key, st.selectedTileType);
             const updatedDetails = new Map(prev.elementDetails || []);
-            if (st.selectedTileType !== 'RACK') {
+            if (st.selectedTileType === 'RACK') {
+              const existing = updatedDetails.get(key) || {};
+              const initialSku = st.selectedSkuChip && st.selectedSkuChip !== 'CLEAR_SKU' ? st.selectedSkuChip : undefined;
+              updatedDetails.set(key, { ...existing, skuId: initialSku });
+            } else {
               updatedDetails.delete(key);
             }
             return { ...prev, tiles: updatedTiles, elementDetails: updatedDetails };

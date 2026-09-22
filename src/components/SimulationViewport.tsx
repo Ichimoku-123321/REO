@@ -127,6 +127,12 @@ export function SimulationViewport({
   // Floor Contour Drawing State
   const [drawingPoints, setDrawingPoints] = useState<Point2D[]>([]);
   const [isDrawingActive, setIsDrawingActive] = useState<boolean>(false);
+  const [liveRectDims, setLiveRectDims] = useState<{
+    widthM: number;
+    lengthM: number;
+    areaSqm: number;
+    isErase: boolean;
+  } | null>(null);
 
   // Box Marquee Drag State via DOM Ref (Zero React Lag)
   const marqueeRef = useRef<HTMLDivElement>(null);
@@ -415,14 +421,17 @@ export function SimulationViewport({
       return;
     }
 
-    const isSingle = selectedTileKeys.size === 1;
-    const winW = isSingle ? 288 : 580;
-    const winH = isSingle ? 280 : 56;
+    setInspectorWindowPos((prev) => {
+      if (prev !== null) return prev;
+      const isSingle = selectedTileKeys.size === 1;
+      const winW = isSingle ? 288 : 580;
+      const winH = isSingle ? 280 : 56;
 
-    const centerX = Math.max(0, (window.innerWidth - winW) / 2);
-    const centerY = Math.max(0, (window.innerHeight - winH) / 2);
+      const centerX = Math.max(0, (window.innerWidth - winW) / 2);
+      const centerY = Math.max(0, (window.innerHeight - winH) / 2);
 
-    setInspectorWindowPos({ x: centerX, y: centerY });
+      return { x: centerX, y: centerY };
+    });
   }, [selectedTileKeys]);
 
   // Window dragging & strict screen boundary clamping
@@ -783,24 +792,36 @@ export function SimulationViewport({
           pts.push(new THREE.Vector3(p.x, 0.1, p.z));
         }
 
-        if (st.interactionMode === 'DRAW_RECT') {
+        if (st.interactionMode === 'DRAW_RECT' || st.interactionMode === 'ERASE_FLOOR_RECT') {
           // Draw dynamic rectangle
           const startPt = st.drawingPoints[0];
           if (point) {
             pts.push(new THREE.Vector3(point.x, 0.1, startPt.z));
             pts.push(new THREE.Vector3(point.x, 0.1, point.z));
             pts.push(new THREE.Vector3(startPt.x, 0.1, point.z));
+
+            const wM = Math.abs(point.x - startPt.x);
+            const lM = Math.abs(point.z - startPt.z);
+            const aSqm = Math.round(wM * lM * 10) / 10;
+            setLiveRectDims({
+              widthM: wM,
+              lengthM: lM,
+              areaSqm: aSqm,
+              isErase: st.interactionMode === 'ERASE_FLOOR_RECT',
+            });
           }
           pts.push(new THREE.Vector3(startPt.x, 0.1, startPt.z)); // close loop
-        } else if (st.interactionMode === 'DRAW_POLY') {
-          // Draw rubber band to current mouse pos
-          if (point) {
-            pts.push(new THREE.Vector3(point.x, 0.1, point.z));
-          }
         }
 
         drawingGeoRef.current.setFromPoints(pts);
-        drawingLineRef.current.visible = true;
+        if (drawingLineRef.current) {
+          drawingLineRef.current.visible = true;
+          if (st.interactionMode === 'ERASE_FLOOR_RECT') {
+            (drawingLineRef.current.material as THREE.LineBasicMaterial).color.setHex(0xef4444);
+          } else {
+            (drawingLineRef.current.material as THREE.LineBasicMaterial).color.setHex(0xd4af37);
+          }
+        }
       } else if (drawingLineRef.current) {
         drawingLineRef.current.visible = false;
       }
@@ -812,19 +833,6 @@ export function SimulationViewport({
 
       if (event.button === 0) {
         isMouseDownRef.current = true;
-      }
-
-      // If right clicking while holding a tool, intercept it to cancel the tool
-      if (event.button === 2 && st.interactionMode !== 'SELECT') {
-        event.preventDefault();
-        event.stopPropagation();
-        setInteractionMode('SELECT');
-        setIsDrawingActive(false);
-        setDrawingPoints([]);
-        if (ghostGroupRef.current) {
-          ghostGroupRef.current.visible = false;
-        }
-        return;
       }
 
       mouseDownPosRef.current = { x: event.clientX, y: event.clientY };
@@ -886,50 +894,72 @@ export function SimulationViewport({
         const gx = Math.floor(point.x / stateRef.current.grid.cellSizeM);
         const gy = Math.floor(point.z / stateRef.current.grid.cellSizeM);
 
-        if (event.button === 0 && st.interactionMode === 'DRAW_RECT') {
+        if (event.button === 0 && (st.interactionMode === 'DRAW_RECT' || st.interactionMode === 'ERASE_FLOOR_RECT')) {
           if (!st.isDrawingActive) {
             setDrawingPoints([{ x: point.x, z: point.z }]);
             setIsDrawingActive(true);
           } else {
             const startPt = st.drawingPoints[0];
             const endPt = { x: point.x, z: point.z };
-            const rectPoly = [
-              startPt,
-              { x: endPt.x, z: startPt.z },
-              endPt,
-              { x: startPt.x, z: endPt.z },
-            ];
-            const areaSqm = calculateShoelaceArea(rectPoly);
-            if (areaSqm > 0 && onChangeFacility) {
-              onChangeFacility({ ...st.facility, totalAreaSqm: areaSqm });
-            }
+
+            const minX = Math.min(startPt.x, endPt.x);
+            const maxX = Math.max(startPt.x, endPt.x);
+            const minZ = Math.min(startPt.z, endPt.z);
+            const maxZ = Math.max(startPt.z, endPt.z);
+
+            const cellSize = stateRef.current.grid.cellSizeM;
+            const startCol = Math.max(0, Math.floor(minX / cellSize));
+            const endCol = Math.max(0, Math.floor(maxX / cellSize));
+            const startRow = Math.max(0, Math.floor(minZ / cellSize));
+            const endRow = Math.max(0, Math.floor(maxZ / cellSize));
+
+            const isErase = st.interactionMode === 'ERASE_FLOOR_RECT';
+
+            setGrid((prev) => {
+              const newTiles = new Map(prev.tiles);
+              const newDetails = new Map(prev.elementDetails || []);
+              let newCols = prev.cols;
+              let newRows = prev.rows;
+
+              if (!isErase) {
+                newCols = Math.max(prev.cols, endCol + 1);
+                newRows = Math.max(prev.rows, endRow + 1);
+              }
+
+              for (let cx = startCol; cx <= endCol; cx++) {
+                for (let cy = startRow; cy <= endRow; cy++) {
+                  const key = getTileKey(cx, cy);
+                  if (isErase) {
+                    newTiles.delete(key);
+                    newDetails.delete(key);
+                  } else {
+                    if (!newTiles.has(key)) {
+                      newTiles.set(key, 'EMPTY_FLOOR');
+                    }
+                  }
+                }
+              }
+
+              const activeCount = newTiles.size;
+              const calculatedArea = Math.round(activeCount * cellSize * cellSize);
+              if (calculatedArea >= 0 && onChangeFacility) {
+                onChangeFacility({ ...st.facility, totalAreaSqm: calculatedArea });
+              }
+
+              return {
+                ...prev,
+                cols: newCols,
+                rows: newRows,
+                tiles: newTiles,
+                elementDetails: newDetails,
+              };
+            });
+
             setDrawingPoints([]);
             setIsDrawingActive(false);
+            setLiveRectDims(null);
             setInteractionMode('SELECT');
           }
-          return;
-        }
-
-        if (event.button === 0 && st.interactionMode === 'DRAW_POLY') {
-          if (st.drawingPoints.length >= 3) {
-            const firstPt = st.drawingPoints[0];
-            const dist = Math.sqrt(Math.pow(point.x - firstPt.x, 2) + Math.pow(point.z - firstPt.z, 2));
-
-            if (dist < 1.0) {
-              const areaSqm = calculateShoelaceArea(st.drawingPoints);
-              if (areaSqm > 0 && onChangeFacility) {
-                onChangeFacility({ ...st.facility, totalAreaSqm: areaSqm });
-              }
-              setDrawingPoints([]);
-              setIsDrawingActive(false);
-              setInteractionMode('SELECT');
-              return;
-            }
-          }
-
-          const nextPts = [...st.drawingPoints, { x: point.x, z: point.z }];
-          setDrawingPoints(nextPts);
-          setIsDrawingActive(true);
           return;
         }
 
@@ -1615,6 +1645,8 @@ export function SimulationViewport({
             onDeleteSelected={handleDeleteSelected}
             onOpenSkuModal={() => setIsSkuModalOpen(true)}
             onOpenSchedulePanel={() => setIsScheduleModalOpen(true)}
+            selectedSkuChip={selectedSkuChip}
+            onSelectSkuChip={setSelectedSkuChip}
             selectedSkuForBox={selectedSkuForBox}
             skuList={skuList}
             onSelectSkuForBox={setSelectedSkuForBox}
@@ -1634,26 +1666,25 @@ export function SimulationViewport({
           className="border-2 border-dashed border-[#D4AF37] bg-[#D4AF37]/20 pointer-events-none z-30"
         />
 
-        {/* Quick SKU Palette on the right edge */}
-        {isConstructorMode && skuList.length > 0 && (
-          <div className="absolute top-16 right-3 flex flex-col gap-1.5 z-20">
-            {skuList.map((sku, index) => {
-              const color = SKU_PALETTE[index % SKU_PALETTE.length];
-              const isActive = selectedSkuChip === sku.id;
-              return (
-                <button
-                  key={sku.id}
-                  onClick={() => setSelectedSkuChip(isActive ? null : sku.id)}
-                  title={sku.name}
-                  className={`w-8 h-8 rounded-none flex items-center justify-center font-bold text-white shadow-md cursor-pointer transition ${
-                    isActive ? 'border-2 border-[#D4AF37] ring-2 ring-[#D4AF37]/30 scale-110' : 'border border-transparent'
-                  }`}
-                  style={{ backgroundColor: color }}
-                >
-                  {sku.name.charAt(0).toUpperCase()}
-                </button>
-              );
-            })}
+        {/* Live Rectangle Dimension Badge Overlay during Floor Drawing / Erasing */}
+        {isConstructorMode && isDrawingActive && liveRectDims && (
+          <div className="fixed bottom-14 left-1/2 -translate-x-1/2 z-30 pointer-events-none select-none font-mono">
+            <div
+              className={`px-3 py-1.5 border shadow-xl flex items-center gap-2 text-xs font-bold text-white uppercase rounded-none ${
+                liveRectDims.isErase
+                  ? 'bg-red-900/90 border-red-500'
+                  : 'bg-[#1A1A1A]/90 border-[#D4AF37]'
+              }`}
+            >
+              <span className={liveRectDims.isErase ? 'text-red-300' : 'text-[#D4AF37]'}>
+                {liveRectDims.isErase ? '[ 🧹 Удаление пола ]' : '[ 📐 Добавление пола ]'}
+              </span>
+              <span>
+                {liveRectDims.widthM.toFixed(1)} м × {liveRectDims.lengthM.toFixed(1)} м
+              </span>
+              <span className="text-[#D4AF37]">•</span>
+              <span className="tabular-nums">{liveRectDims.areaSqm} м²</span>
+            </div>
           </div>
         )}
 
@@ -1687,9 +1718,16 @@ export function SimulationViewport({
               left: `${inspectorWindowPos.x}px`,
               top: `${inspectorWindowPos.y}px`,
             }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => {
+              e.stopPropagation();
+              handleWindowPointerUp(e);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseUp={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
             className="z-30 bg-[#FFFFFF] border-2 border-[#D4AF37] p-2 shadow-2xl flex items-center gap-4 text-xs font-mono select-none pointer-events-auto"
             onPointerMove={handleWindowPointerMove}
-            onPointerUp={handleWindowPointerUp}
           >
             <div
               onPointerDown={handleStartWindowDrag}

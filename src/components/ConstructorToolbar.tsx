@@ -23,9 +23,11 @@ import {
 export type CtorInteractionMode =
   | 'SELECT'
   | 'DRAW_RECT'
-  | 'DRAW_POLY'
+  | 'ERASE_FLOOR_RECT'
   | 'PLACE_ELEMENT'
   | 'ERASE';
+
+const SKU_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
 interface ConstructorToolbarProps {
   interactionMode: CtorInteractionMode;
@@ -46,9 +48,11 @@ interface ConstructorToolbarProps {
   // Modals & Panels
   onOpenSkuModal: () => void;
   onOpenSchedulePanel: () => void;
-  selectedSkuForBox: SkuItem | null;
+  selectedSkuChip: string | null;
+  onSelectSkuChip: (skuId: string | null) => void;
+  selectedSkuForBox?: SkuItem | null;
   skuList: SkuItem[];
-  onSelectSkuForBox: (sku: SkuItem) => void;
+  onSelectSkuForBox?: (sku: SkuItem) => void;
 
   // Facility / Geometry Metrics for Zone 2 Bar
   totalRacks: number;
@@ -74,6 +78,9 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
   onDeleteSelected,
   onOpenSkuModal,
   onOpenSchedulePanel,
+  selectedSkuChip,
+  onSelectSkuChip,
+  skuList,
   totalRacks,
   totalPalletCapacity,
   inboundDocksCount,
@@ -82,8 +89,9 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
   ceilingHeightM,
 }) => {
   const [isFloorDropdownOpen, setIsFloorDropdownOpen] = useState(false);
+  const [isSkuDropdownOpen, setIsSkuDropdownOpen] = useState(false);
 
-  const isFloorActive = interactionMode === 'DRAW_RECT' || interactionMode === 'DRAW_POLY';
+  const isFloorActive = interactionMode === 'DRAW_RECT' || interactionMode === 'ERASE_FLOOR_RECT';
 
   const paletteTools: Array<{
     type: ConstructorTileType;
@@ -149,11 +157,12 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
 
           <div className="h-4 w-px bg-[#D4AF37]/30 mx-0.5" />
 
-          {/* 2. Draw Floor Dropdown/Button */}
+          {/* 2. Draw / Delete Floor Dropdown/Button */}
           <div className="relative">
             <button
               type="button"
               onClick={() => {
+                setIsSkuDropdownOpen(false);
                 setIsFloorDropdownOpen((prev) => !prev);
               }}
               className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase transition rounded-none cursor-pointer border ${
@@ -161,18 +170,22 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                   ? 'bg-[#D4AF37] text-[#1A1A1A] border-[#BFA02E]'
                   : 'bg-[#F9F9F6] text-[#4F4F47] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
               }`}
-              title="Нарисовать контур пола склада"
+              title="Добавить или удалить пол склада"
             >
               <Square className="w-3.5 h-3.5 text-[#8A6826]" />
               <span>
-                {interactionMode === 'DRAW_POLY' ? '[ 📐 Пол: Полигон ]' : '[ 📐 Пол ]'}
+                {interactionMode === 'DRAW_RECT'
+                  ? '[ 📐 Добавить пол ]'
+                  : interactionMode === 'ERASE_FLOOR_RECT'
+                  ? '[ 🧹 Удалить пол ]'
+                  : '[ 📐 Пол ]'}
               </span>
               <ChevronDown className="w-3 h-3 text-[#8A6826]" />
             </button>
 
             {/* Floor Dropdown Options */}
             {isFloorDropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 bg-[#FFFFFF] border border-[#D4AF37] shadow-xl z-30 py-1 min-w-[160px] rounded-none">
+              <div className="absolute top-full left-0 mt-1 bg-[#FFFFFF] border border-[#D4AF37] shadow-xl z-30 py-1 min-w-[170px] rounded-none">
                 <button
                   type="button"
                   onClick={() => {
@@ -188,24 +201,24 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                   }`}
                 >
                   <Square className="w-3.5 h-3.5 text-[#8A6826]" />
-                  <span>Прямоугольник</span>
+                  <span>Добавить пол</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    if (interactionMode === 'DRAW_POLY') {
+                    if (interactionMode === 'ERASE_FLOOR_RECT') {
                       onChangeInteractionMode('SELECT');
                     } else {
-                      onChangeInteractionMode('DRAW_POLY');
+                      onChangeInteractionMode('ERASE_FLOOR_RECT');
                     }
                     setIsFloorDropdownOpen(false);
                   }}
                   className={`w-full text-left px-3 py-1.5 text-[11px] font-bold uppercase flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
-                    interactionMode === 'DRAW_POLY' ? 'text-[#8A6826] bg-[#D4AF37]/10' : 'text-[#1A1A1A]'
+                    interactionMode === 'ERASE_FLOOR_RECT' ? 'text-[#8A6826] bg-[#D4AF37]/10' : 'text-[#1A1A1A]'
                   }`}
                 >
-                  <Pentagon className="w-3.5 h-3.5 text-[#8A6826]" />
-                  <span>Полигон</span>
+                  <Eraser className="w-3.5 h-3.5 text-red-600" />
+                  <span>Удалить пол</span>
                 </button>
               </div>
             )}
@@ -225,6 +238,7 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
                 type="button"
                 onClick={() => {
                   setIsFloorDropdownOpen(false);
+                  setIsSkuDropdownOpen(false);
                   if (tool.type === 'EMPTY_FLOOR') {
                     if (interactionMode === 'ERASE') {
                       onChangeInteractionMode('SELECT');
@@ -252,6 +266,93 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
               </button>
             );
           })}
+
+          <div className="h-4 w-px bg-[#D4AF37]/30 mx-0.5" />
+
+          {/* 4. SKU Assignment Selection Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setIsFloorDropdownOpen(false);
+                setIsSkuDropdownOpen((prev) => !prev);
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold uppercase transition rounded-none cursor-pointer border ${
+                selectedSkuChip !== null
+                  ? 'bg-[#1A1A1A] text-[#F9F9F6] border-[#1A1A1A]'
+                  : 'bg-[#F9F9F6] text-[#1A1A1A] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
+              }`}
+              title="Выберите товар для автоматического назначения при выделении стеллажей"
+            >
+              <Package className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span>
+                {selectedSkuChip === 'CLEAR_SKU'
+                  ? '[ 🧹 Снятие товара ]'
+                  : selectedSkuChip
+                  ? `[ 📦 Товар: ${skuList.find((s) => s.id === selectedSkuChip)?.name || selectedSkuChip} ]`
+                  : '[ 📦 Товар не выбран ]'}
+              </span>
+              <ChevronDown className="w-3 h-3 text-[#D4AF37]" />
+            </button>
+
+            {isSkuDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1 bg-[#FFFFFF] border border-[#D4AF37] shadow-xl z-30 py-1 min-w-[200px] rounded-none">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelectSkuChip(null);
+                    setIsSkuDropdownOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-1.5 text-[11px] font-bold uppercase flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
+                    selectedSkuChip === null ? 'bg-[#D4AF37]/10 text-[#8A6826]' : 'text-[#1A1A1A]'
+                  }`}
+                >
+                  <span className="w-3 h-3 rounded-full border border-gray-400 bg-gray-200 inline-block shrink-0" />
+                  <span>Товар не выбран</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelectSkuChip('CLEAR_SKU');
+                    setIsSkuDropdownOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-1.5 text-[11px] font-bold uppercase flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
+                    selectedSkuChip === 'CLEAR_SKU' ? 'bg-[#D4AF37]/10 text-[#8A6826]' : 'text-[#1A1A1A]'
+                  }`}
+                >
+                  <Eraser className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                  <span>Снятие товара</span>
+                </button>
+
+                <div className="h-px bg-[#D4AF37]/30 my-1" />
+
+                {skuList.map((sku, idx) => {
+                  const color = SKU_PALETTE[idx % SKU_PALETTE.length];
+                  const isSelected = selectedSkuChip === sku.id;
+                  return (
+                    <button
+                      key={sku.id}
+                      type="button"
+                      onClick={() => {
+                        onSelectSkuChip(sku.id);
+                        setIsSkuDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-1.5 text-[11px] font-bold flex items-center gap-2 hover:bg-[#F4F4F0] cursor-pointer ${
+                        isSelected ? 'bg-[#D4AF37]/10 text-[#8A6826]' : 'text-[#1A1A1A]'
+                      }`}
+                    >
+                      <span
+                        className="w-3 h-3 rounded-none shrink-0 border border-black/20"
+                        style={{ backgroundColor: color }}
+                      />
+                      <span className="truncate">{sku.name} ({sku.weightPerUnitKg} кг)</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
           <div className="h-4 w-px bg-[#D4AF37]/30 mx-0.5" />
 

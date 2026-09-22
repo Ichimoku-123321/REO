@@ -109,6 +109,7 @@ export function SimulationViewport({
   const SKU_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
   const [popoverPos, setPopoverPos] = useState<{ x: number; y: number } | null>(null);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const isMouseDownRef = useRef<boolean>(false);
 
   // SKU & Supply Schedule State
   const [skuList, setSkuList] = useState<SkuItem[]>(DEFAULT_SKU_LIST);
@@ -268,6 +269,8 @@ export function SimulationViewport({
     showGrid,
     snappingEnabled,
     selectedTileKeys,
+    selectedSkuChip,
+    skuList,
     drawingPoints,
     isDrawingActive,
     grid,
@@ -287,6 +290,8 @@ export function SimulationViewport({
       showGrid,
       snappingEnabled,
       selectedTileKeys,
+      selectedSkuChip,
+      skuList,
       drawingPoints,
       isDrawingActive,
       grid,
@@ -304,6 +309,8 @@ export function SimulationViewport({
     showGrid,
     snappingEnabled,
     selectedTileKeys,
+    selectedSkuChip,
+    skuList,
     drawingPoints,
     isDrawingActive,
     grid,
@@ -651,7 +658,7 @@ export function SimulationViewport({
           ghostGroup.position.set(snappedX, 1.0, snappedZ);
           ghostGroup.visible = true;
 
-          if (event.buttons === 1 && st.selectedTileType === 'OBSTACLE' && gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
+          if ((event.buttons === 1 || isMouseDownRef.current) && st.selectedTileType === 'OBSTACLE' && gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
             const key = getTileKey(gx, gy);
             setGrid((prev) => {
               if (prev.tiles.get(key) !== 'OBSTACLE') {
@@ -664,7 +671,7 @@ export function SimulationViewport({
           }
         } else if (st.interactionMode === 'ERASE') {
           ghostGroup.visible = false;
-          if (event.buttons === 1) {
+          if (event.buttons === 1 || isMouseDownRef.current) {
             const gx = Math.floor(point.x / stateRef.current.grid.cellSizeM);
             const gy = Math.floor(point.z / stateRef.current.grid.cellSizeM);
             if (gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
@@ -722,6 +729,10 @@ export function SimulationViewport({
       const st = stateRef.current;
       if (!st.isConstructorMode) return;
 
+      if (event.button === 0) {
+        isMouseDownRef.current = true;
+      }
+
       // If right clicking while holding a tool, intercept it to cancel the tool
       if (event.button === 2 && st.interactionMode !== 'SELECT') {
         event.preventDefault();
@@ -741,6 +752,10 @@ export function SimulationViewport({
     const handleCanvasPointerUp = (event: MouseEvent) => {
       const st = stateRef.current;
       if (!st.isConstructorMode) return;
+
+      if (event.button === 0) {
+        isMouseDownRef.current = false;
+      }
 
       const downPos = mouseDownPosRef.current;
       mouseDownPosRef.current = null;
@@ -889,13 +904,16 @@ export function SimulationViewport({
             const tileType = stateRef.current.grid.tiles.get(key);
             // Select RACK, DOCK, CHARGER, OBSTACLE, never place
             if (tileType && tileType !== 'EMPTY_FLOOR') {
-              if ((stateRef.current as any).selectedSkuChip) {
+              if (st.selectedSkuChip && tileType === 'RACK') {
                 setGrid((prev) => {
                   const detailsMap = new Map(prev.elementDetails || []);
                   const existing = detailsMap.get(key) || {};
-                  detailsMap.set(key, { ...existing, skuId: (stateRef.current as any).selectedSkuChip || undefined });
+                  detailsMap.set(key, { ...existing, skuId: st.selectedSkuChip || undefined });
                   return { ...prev, elementDetails: detailsMap };
                 });
+                setSelectedTileKeys(new Set([key]));
+                setPopoverPos(null);
+                return;
               }
               setSelectedTileKeys(new Set([key]));
               setPopoverPos({
@@ -915,9 +933,13 @@ export function SimulationViewport({
     };
 
     const domElem = renderer.domElement;
+    const handlePointerLeave = () => {
+      isMouseDownRef.current = false;
+    };
     domElem.addEventListener('mousemove', handlePointerMove);
     domElem.addEventListener('pointerdown', handleCanvasPointerDown);
     domElem.addEventListener('pointerup', handleCanvasPointerUp);
+    domElem.addEventListener('pointerleave', handlePointerLeave);
 
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
@@ -1112,6 +1134,7 @@ export function SimulationViewport({
       domElem.removeEventListener('mousemove', handlePointerMove);
       domElem.removeEventListener('pointerdown', handleCanvasPointerDown);
       domElem.removeEventListener('pointerup', handleCanvasPointerUp);
+      domElem.removeEventListener('pointerleave', handlePointerLeave);
       domElem.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('resize', handleResize);
       controls.dispose();
@@ -1195,8 +1218,12 @@ export function SimulationViewport({
 
       if (type === 'RACK') {
         const rackGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.85, 2.2, grid.cellSizeM * 0.85);
+        const skuIdx = details?.skuId ? skuList.findIndex((s) => s.id === details.skuId) : -1;
+        const skuColor = skuIdx >= 0 ? SKU_PALETTE[skuIdx % SKU_PALETTE.length] : undefined;
         const rackMat = new THREE.MeshStandardMaterial({
-          color: isSelected ? 0xd4af37 : details?.skuId ? 0x0284c7 : 0x334155,
+          color: isSelected ? 0xd4af37 : skuColor ? skuColor : 0x334155,
+          emissive: isSelected ? 0xd4af37 : 0x000000,
+          emissiveIntensity: isSelected ? 0.2 : 0,
           roughness: 0.4,
           metalness: 0.3,
         });
@@ -1250,7 +1277,7 @@ export function SimulationViewport({
       } else if (type === 'DOCK_OUTBOUND') {
         const dGeo = new THREE.BoxGeometry(grid.cellSizeM * 0.9, 0.1, grid.cellSizeM * 0.9);
         const dMat = new THREE.MeshStandardMaterial({
-          color: isSelected ? 0xd4af37 : 0xf59e0b,
+          color: isSelected ? 0xd4af37 : 0x0284c7,
           transparent: true,
           opacity: 0.7,
         });
@@ -1331,11 +1358,10 @@ export function SimulationViewport({
 
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect) {
-        let selectedFound = false;
-          const newSelected = new Set<string>();
+        const newSelected = new Set<string>();
         // Project 3D positions to 2D screen to find selected items
         grid.tiles.forEach((type: any, key: any) => {
-          if (!selectedFound && (type === 'RACK' || type === 'CHARGER' || type === 'OBSTACLE')) {
+          if (type && type !== 'EMPTY_FLOOR') {
             const [gx, gy] = key.split('_').map((s: any) => parseInt(s, 10));
             const worldX = (gx + 0.5) * grid.cellSizeM;
             const worldZ = (gy + 0.5) * grid.cellSizeM;
@@ -1347,27 +1373,28 @@ export function SimulationViewport({
             const screenY = (vec.y * -0.5 + 0.5) * rect.height;
 
             if (screenX >= minX && screenX <= maxX && screenY >= minY && screenY <= maxY) {
-              const tileType = stateRef.current.grid.tiles.get(key);
-              if (tileType && tileType !== 'EMPTY_FLOOR') {
-                newSelected.add(key);
-                selectedFound = true;
-              }
+              newSelected.add(key);
             }
           }
         });
 
-        if (selectedFound) {
-          if ((stateRef.current as any).selectedSkuChip && newSelected.size > 0) {
+        if (newSelected.size > 0) {
+          if (stateRef.current.selectedSkuChip) {
             setGrid((prev) => {
               const detailsMap = new Map(prev.elementDetails || []);
               for (const k of newSelected) {
-                const existing = detailsMap.get(k) || {};
-                detailsMap.set(k, { ...existing, skuId: (stateRef.current as any).selectedSkuChip || undefined });
+                if (prev.tiles.get(k) === 'RACK') {
+                  const existing = detailsMap.get(k) || {};
+                  detailsMap.set(k, { ...existing, skuId: stateRef.current.selectedSkuChip || undefined });
+                }
               }
               return { ...prev, elementDetails: detailsMap };
             });
           }
           setSelectedTileKeys(newSelected);
+          setPopoverPos(null);
+        } else {
+          setSelectedTileKeys(new Set());
           setPopoverPos(null);
         }
       }
@@ -1386,7 +1413,7 @@ export function SimulationViewport({
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-[#8A6826]" />
               <h3 className="font-bold uppercase tracking-tight text-[#1A1A1A]">
-                [ REO CAD CONSTRUCTOR ] • [ Проект склада #1 ] • [ Режим: Чертеж ]
+                [ REO CAD CONSTRUCTOR ] • [ {(facility as any).name || 'Проект склада #1'} ] • [ Режим: Чертеж ]
               </h3>
             </div>
           ) : (

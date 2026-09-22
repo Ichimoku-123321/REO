@@ -216,26 +216,36 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
           {/* 3. Palette Elements */}
           {paletteTools.map((tool) => {
             const isSelected =
-              interactionMode === 'PLACE_ELEMENT' && selectedTileType === tool.type;
+              tool.type === 'EMPTY_FLOOR'
+                ? interactionMode === 'ERASE'
+                : interactionMode === 'PLACE_ELEMENT' && selectedTileType === tool.type;
             return (
               <button
                 key={tool.type}
                 type="button"
                 onClick={() => {
                   setIsFloorDropdownOpen(false);
-                  if (interactionMode === 'PLACE_ELEMENT' && selectedTileType === tool.type) {
-                  onChangeInteractionMode('SELECT');
-                } else {
-                  onSelectTileType(tool.type);
-                  onChangeInteractionMode('PLACE_ELEMENT');
-                }
+                  if (tool.type === 'EMPTY_FLOOR') {
+                    if (interactionMode === 'ERASE') {
+                      onChangeInteractionMode('SELECT');
+                    } else {
+                      onChangeInteractionMode('ERASE');
+                    }
+                  } else {
+                    if (interactionMode === 'PLACE_ELEMENT' && selectedTileType === tool.type) {
+                      onChangeInteractionMode('SELECT');
+                    } else {
+                      onSelectTileType(tool.type);
+                      onChangeInteractionMode('PLACE_ELEMENT');
+                    }
+                  }
                 }}
                 className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-bold transition rounded-none cursor-pointer border ${
                   isSelected
                     ? 'bg-[#1A1A1A] text-[#F9F9F6] border-[#1A1A1A]'
                     : 'bg-[#F9F9F6] text-[#1A1A1A] border-[#D4AF37]/30 hover:bg-[#EAEAE6]'
                 }`}
-                title={`Разместить элемент (${tool.label})`}
+                title={tool.type === 'EMPTY_FLOOR' ? 'Ластик (стирание объектов)' : `Разместить элемент (${tool.label})`}
               >
                 {tool.icon}
                 <span>[{tool.label}]</span>

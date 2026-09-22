@@ -107,6 +107,7 @@ export function findMagneticSnapPosition(
 
 /**
  * Calculates live total rack count and total warehouse pallet slot capacity.
+ * Dynamically sums slotsPerRack (defaulting to 12 if undefined) across all racks.
  */
 export function calculateWarehouseCapacity(grid: ConstructorGrid): {
   totalRacks: number;

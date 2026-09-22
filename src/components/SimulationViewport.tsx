@@ -29,6 +29,7 @@ import {
   type SkuItem,
   type SupplySchedule,
 } from '../engine/constructor_engine.js';
+import { buildElementsMap, StorageElement } from '../engine/cad_entities.js';
 import { SimulationControls } from './SimulationControls.js';
 import { ConstructorToolbar, type CtorInteractionMode } from './ConstructorToolbar.js';
 import { SkuInventoryModal } from './SkuInventoryModal.js';
@@ -370,7 +371,6 @@ export function SimulationViewport({
   }, [onAppModeChange]);
 
   const handleResetGrid = useCallback(() => {
-    if (!window.confirm("Очистить весь чертеж склада?")) return;
     const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
     setGrid(createInitialConstructorGrid(facilityDims.widthM, facilityDims.lengthM, cellSize));
     setSelectedTileKeys(new Set());
@@ -901,10 +901,11 @@ export function SimulationViewport({
         if (gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
           const key = getTileKey(gx, gy);
           if (st.interactionMode === 'SELECT') {
-            const tileType = stateRef.current.grid.tiles.get(key);
-            // Select RACK, DOCK, CHARGER, OBSTACLE, never place
-            if (tileType && tileType !== 'EMPTY_FLOOR') {
-              if (st.selectedSkuChip && tileType === 'RACK') {
+            const currentElementsMap = buildElementsMap(stateRef.current.grid);
+            const element = currentElementsMap.get(key);
+
+            if (element) {
+              if (st.selectedSkuChip && element instanceof StorageElement) {
                 setGrid((prev) => {
                   const detailsMap = new Map(prev.elementDetails || []);
                   const existing = detailsMap.get(key) || {};
@@ -915,11 +916,19 @@ export function SimulationViewport({
                 setPopoverPos(null);
                 return;
               }
+
               setSelectedTileKeys(new Set([key]));
-              setPopoverPos({
-                x: Math.min(Math.max(16, event.clientX), window.innerWidth - 320 - 16),
-                y: Math.min(Math.max(16, event.clientY), window.innerHeight - 240 - 16)
-              });
+
+              if (element instanceof StorageElement) {
+                const clampedCoords = {
+                  x: Math.min(Math.max(16, event.clientX), window.innerWidth - 320 - 16),
+                  y: Math.min(Math.max(16, event.clientY), window.innerHeight - 240 - 16),
+                };
+                setPopoverPos(clampedCoords);
+              } else {
+                // Walls, Docks, Chargers: select for rotation/deletion only, NEVER open popover!
+                setPopoverPos(null);
+              }
             } else {
               setSelectedTileKeys(new Set());
               setPopoverPos(null);
@@ -1607,7 +1616,7 @@ export function SimulationViewport({
         )}
 
         {/* Rack Inspection Popover */}
-        {selectedTileKeys.size === 1 && (
+        {selectedTileKeys.size === 1 && popoverPos !== null && (
           <RackInspectionPopover
             isOpen={true}
             onClose={() => {

@@ -315,7 +315,7 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
             <span>[ ⏱️ Расписание ]</span>
           </button>
 
-          {/* Selected Actions: Rotate & Delete */}
+          {/* Selected Actions: Rotate */}
           {selectedTileKeys.size > 0 && (
             <div className="flex items-center gap-1 bg-[#D4AF37]/15 p-0.5 border border-[#D4AF37]/40">
               <button
@@ -326,21 +326,17 @@ export const ConstructorToolbar: React.FC<ConstructorToolbarProps> = ({
               >
                 <RotateCw className="w-3.5 h-3.5 text-[#8A6826]" />
               </button>
-              <button
-                type="button"
-                onClick={onDeleteSelected}
-                className="p-1 bg-red-100 hover:bg-red-200 text-red-800 border border-red-300 rounded-none cursor-pointer"
-                title="Удалить элемент [Delete / Backspace]"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-red-700" />
-              </button>
             </div>
           )}
 
           {/* Reset Grid Button */}
           <button
             type="button"
-            onClick={onResetGrid}
+            onClick={() => {
+              if (window.confirm('Очистить весь чертеж склада?')) {
+                onResetGrid();
+              }
+            }}
             className="p-1 bg-[#F9F9F6] hover:bg-[#EAEAE6] text-[#4F4F47] border border-[#D4AF37]/30 rounded-none cursor-pointer"
             title="Сбросить схему чертежа"
           >

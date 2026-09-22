@@ -9,6 +9,17 @@ import {
   findMagneticSnapPosition,
   calculateWarehouseCapacity,
 } from '../src/engine/constructor_engine.js';
+import {
+  WarehouseElement,
+  StorageElement,
+  RackEntity,
+  WallEntity,
+  ChargerEntity,
+  DockEntity,
+  InboundDockEntity,
+  OutboundDockEntity,
+  buildElementsMap,
+} from '../src/engine/cad_entities.js';
 
 describe('3D CAD Constructor Engine & Topology Rebuilder', () => {
   it('creates initial grid matching dimensions and cell size with empty floor tiles', () => {
@@ -140,5 +151,97 @@ describe('3D CAD Constructor Engine & Topology Rebuilder', () => {
     const inboundBatchLarge = 50;
     const isOverflowLarge = inboundBatchLarge > capacity.totalPalletCapacity;
     assert.strictEqual(isOverflowLarge, true);
+  });
+
+  it('correctly constructs OOP WarehouseElement entity hierarchy and guards hasInspection', () => {
+    const rack = new RackEntity(2, 2, 24, 'sku-apples');
+    assert.ok(rack instanceof WarehouseElement);
+    assert.ok(rack instanceof StorageElement);
+    assert.ok(rack instanceof RackEntity);
+    assert.strictEqual(rack.type, 'RACK');
+    assert.strictEqual(rack.hasInspection, true);
+    assert.strictEqual(rack.slotsPerRack, 24);
+    assert.strictEqual(rack.skuId, 'sku-apples');
+    assert.strictEqual(rack.colorHex, 0x334155);
+
+    const wall = new WallEntity(4, 4);
+    assert.ok(wall instanceof WarehouseElement);
+    assert.ok(!(wall instanceof StorageElement));
+    assert.strictEqual(wall.type, 'OBSTACLE');
+    assert.strictEqual(wall.hasInspection, false);
+    assert.strictEqual(wall.colorHex, 0xef4444);
+
+    const charger = new ChargerEntity(6, 6);
+    assert.ok(charger instanceof WarehouseElement);
+    assert.ok(!(charger instanceof StorageElement));
+    assert.strictEqual(charger.type, 'CHARGER');
+    assert.strictEqual(charger.hasInspection, false);
+    assert.strictEqual(charger.colorHex, 0xf59e0b);
+
+    const inDock = new InboundDockEntity(0, 0);
+    assert.ok(inDock instanceof WarehouseElement);
+    assert.ok(inDock instanceof DockEntity);
+    assert.ok(!(inDock instanceof StorageElement));
+    assert.strictEqual(inDock.type, 'DOCK_INBOUND');
+    assert.strictEqual(inDock.hasInspection, false);
+    assert.strictEqual(inDock.colorHex, 0x10b981);
+    assert.strictEqual(DockEntity.maxInstances, 1);
+
+    const outDock = new OutboundDockEntity(10, 10);
+    assert.ok(outDock instanceof WarehouseElement);
+    assert.ok(outDock instanceof DockEntity);
+    assert.ok(!(outDock instanceof StorageElement));
+    assert.strictEqual(outDock.type, 'DOCK_OUTBOUND');
+    assert.strictEqual(outDock.hasInspection, false);
+    assert.strictEqual(outDock.colorHex, 0x0284c7);
+  });
+
+  it('builds elements map from grid and calculates capacity polymorphically', () => {
+    const grid = createInitialConstructorGrid(20, 20, 2.0);
+    const rackKey = getTileKey(1, 1);
+    const wallKey = getTileKey(2, 2);
+    const chargerKey = getTileKey(3, 3);
+    const inDockKey = getTileKey(0, 0);
+    const outDockKey = getTileKey(9, 9);
+
+    grid.tiles.set(rackKey, 'RACK');
+    grid.tiles.set(wallKey, 'OBSTACLE');
+    grid.tiles.set(chargerKey, 'CHARGER');
+    grid.tiles.set(inDockKey, 'DOCK_INBOUND');
+    grid.tiles.set(outDockKey, 'DOCK_OUTBOUND');
+
+    const detailsMap = new Map();
+    detailsMap.set(rackKey, { slotsPerRack: 36, skuId: 'sku-box', rotationDeg: 90 });
+    grid.elementDetails = detailsMap;
+
+    const elementsMap = buildElementsMap(grid);
+    assert.strictEqual(elementsMap.size, 5);
+
+    const rackEl = elementsMap.get(rackKey);
+    assert.ok(rackEl instanceof StorageElement);
+    assert.strictEqual((rackEl as StorageElement).slotsPerRack, 36);
+    assert.strictEqual((rackEl as StorageElement).skuId, 'sku-box');
+    assert.strictEqual(rackEl.rotationDeg, 90);
+
+    const wallEl = elementsMap.get(wallKey);
+    assert.ok(wallEl instanceof WallEntity);
+    assert.strictEqual(wallEl.hasInspection, false);
+
+    const chargerEl = elementsMap.get(chargerKey);
+    assert.ok(chargerEl instanceof ChargerEntity);
+    assert.strictEqual(chargerEl.hasInspection, false);
+
+    const inDockEl = elementsMap.get(inDockKey);
+    assert.ok(inDockEl instanceof InboundDockEntity);
+    assert.strictEqual(inDockEl.hasInspection, false);
+
+    const outDockEl = elementsMap.get(outDockKey);
+    assert.ok(outDockEl instanceof OutboundDockEntity);
+    assert.strictEqual(outDockEl.hasInspection, false);
+
+    // Dynamic capacity calculation test
+    const capacity = calculateWarehouseCapacity(grid);
+    assert.strictEqual(capacity.totalRacks, 1);
+    assert.strictEqual(capacity.totalPalletCapacity, 36);
   });
 });

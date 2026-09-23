@@ -263,6 +263,9 @@ export class HeadlessWarehouseDriver {
       'utf-8'
     );
 
+    const prevPositionsMap = new Map<string, { x: number; y: number }>();
+    const stationaryTicksMap = new Map<string, number>();
+
     for (let tick = 1; tick <= ticks; tick++) {
       engine.update(dtSim);
       const simTime = tick * dtSim;
@@ -270,8 +273,28 @@ export class HeadlessWarehouseDriver {
       const tickLogLines: string[] = [];
 
       for (const agent of engine.agents) {
+        const prevPos = prevPositionsMap.get(agent.id);
+        const distMoved = prevPos ? Math.hypot(agent.x - prevPos.x, agent.y - prevPos.y) : 0;
+        const speedMps = distMoved / dtSim;
+        prevPositionsMap.set(agent.id, { x: agent.x, y: agent.y });
+
+        const isMovingState =
+          agent.state === 'TRANSPORTING' ||
+          agent.state === 'MOVING_TO_PICKUP' ||
+          agent.state === 'MOVING_TO_CHARGE';
+
+        if (isMovingState && distMoved < 0.01) {
+          stationaryTicksMap.set(agent.id, (stationaryTicksMap.get(agent.id) || 0) + 1);
+        } else {
+          stationaryTicksMap.set(agent.id, 0);
+        }
+
+        const isDeadlocked = (stationaryTicksMap.get(agent.id) || 0) >= 60;
+        const angleDeg = (agent.headingRad * 180) / Math.PI;
         const targetId = agent.targetNodeId ?? 'NONE';
-        const line = `[Tick ${tick} | t=${simTime.toFixed(1)}s] Agent ${agent.id}: pos=(${agent.x.toFixed(2)}, ${agent.y.toFixed(2)}), state=${agent.state}, targetNode=${targetId}, battery=${agent.batterySoc.toFixed(1)}%`;
+        const pathLeft = agent.pathNodeIds?.length ?? 0;
+
+        const line = `[Tick ${tick} | t=${simTime.toFixed(1)}s] Agent ${agent.id}: pos=(${agent.x.toFixed(2)}, ${agent.y.toFixed(2)}), angle=${angleDeg.toFixed(1)}°, v=${speedMps.toFixed(2)}m/s, load=${agent.cargoPayload}, deadlocked=${isDeadlocked}, pathLeft=${pathLeft}, battery=${agent.batterySoc.toFixed(1)}%, state=${agent.state}, targetNode=${targetId}`;
         tickLogLines.push(line);
       }
 

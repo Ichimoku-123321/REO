@@ -592,7 +592,7 @@ export function SimulationViewport({
       (viewSize * aspect) / 2,
       viewSize / 2,
       -viewSize / 2,
-      0.1,
+      -10000,
       10000
     );
     cameraRef.current = camera;
@@ -1277,6 +1277,8 @@ export function SimulationViewport({
       camera.right = (viewSize * newAspect) / 2;
       camera.top = viewSize / 2;
       camera.bottom = -viewSize / 2;
+      camera.near = -10000;
+      camera.far = 10000;
       camera.updateProjectionMatrix();
 
       renderer.setSize(w, h);

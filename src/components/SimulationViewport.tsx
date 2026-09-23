@@ -861,12 +861,10 @@ export function SimulationViewport({
       if (downPos) {
         const dx = event.clientX - downPos.x;
         const dy = event.clientY - downPos.y;
-        if (Math.sqrt(dx * dx + dy * dy) >= 3) {
+        // Increased jitter tolerance threshold to 8px so natural slight mouse movement during click doesn't cancel placement
+        if (Math.sqrt(dx * dx + dy * dy) >= 8) {
           return;
         }
-
-
-
       }
 
       // Ignore right clicks for placement/drawing logic
@@ -971,7 +969,7 @@ export function SimulationViewport({
           return;
         }
 
-        if (event.button === 0 && st.interactionMode === 'ERASE' && gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
+        if (event.button === 0 && st.interactionMode === 'ERASE' && gx >= 0 && gy >= 0) {
           const key = getTileKey(gx, gy);
           setGrid((prev) => {
              const updatedTiles = new Map(prev.tiles);
@@ -984,7 +982,7 @@ export function SimulationViewport({
           return;
         }
 
-        if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT' && gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
+        if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT' && gx >= 0 && gy >= 0) {
           const key = getTileKey(gx, gy);
 
           if (st.selectedTileType === 'DOCK_INBOUND' || st.selectedTileType === 'DOCK_OUTBOUND') {
@@ -1012,14 +1010,16 @@ export function SimulationViewport({
             if (st.selectedTileType !== 'RACK') {
               updatedDetails.delete(key);
             }
-            return { ...prev, tiles: updatedTiles, elementDetails: updatedDetails };
+            const newCols = Math.max(prev.cols, gx + 1);
+            const newRows = Math.max(prev.rows, gy + 1);
+            return { ...prev, cols: newCols, rows: newRows, tiles: updatedTiles, elementDetails: updatedDetails };
           });
 
           setSelectedTileKeys(new Set());
           return;
         }
 
-        if (gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
+        if (gx >= 0 && gy >= 0) {
           const key = getTileKey(gx, gy);
           if (st.interactionMode === 'SELECT') {
             const tileType = stateRef.current.grid.tiles.get(key);

@@ -1,6 +1,8 @@
 import type { FacilityTopology, GraphEdge, GraphNode } from '../types/topology.js';
 import type { Robot } from '../types/robot.js';
+import type { FacilityRequirements } from '../types/facility.js';
 import type { FleetCompositionItem } from './fleet_optimizer.js';
+import { FastMarchingSolver } from './fast_marching.js';
 
 export type AgentFSMState =
   | 'IDLE'
@@ -44,6 +46,8 @@ export interface ExtendedSimulationResult {
   averageIdleTimePercent: number;
   deadlocksDetected: number;
   deliveriesByRobotType: Record<string, number>;
+  totalBreakdowns: number;
+  totalNegotiationDelaySeconds: number;
 }
 
 export interface SimulationReplayFrame {
@@ -72,6 +76,10 @@ export interface AgentState {
   batteryCapacityHours: number;
   chargeRatePerSec: number;
   dischargeRatePerSec: number;
+
+  // Resource Wear & Breakdown
+  accumulatedOperatingHours: number;
+  breakdownCount: number;
 
   // Navigation
   currentNodeId: string;
@@ -239,6 +247,7 @@ export class SimulationEngine {
   private topology: FacilityTopology;
   private fleetConfig: Robot | FleetCompositionItem[];
   private legacyFleetSize: number;
+  private facility?: FacilityRequirements;
 
   public agents: AgentState[] = [];
   public replayFrames: SimulationReplayFrame[] = [];
@@ -246,6 +255,8 @@ export class SimulationEngine {
   public completedDeliveries: number = 0;
   public deliveriesByRobotType: Record<string, number> = {};
   public robotRadius: number;
+  public totalBreakdowns: number = 0;
+  public totalNegotiationDelaySeconds: number = 0;
 
   // Key node caches and O(1) map
   private nodeMap: Map<string, GraphNode> = new Map();
@@ -263,14 +274,18 @@ export class SimulationEngine {
   private waypointNodes: GraphNode[] = [];
   public obstacleBoxes: ObstacleBox[] = [];
 
+  private fastMarchingSolvers: Map<string, FastMarchingSolver> = new Map();
+
   constructor(
     topology: FacilityTopology,
     fleetConfig: Robot | FleetCompositionItem[],
-    legacyFleetSize?: number
+    legacyFleetSize?: number,
+    facility?: FacilityRequirements
   ) {
     this.topology = topology;
     this.fleetConfig = fleetConfig;
     this.legacyFleetSize = legacyFleetSize ?? 0;
+    this.facility = facility;
 
     const primaryRobot = Array.isArray(fleetConfig)
       ? (fleetConfig[0]?.robot ?? null)
@@ -285,6 +300,20 @@ export class SimulationEngine {
     this.classifyNodes();
     this.extractObstacleBoxes();
     this.initializeFleet();
+
+    // Initialize Fast Marching solvers for static grid map
+    const { widthM, lengthM } = topology;
+    if (widthM > 0 && lengthM > 0) {
+      const solver = new FastMarchingSolver({
+        widthM,
+        lengthM,
+        resolutionM: 0.5,
+        obstacleBoxes: this.obstacleBoxes,
+        facility: this.facility,
+        robot: primaryRobot ?? undefined,
+      });
+      this.fastMarchingSolvers.set('default', solver);
+    }
   }
 
   public get fleetSize(): number {
@@ -477,6 +506,8 @@ export class SimulationEngine {
     this.elapsedSimSeconds = 0;
     this.completedDeliveries = 0;
     this.deliveriesByRobotType = {};
+    this.totalBreakdowns = 0;
+    this.totalNegotiationDelaySeconds = 0;
 
     const totalFleetSize = this.fleetSize;
     if (totalFleetSize === 0 || this.topology.nodes.length === 0) return;
@@ -542,6 +573,9 @@ export class SimulationEngine {
         chargeRatePerSec,
         dischargeRatePerSec,
 
+        accumulatedOperatingHours: 0,
+        breakdownCount: 0,
+
         currentNodeId: spawnNode.id,
         targetNodeId: null,
         pathNodeIds: [],
@@ -596,7 +630,14 @@ export class SimulationEngine {
 
       switch (agent.state) {
         case 'IDLE': {
-          if (agent.batterySoc < 20 && this.chargingNodes.length > 0) {
+          // Smart Opportunity Charging (staggered charging):
+          // Charge when SoC < 30% OR if SoC < 70% and no immediate high priority task queue
+          const occupiedChargersCount = this.agents.filter((a) => a.state === 'CHARGING' || a.state === 'MOVING_TO_CHARGE').length;
+          const availableChargersCount = Math.max(1, this.chargingNodes.length);
+
+          const shouldCharge = (agent.batterySoc < 20 || (agent.batterySoc < 30 && occupiedChargersCount < availableChargersCount)) && this.chargingNodes.length > 0;
+
+          if (shouldCharge) {
             const charger = this.findClosestNode(agent.currentNodeId, this.chargingNodes);
             if (charger) {
               agent.assignedChargerNodeId = charger.id;
@@ -627,7 +668,26 @@ export class SimulationEngine {
         case 'MOVING_TO_PICKUP':
         case 'TRANSPORTING':
         case 'MOVING_TO_CHARGE': {
-          agent.batterySoc = Math.max(0, agent.batterySoc - agent.dischargeRatePerSec * dtSim);
+          // Dynamic battery discharge & wear accumulation considering payload, floor quality, and temperature
+          let dischargeMultiplier = 1.0;
+          if (agent.cargoPayload) dischargeMultiplier *= 1.25;
+          if (this.facility?.floorSurfaceQuality === 'uneven') dischargeMultiplier *= 1.2;
+
+          const temp = this.facility?.operatingTempRange;
+          if (temp && (temp.min < agent.robotSpec.operatingTempRange.min || temp.max > agent.robotSpec.operatingTempRange.max)) {
+            dischargeMultiplier *= 1.35;
+          }
+
+          agent.batterySoc = Math.max(0, agent.batterySoc - agent.dischargeRatePerSec * dischargeMultiplier * dtSim);
+
+          // Resource Wear & Breakdown Accumulation
+          agent.accumulatedOperatingHours += dtSim / 3600;
+          const mtbf = agent.robotSpec.mtbfOperatingHours || 10000;
+          if (agent.accumulatedOperatingHours >= mtbf) {
+            agent.breakdownCount += 1;
+            this.totalBreakdowns += 1;
+            agent.accumulatedOperatingHours = 0; // reset counter after service
+          }
 
           let targetNode = agent.targetNodeId ? this.nodeMap.get(agent.targetNodeId) || null : null;
           if (!targetNode || agent.pathNodeIds.length === 0) {
@@ -639,7 +699,7 @@ export class SimulationEngine {
             agent.targetNodeId = targetNode.id;
           }
 
-          // 1. Attractive Goal Force (F_att, w_att = 1.0)
+          // 1. Fast Marching Eikonal Gradient Guidance (F_att)
           const dx = targetNode.x - agent.x;
           const dy = targetNode.y - agent.y;
           const distToTarget = Math.hypot(dx, dy);
@@ -663,8 +723,33 @@ export class SimulationEngine {
             }
           }
 
+          // Current Effective Max Speed considering cargo & floor unevenness
+          let currentMaxSpeed = agent.maxSpeed;
+          if (this.facility?.floorSurfaceQuality === 'uneven') {
+            currentMaxSpeed *= 0.8;
+          } else if (this.facility?.floorSurfaceQuality === 'superflat') {
+            currentMaxSpeed *= 1.1;
+          }
+          if (agent.cargoPayload) {
+            const payloadRatio = Math.min(1.0, (this.facility?.requiredPayloadKg ?? 100) / agent.robotSpec.payloadKg);
+            currentMaxSpeed *= (1.0 - 0.15 * payloadRatio);
+          }
+
           let fAttX = distToTarget > 0.001 ? dx / distToTarget : 0;
           let fAttY = distToTarget > 0.001 ? dy / distToTarget : 0;
+
+          if (!this.hasLineOfSight(agent.x, agent.y, targetNode.x, targetNode.y, agent.robotRadius)) {
+            const solver = this.fastMarchingSolvers.get('default');
+            if (solver) {
+              const eikonalField = solver.solveEikonalField(targetNode.x, targetNode.y);
+              const grad = solver.getGradientVelocity(agent.x, agent.y, eikonalField, currentMaxSpeed);
+              if (!grad.arrived && Math.hypot(grad.vx, grad.vy) > 0.001) {
+                const gradSpeed = Math.hypot(grad.vx, grad.vy);
+                fAttX = grad.vx / gradSpeed;
+                fAttY = grad.vy / gradSpeed;
+              }
+            }
+          }
 
           // 2. Static Obstacle Repulsion & Tangential Wall Sliding (w_obs = 1.6, d_safe = 1.2m)
           let fObsX = 0;
@@ -757,6 +842,9 @@ export class SimulationEngine {
                 fAvoidX += factor * vRightX * 1.2;
                 fAvoidY += factor * vRightY * 1.2;
               }
+
+              // Negotiation delay tracking when passing
+              this.totalNegotiationDelaySeconds += dtSim * 0.1;
             }
           }
 
@@ -771,8 +859,8 @@ export class SimulationEngine {
           let vy = 0;
 
           if (fTotalLen > 0.001) {
-            vx = agent.maxSpeed * (fTotalX / fTotalLen);
-            vy = agent.maxSpeed * (fTotalY / fTotalLen);
+            vx = currentMaxSpeed * (fTotalX / fTotalLen);
+            vy = currentMaxSpeed * (fTotalY / fTotalLen);
           }
 
           // Cancel inward velocity component directed toward obstacle interiors
@@ -1100,6 +1188,8 @@ export class SimulationEngine {
       averageIdleTimePercent,
       deadlocksDetected,
       deliveriesByRobotType: { ...this.deliveriesByRobotType },
+      totalBreakdowns: this.totalBreakdowns,
+      totalNegotiationDelaySeconds: Math.round(this.totalNegotiationDelaySeconds * 10) / 10,
     };
   }
 

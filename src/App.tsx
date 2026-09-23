@@ -210,7 +210,8 @@ export default function App() {
             : selectedRobot
             ? [{ robot: selectedRobot, count: 1, totalThroughputPerHour: 10, totalCapexRub: 1000, totalAnnualOpexRub: 100, fiveYearTcoRub: 1500 }]
             : SEED_ROBOTS[0],
-          activeFleetSize || 1
+          activeFleetSize || 1,
+          facility
         );
 
         engine.runSimulation({
@@ -365,8 +366,6 @@ export default function App() {
             manualFleetCounts={manualFleetCounts}
             onManualCountChange={handleManualCountChange}
             activeFleetSize={activeFleetSize}
-            onRunSimulation={handleRunSimulation}
-            isCalculating={isCalculating}
           />
         )}
 

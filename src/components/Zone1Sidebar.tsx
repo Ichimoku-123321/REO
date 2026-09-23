@@ -30,8 +30,6 @@ interface Zone1SidebarProps {
   manualFleetCounts: Record<string, number>;
   onManualCountChange: (robotId: string, count: number) => void;
   activeFleetSize: number;
-  onRunSimulation: () => void;
-  isCalculating: boolean;
 }
 
 export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
@@ -45,8 +43,6 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
   manualFleetCounts,
   onManualCountChange,
   activeFleetSize,
-  onRunSimulation,
-  isCalculating,
 }) => {
   // Accordion section open/close states (open by default)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -867,20 +863,6 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
         </div>
       </div>
 
-      {/* Sticky Bottom Execution Action Button */}
-      <div className="sticky bottom-0 bg-[#F4F4F0] p-3 border-t border-[#D4AF37]/40 z-10 shrink-0 rounded-none">
-        <button
-          type="button"
-          onClick={onRunSimulation}
-          disabled={isCalculating}
-          className="w-full py-3 bg-[#D4AF37] hover:bg-[#BFA02E] active:bg-[#8A6826] text-[#1A1A1A] font-bold uppercase tracking-wider text-xs border border-[#BFA02E] shadow-xs transition flex items-center justify-center gap-2 rounded-none cursor-pointer disabled:opacity-50"
-        >
-          <span className="w-2 h-2 bg-[#1A1A1A]"></span>
-          <span>
-            {isCalculating ? 'REO: Расчет в процессе...' : '[ЗАПУСТИТЬ МОДЕЛИРОВАНИЕ И РАСЧЕТ]'}
-          </span>
-        </button>
-      </div>
     </aside>
   );
 };

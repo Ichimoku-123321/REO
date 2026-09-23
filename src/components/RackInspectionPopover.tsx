@@ -21,6 +21,8 @@ interface RackInspectionPopoverPropsExtended extends RackInspectionPopoverProps 
   onStartDrag?: (e: React.PointerEvent) => void;
 }
 
+import { useState, useEffect, useRef } from 'react';
+
 export const RackInspectionPopover: React.FC<RackInspectionPopoverPropsExtended> = ({
   isOpen,
   onClose,
@@ -43,18 +45,87 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverPropsExtended>
   const popoverW = 288;
   const popoverH = 280;
 
-  // Clamp screenPos so that the window never leaves the viewport by even 1 pixel
-  const posX = screenPos
-    ? Math.max(0, Math.min(screenPos.x, window.innerWidth - popoverW))
-    : Math.max(0, (window.innerWidth - popoverW) / 2);
-  const posY = screenPos
-    ? Math.max(0, Math.min(screenPos.y, window.innerHeight - popoverH))
-    : Math.max(0, (window.innerHeight - popoverH) / 2);
+  const [position, setPosition] = useState<{ x: number; y: number }>(() => {
+    const x = screenPos
+      ? Math.max(0, Math.min(screenPos.x, window.innerWidth - popoverW))
+      : Math.max(0, (window.innerWidth - popoverW) / 2);
+    const y = screenPos
+      ? Math.max(0, Math.min(screenPos.y, window.innerHeight - popoverH))
+      : Math.max(0, (window.innerHeight - popoverH) / 2);
+    return { x, y };
+  });
+
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const dragOffsetRef = useRef<{ offsetX: number; offsetY: number }>({ offsetX: 0, offsetY: 0 });
+
+  // Update position if screenPos changes when NOT dragging
+  useEffect(() => {
+    if (screenPos && !isDragging) {
+      const x = Math.max(0, Math.min(screenPos.x, window.innerWidth - popoverW));
+      const y = Math.max(0, Math.min(screenPos.y, window.innerHeight - popoverH));
+      setPosition({ x, y });
+    }
+  }, [screenPos?.x, screenPos?.y, isDragging]);
+
+  // Handle global window drag events
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handlePointerMove = (e: MouseEvent | PointerEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const rawX = e.clientX - dragOffsetRef.current.offsetX;
+      const rawY = e.clientY - dragOffsetRef.current.offsetY;
+      const clampedX = Math.max(0, Math.min(rawX, window.innerWidth - popoverW));
+      const clampedY = Math.max(0, Math.min(rawY, window.innerHeight - popoverH));
+      setPosition({ x: clampedX, y: clampedY });
+    };
+
+    const handlePointerUp = (e: Event) => {
+      e.stopPropagation();
+      e.preventDefault();
+      setIsDragging(false);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('blur', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('blur', handlePointerUp);
+    };
+  }, [isDragging]);
+
+  // Support Escape key to close popover
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  const handleHeaderPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    dragOffsetRef.current = {
+      offsetX: e.clientX - position.x,
+      offsetY: e.clientY - position.y,
+    };
+    setIsDragging(true);
+    onStartDrag?.(e);
+  };
 
   const style: React.CSSProperties = {
     position: 'fixed',
-    left: `${posX}px`,
-    top: `${posY}px`,
+    left: `${position.x}px`,
+    top: `${position.y}px`,
   };
 
   const stopProp = (e: React.SyntheticEvent) => e.stopPropagation();
@@ -67,15 +138,12 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverPropsExtended>
       onMouseDown={stopProp}
       onMouseUp={stopProp}
       onClick={stopProp}
-      className="z-30 w-72 bg-[#FFFFFF] border-2 border-[#D4AF37] p-3.5 shadow-2xl font-mono text-xs text-[#1A1A1A] rounded-none pointer-events-auto cursor-default"
+      className="z-30 w-72 bg-[#FFFFFF] border-2 border-[#D4AF37] p-3.5 shadow-2xl font-mono text-xs text-[#1A1A1A] rounded-none pointer-events-auto cursor-default select-none"
     >
       {/* Header - Drag Handle */}
       <div
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          onStartDrag?.(e);
-        }}
-        className="flex items-center justify-between pb-2 border-b border-[#D4AF37]/40 mb-2.5 select-none bg-[#F9F9F6] -mx-3.5 -mt-3.5 p-2.5 mb-2.5 border-b border-[#D4AF37]/30"
+        onPointerDown={handleHeaderPointerDown}
+        className="flex items-center justify-between pb-2 border-b border-[#D4AF37]/40 mb-2.5 select-none bg-[#F9F9F6] -mx-3.5 -mt-3.5 p-2.5 mb-2.5 border-b border-[#D4AF37]/30 cursor-grab active:cursor-grabbing"
       >
         <div className="flex items-center gap-1.5 font-bold uppercase text-[11px] text-[#8A6826]">
           <Boxes className="w-4 h-4 text-[#D4AF37]" />

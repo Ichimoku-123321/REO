@@ -291,11 +291,32 @@ export class HeadlessWarehouseDriver {
 
         const isDeadlocked = (stationaryTicksMap.get(agent.id) || 0) >= 60;
         const angleDeg = (agent.headingRad * 180) / Math.PI;
-        const targetId = agent.targetNodeId ?? 'NONE';
-        const pathLeft = agent.pathNodeIds?.length ?? 0;
 
-        const line = `[Tick ${tick} | t=${simTime.toFixed(1)}s] Agent ${agent.id}: pos=(${agent.x.toFixed(2)}, ${agent.y.toFixed(2)}), angle=${angleDeg.toFixed(1)}°, v=${speedMps.toFixed(2)}m/s, load=${agent.cargoPayload}, deadlocked=${isDeadlocked}, pathLeft=${pathLeft}, battery=${agent.batterySoc.toFixed(1)}%, state=${agent.state}, targetNode=${targetId}`;
-        tickLogLines.push(line);
+        const rawAgentSnapshot = {
+          id: agent.id,
+          pos: { x: Number(agent.x.toFixed(2)), y: Number(agent.y.toFixed(2)), z: agent.z },
+          angleDeg: Number(angleDeg.toFixed(1)),
+          speedMps: Number(speedMps.toFixed(2)),
+          state: agent.state,
+          batterySoc: Number(agent.batterySoc.toFixed(1)),
+          cargoPayload: agent.cargoPayload,
+          isQueued: agent.isQueued,
+          isDeadlocked,
+          pathNodeIds: agent.pathNodeIds,
+          pathLeft: agent.pathNodeIds.length,
+          currentNodeId: agent.currentNodeId,
+          targetNodeId: agent.targetNodeId,
+          assignedInboundNodeId: agent.assignedInboundNodeId,
+          assignedDeliveryNodeId: agent.assignedDeliveryNodeId,
+          assignedChargerNodeId: agent.assignedChargerNodeId,
+          accumulatedOperatingHours: Number(agent.accumulatedOperatingHours.toFixed(4)),
+          breakdownCount: agent.breakdownCount,
+          robotRadius: agent.robotRadius,
+          maxSpeed: agent.maxSpeed,
+          robotModel: `${agent.robotSpec.vendor} ${agent.robotSpec.model}`,
+        };
+
+        tickLogLines.push(`[Tick ${tick} | t=${simTime.toFixed(1)}s] ` + JSON.stringify(rawAgentSnapshot));
       }
 
       fs.appendFileSync(telemetryLogPath, tickLogLines.join('\n') + '\n', 'utf-8');

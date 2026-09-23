@@ -36,6 +36,9 @@ describe('Fleet Optimizer (src/engine/fleet_optimizer.ts)', () => {
     capexCostRub: 2000000,
     annualOpexCostRub: 150000,
     monthlyRaasCostRub: 80000,
+    energyConsumptionKw: 1.5,
+    maxFloorUnevennessMm: 5,
+    mtbfOperatingHours: 10000,
   };
 
   const robotB: Robot = {
@@ -56,6 +59,9 @@ describe('Fleet Optimizer (src/engine/fleet_optimizer.ts)', () => {
     capexCostRub: 5000000,
     annualOpexCostRub: 300000,
     monthlyRaasCostRub: 180000,
+    energyConsumptionKw: 1.5,
+    maxFloorUnevennessMm: 5,
+    mtbfOperatingHours: 10000,
   };
 
   const robotIneligible: Robot = {
@@ -76,6 +82,9 @@ describe('Fleet Optimizer (src/engine/fleet_optimizer.ts)', () => {
     capexCostRub: 1000000,
     annualOpexCostRub: 80000,
     monthlyRaasCostRub: 40000,
+    energyConsumptionKw: 1.5,
+    maxFloorUnevennessMm: 5,
+    mtbfOperatingHours: 10000,
   };
 
   it('должен возвращать fallback при отсутствии подходящих роботов', () => {
@@ -130,6 +139,9 @@ describe('Fleet Optimizer (src/engine/fleet_optimizer.ts)', () => {
       capexCostRub: 6000000,
       annualOpexCostRub: 620000,
       monthlyRaasCostRub: 300000,
+      energyConsumptionKw: 1.5,
+      maxFloorUnevennessMm: 5,
+      mtbfOperatingHours: 10000,
     };
 
     const robotD: Robot = {
@@ -150,6 +162,9 @@ describe('Fleet Optimizer (src/engine/fleet_optimizer.ts)', () => {
       capexCostRub: 2000000,
       annualOpexCostRub: 140000,
       monthlyRaasCostRub: 80000,
+      energyConsumptionKw: 1.5,
+      maxFloorUnevennessMm: 5,
+      mtbfOperatingHours: 10000,
     };
 
     const facilityHighThroughput: FacilityRequirements = {
@@ -187,6 +202,9 @@ describe('Fleet Optimizer (src/engine/fleet_optimizer.ts)', () => {
       capexCostRub: 1500000 + index * 300000,
       annualOpexCostRub: 100000 + index * 20000,
       monthlyRaasCostRub: 60000 + index * 10000,
+      energyConsumptionKw: 1.5,
+      maxFloorUnevennessMm: 5,
+      mtbfOperatingHours: 10000,
     }));
 
     // Прогрев JIT

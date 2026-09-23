@@ -8,6 +8,9 @@ import {
   calculateShoelaceArea,
   findMagneticSnapPosition,
   calculateWarehouseCapacity,
+  isInsideFloor,
+  createDebugSnapshotPayload,
+  type FloorDefinition,
 } from '../src/engine/constructor_engine.js';
 import {
   WarehouseElement,
@@ -292,5 +295,54 @@ describe('3D CAD Constructor Engine & Topology Rebuilder', () => {
     const capacity = calculateWarehouseCapacity(grid);
     assert.strictEqual(capacity.totalRacks, 1);
     assert.strictEqual(capacity.totalPalletCapacity, 36);
+  });
+
+  it('validates isInsideFloor for RECTANGLE and POLYGON floor definitions', () => {
+    const rectFloor: FloorDefinition = {
+      type: 'RECTANGLE',
+      bounds: { minX: 2, maxX: 8, minZ: 2, maxZ: 8 },
+      areaSqm: 25,
+    };
+
+    assert.strictEqual(isInsideFloor(5, 5, rectFloor), true);
+    assert.strictEqual(isInsideFloor(2, 2, rectFloor), true);
+    assert.strictEqual(isInsideFloor(1, 5, rectFloor), false);
+    assert.strictEqual(isInsideFloor(5, 9, rectFloor), false);
+
+    const polyFloor: FloorDefinition = {
+      type: 'POLYGON',
+      vertices: [
+        { x: 0, z: 0 },
+        { x: 10, z: 0 },
+        { x: 10, z: 10 },
+        { x: 0, z: 10 },
+      ],
+      areaSqm: 100,
+    };
+
+    assert.strictEqual(isInsideFloor(5, 5, polyFloor), true);
+    assert.strictEqual(isInsideFloor(15, 5, polyFloor), false);
+  });
+
+  it('generates audit debug snapshot payload and flags floating out-of-bounds elements', () => {
+    const grid = createInitialConstructorGrid(20, 20, 2.0);
+    grid.floor = {
+      type: 'RECTANGLE',
+      bounds: { minX: 0, maxX: 5, minZ: 0, maxZ: 5 },
+      areaSqm: 100,
+    };
+
+    // In bounds
+    grid.tiles.set(getTileKey(2, 2), 'RACK');
+    // Out of bounds
+    grid.tiles.set(getTileKey(10, 10), 'OBSTACLE');
+
+    const payload = createDebugSnapshotPayload('TEST_ACTION', grid, { x: 2, y: 2 });
+
+    assert.strictEqual(payload.action, 'TEST_ACTION');
+    assert.strictEqual(payload.healthCheck, 'INVALID_LAYOUT');
+    assert.strictEqual(payload.validation.hasOutOfBoundsElements, true);
+    assert.strictEqual(payload.validation.errors.length, 1);
+    assert.ok(payload.validation.errors[0].includes('CRITICAL_FLOOR_VIOLATION'));
   });
 });

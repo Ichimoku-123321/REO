@@ -21,10 +21,13 @@ import {
   calculateShoelaceArea,
   findMagneticSnapPosition,
   calculateWarehouseCapacity,
+  isInsideFloor,
+  emitDebugSnapshot,
   DEFAULT_SKU_LIST,
   DEFAULT_SUPPLY_SCHEDULE,
   type ConstructorGrid,
   type ConstructorTileType,
+  type FloorDefinition,
   type Point2D,
   type SkuItem,
   type SupplySchedule,
@@ -381,8 +384,10 @@ export function SimulationViewport({
 
   const handleResetGrid = useCallback(() => {
     const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;
-    setGrid(createInitialConstructorGrid(facilityDims.widthM, facilityDims.lengthM, cellSize));
+    const newGrid = createInitialConstructorGrid(facilityDims.widthM, facilityDims.lengthM, cellSize);
+    setGrid(newGrid);
     setSelectedTileKeys(new Set());
+    emitDebugSnapshot('RESET_GRID', newGrid);
   }, [facilityDims, facility.totalAreaSqm]);
 
   const handleRotateSelected = useCallback(() => {
@@ -395,7 +400,9 @@ export function SimulationViewport({
         const nextRot = (currentRot + 90) % 360;
         detailsMap.set(key, { ...existing, rotationDeg: nextRot });
       }
-      return { ...prev, elementDetails: detailsMap };
+      const updatedGrid = { ...prev, elementDetails: detailsMap };
+      emitDebugSnapshot('ROTATE_ELEMENT', updatedGrid);
+      return updatedGrid;
     });
   }, [selectedTileKeys]);
 
@@ -408,7 +415,9 @@ export function SimulationViewport({
         updatedTiles.set(key, 'EMPTY_FLOOR');
         detailsMap.delete(key);
       }
-      return { ...prev, tiles: updatedTiles, elementDetails: detailsMap };
+      const updatedGrid = { ...prev, tiles: updatedTiles, elementDetails: detailsMap };
+      emitDebugSnapshot('DELETE_ELEMENT', updatedGrid);
+      return updatedGrid;
     });
     setSelectedTileKeys(new Set());
   }, [selectedTileKeys]);
@@ -957,13 +966,35 @@ export function SimulationViewport({
                 onChangeFacility({ ...st.facility, totalAreaSqm: calculatedArea });
               }
 
-              return {
+              let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+              newTiles.forEach((_, k) => {
+                const [xS, zS] = k.split('_');
+                const xVal = parseInt(xS, 10);
+                const zVal = parseInt(zS, 10);
+                if (!isNaN(xVal) && !isNaN(zVal)) {
+                  if (xVal < minX) minX = xVal;
+                  if (xVal > maxX) maxX = xVal;
+                  if (zVal < minZ) minZ = zVal;
+                  if (zVal > maxZ) maxZ = zVal;
+                }
+              });
+
+              const newFloor: FloorDefinition = {
+                type: 'RECTANGLE',
+                bounds: minX !== Infinity ? { minX, maxX, minZ, maxZ } : { minX: 0, maxX: newCols, minZ: 0, maxZ: newRows },
+                areaSqm: calculatedArea,
+              };
+
+              const updatedGrid = {
                 ...prev,
                 cols: newCols,
                 rows: newRows,
                 tiles: newTiles,
                 elementDetails: newDetails,
+                floor: newFloor,
               };
+              emitDebugSnapshot(isErase ? 'ERASE_FLOOR_RECT' : 'DRAW_FLOOR_RECT', updatedGrid, { x: gx, y: gy });
+              return updatedGrid;
             });
 
             setDrawingPoints([]);
@@ -980,13 +1011,21 @@ export function SimulationViewport({
              updatedTiles.set(key, 'EMPTY_FLOOR');
              const updatedDetails = new Map(prev.elementDetails || []);
              updatedDetails.delete(key);
-             return { ...prev, tiles: updatedTiles, elementDetails: updatedDetails };
+             const updatedGrid = { ...prev, tiles: updatedTiles, elementDetails: updatedDetails };
+             emitDebugSnapshot('ERASE_TILE', updatedGrid, { x: gx, y: gy });
+             return updatedGrid;
           });
           setSelectedTileKeys(new Set());
           return;
         }
 
         if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT') {
+          const isValidFloor = isInsideFloor(gx, gy, st.grid.floor);
+          if (!isValidFloor) {
+            showToast('⚠️ Нельзя размещать объекты за пределами границы пола');
+            return;
+          }
+
           const key = getTileKey(gx, gy);
 
           if (st.selectedTileType === 'DOCK_INBOUND' || st.selectedTileType === 'DOCK_OUTBOUND') {
@@ -1016,7 +1055,9 @@ export function SimulationViewport({
             }
             const newCols = Math.max(prev.cols, gx + 1);
             const newRows = Math.max(prev.rows, gy + 1);
-            return { ...prev, cols: newCols, rows: newRows, tiles: updatedTiles, elementDetails: updatedDetails };
+            const updatedGrid = { ...prev, cols: newCols, rows: newRows, tiles: updatedTiles, elementDetails: updatedDetails };
+            emitDebugSnapshot(`PLACE_${st.selectedTileType}`, updatedGrid, { x: gx, y: gy });
+            return updatedGrid;
           });
 
           setSelectedTileKeys(new Set());
@@ -1033,7 +1074,9 @@ export function SimulationViewport({
                 const detailsMap = new Map(prev.elementDetails || []);
                 const existing = detailsMap.get(key) || {};
                 detailsMap.set(key, { ...existing, skuId: st.selectedSkuChip || undefined });
-                return { ...prev, elementDetails: detailsMap };
+                const updatedGrid = { ...prev, elementDetails: detailsMap };
+                emitDebugSnapshot('ASSIGN_SKU', updatedGrid, { x: gx, y: gy });
+                return updatedGrid;
               });
             }
             setSelectedTileKeys(new Set([key]));

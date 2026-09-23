@@ -134,12 +134,210 @@ export interface GridTileState {
   type: ConstructorTileType;
 }
 
+export interface FloorDefinition {
+  type: 'RECTANGLE' | 'POLYGON';
+  bounds?: { minX: number; maxX: number; minZ: number; maxZ: number };
+  vertices?: Array<{ x: number; z: number }>;
+  areaSqm: number;
+}
+
 export interface ConstructorGrid {
   cols: number;
   rows: number;
   cellSizeM: number;
   tiles: Map<string, ConstructorTileType>; // key: `${gridX}_${gridY}`
   elementDetails?: Map<string, { skuId?: string; slotsPerRack?: number; rotationDeg?: number }>;
+  floor?: FloorDefinition;
+}
+
+/**
+ * Validates whether a grid cell (gx, gy) is strictly inside the floor definition bounds/polygon.
+ * Falls back to floor bounds if present, or false if floor is defined and cell is outside.
+ */
+export function isInsideFloor(
+  gx: number,
+  gy: number,
+  floor?: FloorDefinition,
+  gridTiles?: Map<string, ConstructorTileType>
+): boolean {
+  if (gridTiles && gridTiles.size > 0) {
+    if (!gridTiles.has(getTileKey(gx, gy))) {
+      return false;
+    }
+  }
+
+  if (!floor) return true;
+
+  if (floor.type === 'RECTANGLE') {
+    if (!floor.bounds) return true;
+    return (
+      gx >= floor.bounds.minX &&
+      gx <= floor.bounds.maxX &&
+      gy >= floor.bounds.minZ &&
+      gy <= floor.bounds.maxZ
+    );
+  }
+
+  if (floor.type === 'POLYGON') {
+    if (!floor.vertices || floor.vertices.length < 3) return true;
+    let inside = false;
+    const n = floor.vertices.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = floor.vertices[i].x;
+      const zi = floor.vertices[i].z;
+      const xj = floor.vertices[j].x;
+      const zj = floor.vertices[j].z;
+
+      const intersect =
+        zi > gy !== zj > gy && gx < ((xj - xi) * (gy - zi)) / (zj - zi) + xi;
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  return true;
+}
+
+export interface DebugSnapshotPayload {
+  action: string;
+  timestamp: number;
+  cursor?: { x: number; y: number };
+  floor: {
+    type: string;
+    areaSqm: number;
+    bounds?: { minX: number; maxX: number; minZ: number; maxZ: number };
+    vertices?: Array<{ x: number; z: number }>;
+  };
+  tilesCount: number;
+  elements: Array<{
+    key: string;
+    type: ConstructorTileType;
+    x: number;
+    z: number;
+    skuId?: string;
+    slots?: number;
+    rotationDeg?: number;
+    inFloor: boolean;
+  }>;
+  docks: { inbound: number; outbound: number };
+  validation: {
+    hasOutOfBoundsElements: boolean;
+    errors: string[];
+  };
+  healthCheck: 'HEALTHY' | 'INVALID_LAYOUT';
+}
+
+/**
+ * Creates a detailed audit debug snapshot payload for layout state.
+ */
+export function createDebugSnapshotPayload(
+  action: string,
+  grid: ConstructorGrid,
+  cursor?: { x: number; y: number }
+): DebugSnapshotPayload {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  let floorTileCount = 0;
+
+  grid.tiles.forEach((type, key) => {
+    const [xStr, zStr] = key.split('_');
+    const gx = parseInt(xStr, 10);
+    const gz = parseInt(zStr, 10);
+    if (isNaN(gx) || isNaN(gz)) return;
+
+    if (type === 'EMPTY_FLOOR') {
+      floorTileCount++;
+    }
+    if (gx < minX) minX = gx;
+    if (gx > maxX) maxX = gx;
+    if (gz < minZ) minZ = gz;
+    if (gz > maxZ) maxZ = gz;
+  });
+
+  const effectiveFloor: FloorDefinition = grid.floor || {
+    type: 'RECTANGLE',
+    bounds: minX !== Infinity ? { minX, maxX, minZ, maxZ } : { minX: 0, maxX: 0, minZ: 0, maxZ: 0 },
+    areaSqm: Math.round(grid.tiles.size * grid.cellSizeM * grid.cellSizeM),
+  };
+
+  const elements: DebugSnapshotPayload['elements'] = [];
+  let inboundDocks = 0;
+  let outboundDocks = 0;
+  let hasOutOfBoundsElements = false;
+  const errors: string[] = [];
+
+  grid.tiles.forEach((type, key) => {
+    const [xStr, zStr] = key.split('_');
+    const gx = parseInt(xStr, 10);
+    const gz = parseInt(zStr, 10);
+    if (isNaN(gx) || isNaN(gz)) return;
+
+    if (type === 'DOCK_INBOUND') inboundDocks++;
+    if (type === 'DOCK_OUTBOUND') outboundDocks++;
+
+    const details = grid.elementDetails?.get(key);
+    const inFloor = isInsideFloor(gx, gz, effectiveFloor, grid.tiles);
+
+    if (type !== 'EMPTY_FLOOR' && !inFloor) {
+      hasOutOfBoundsElements = true;
+      const errorMsg = `🚨 [CRITICAL_FLOOR_VIOLATION]: Element ${type} at (${gx}, ${gz}) is FLOATING IN THE AIR (outside floor bounds)!`;
+      errors.push(errorMsg);
+      console.error(errorMsg);
+    }
+
+    elements.push({
+      key,
+      type,
+      x: gx,
+      z: gz,
+      skuId: details?.skuId,
+      slots: details?.slotsPerRack ?? (type === 'RACK' ? 12 : undefined),
+      rotationDeg: details?.rotationDeg ?? 0,
+      inFloor,
+    });
+  });
+
+  const healthCheck = hasOutOfBoundsElements ? 'INVALID_LAYOUT' : 'HEALTHY';
+
+  return {
+    action,
+    timestamp: Date.now(),
+    cursor,
+    floor: {
+      type: effectiveFloor.type,
+      areaSqm: effectiveFloor.areaSqm,
+      bounds: effectiveFloor.bounds,
+      vertices: effectiveFloor.vertices,
+    },
+    tilesCount: grid.tiles.size,
+    elements,
+    docks: { inbound: inboundDocks, outbound: outboundDocks },
+    validation: {
+      hasOutOfBoundsElements,
+      errors,
+    },
+    healthCheck,
+  };
+}
+
+/**
+ * Fire-and-forget asynchronous emitter for debug snapshots.
+ */
+export function emitDebugSnapshot(
+  action: string,
+  grid: ConstructorGrid,
+  cursor?: { x: number; y: number }
+): void {
+  const payload = createDebugSnapshotPayload(action, grid, cursor);
+  fetch('/__debug_snapshot', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch(() => {
+    // Ignore error silently to prevent UI lag
+  });
 }
 
 /**
@@ -161,8 +359,14 @@ export function createInitialConstructorGrid(
   const rows = Math.max(2, Math.floor(lengthM / cellSizeM));
   const tiles = new Map<string, ConstructorTileType>();
 
+  const floor: FloorDefinition = {
+    type: 'RECTANGLE',
+    bounds: { minX: 0, maxX: cols - 1, minZ: 0, maxZ: rows - 1 },
+    areaSqm: Math.round(cols * rows * cellSizeM * cellSizeM),
+  };
+
   // Grid starts clean and empty. Tiles are added when user draws floor.
-  return { cols, rows, cellSizeM, tiles };
+  return { cols, rows, cellSizeM, tiles, floor };
 }
 
 /**

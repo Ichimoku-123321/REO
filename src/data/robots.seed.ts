@@ -22,6 +22,9 @@ export const SEED_ROBOTS: Robot[] = [
     capexCostRub: 2700000,
     annualOpexCostRub: deriveOpex(2700000),
     monthlyRaasCostRub: deriveRaas(2700000),
+    energyConsumptionKw: 1.8,
+    maxFloorUnevennessMm: 6,
+    mtbfOperatingHours: 12000,
   },
   {
     id: 'ronavi-sr',
@@ -41,6 +44,9 @@ export const SEED_ROBOTS: Robot[] = [
     capexCostRub: 950000,
     annualOpexCostRub: deriveOpex(950000),
     monthlyRaasCostRub: deriveRaas(950000),
+    energyConsumptionKw: 0.5,
+    maxFloorUnevennessMm: 4,
+    mtbfOperatingHours: 15000,
   },
   {
     id: 'dmr-carrier-p',
@@ -61,6 +67,9 @@ export const SEED_ROBOTS: Robot[] = [
     capexCostRub: 4300000,
     annualOpexCostRub: deriveOpex(4300000),
     monthlyRaasCostRub: deriveRaas(4300000),
+    energyConsumptionKw: 2.5,
+    maxFloorUnevennessMm: 8,
+    mtbfOperatingHours: 10000,
   },
   {
     id: 'mark-2-se',
@@ -80,6 +89,9 @@ export const SEED_ROBOTS: Robot[] = [
     capexCostRub: 1900000,
     annualOpexCostRub: deriveOpex(1900000),
     monthlyRaasCostRub: deriveRaas(1900000),
+    energyConsumptionKw: 0.8,
+    maxFloorUnevennessMm: 5,
+    mtbfOperatingHours: 8000,
   },
   {
     id: 'stelcon-pallet-shuttle',
@@ -99,6 +111,9 @@ export const SEED_ROBOTS: Robot[] = [
     capexCostRub: 7000000,
     annualOpexCostRub: deriveOpex(7000000),
     monthlyRaasCostRub: deriveRaas(7000000),
+    energyConsumptionKw: 2.0,
+    maxFloorUnevennessMm: 7,
+    mtbfOperatingHours: 14000,
   },
   {
     id: 'cognitive-pilot-baggage',
@@ -118,6 +133,9 @@ export const SEED_ROBOTS: Robot[] = [
     capexCostRub: 4000000,
     annualOpexCostRub: deriveOpex(4000000),
     monthlyRaasCostRub: deriveRaas(4000000),
+    energyConsumptionKw: 12.0,
+    maxFloorUnevennessMm: 15,
+    mtbfOperatingHours: 20000,
   },
   {
     id: 'evocargo-n1',
@@ -137,6 +155,9 @@ export const SEED_ROBOTS: Robot[] = [
     capexCostRub: 6000000,
     annualOpexCostRub: deriveOpex(6000000),
     monthlyRaasCostRub: deriveRaas(6000000),
+    energyConsumptionKw: 15.0,
+    maxFloorUnevennessMm: 20,
+    mtbfOperatingHours: 18000,
   },
   {
     id: 'moros-amr-100',
@@ -156,6 +177,9 @@ export const SEED_ROBOTS: Robot[] = [
     capexCostRub: 1500000,
     annualOpexCostRub: deriveOpex(1500000),
     monthlyRaasCostRub: deriveRaas(1500000),
+    energyConsumptionKw: 0.6,
+    maxFloorUnevennessMm: 5,
+    mtbfOperatingHours: 16000,
   },
   {
     id: 'pudubot-2',
@@ -175,5 +199,8 @@ export const SEED_ROBOTS: Robot[] = [
     capexCostRub: 1200000,
     annualOpexCostRub: deriveOpex(1200000),
     monthlyRaasCostRub: deriveRaas(1200000),
+    energyConsumptionKw: 0.4,
+    maxFloorUnevennessMm: 3,
+    mtbfOperatingHours: 10000,
   },
 ];

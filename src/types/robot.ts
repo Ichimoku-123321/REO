@@ -33,6 +33,9 @@ export const robotSchema = z.object({
   capexCostRub: z.number().positive(),
   annualOpexCostRub: z.number().positive(),
   monthlyRaasCostRub: z.number().positive(),
+  energyConsumptionKw: z.number().positive().default(1.5),
+  maxFloorUnevennessMm: z.number().positive().default(5),
+  mtbfOperatingHours: z.number().positive().default(10000),
 });
 
 export type Robot = z.infer<typeof robotSchema>;

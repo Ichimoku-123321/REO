@@ -5,10 +5,13 @@ import { HeadlessWarehouseDriver } from './headless_driver.js';
 function runOracleTest(): void {
   console.log('🚀 Starting Headless Warehouse Oracle Test...\n');
 
-  const driver = new HeadlessWarehouseDriver({ cellSizeM: 2.0 });
+  const driver = new HeadlessWarehouseDriver({ cellSizeM: 2.0, heightM: 8.0 });
 
   // 1. Draw 30x30m floor (15 x 15 tiles of 2.0m = 30m x 30m)
   driver.drawRectFloor(0, 0, 14, 14);
+
+  // Set warehouse clear ceiling height
+  driver.setWarehouseHeight(8.0);
 
   // 2. Place Inbound and Outbound Docks
   driver.selectTool('DOCK_INBOUND').clickCell(0, 2);
@@ -52,6 +55,14 @@ function runOracleTest(): void {
   const auditSummary = driver.getAuditSummary();
   console.log('📊 Machine-Readable Audit Summary:');
   console.log(JSON.stringify(auditSummary, null, 2));
+
+  // Factual alert checks for scenario reporter
+  if (auditSummary.floatingElementsCount > 0) {
+    console.warn(`\n⚠️ [ORACLE_ALERT] Detected ${auditSummary.floatingElementsCount} floating element(s) outside floor bounds!`);
+  }
+  if (auditSummary.deliveriesCompleted === 0 && auditSummary.simulatedTicks > 100) {
+    console.warn(`\n⚠️ [ORACLE_ALERT] Zero throughput detected! Completed 0 deliveries during simulation run.`);
+  }
 
   const logDir = path.resolve(process.cwd(), '.debug_logs');
   if (!fs.existsSync(logDir)) {

@@ -16,7 +16,7 @@ npx tsx scripts/run_oracle_test.ts
 ```
 
 При запуске команда:
-1. Создает виртуальный склад с полом 30×30м.
+1. Создает виртуальный склад с полом 30×30м и высотой потолка 8.0м.
 2. Размещает ворота приемки и отгрузки, 2 зарядные станции и 20 стеллажей.
 3. Добавляет объект-стену за пределами пола (`force: true`).
 4. Задает график поставок ($Q_{in} = 50$, $Q_{out} = 150$).
@@ -32,7 +32,7 @@ npx tsx scripts/run_oracle_test.ts
 ```typescript
 import { HeadlessWarehouseDriver } from './scripts/headless_driver.js';
 
-const driver = new HeadlessWarehouseDriver({ cellSizeM: 2.0 });
+const driver = new HeadlessWarehouseDriver({ cellSizeM: 2.0, heightM: 8.0 });
 
 // 1. Выбор инструмента панели
 driver.selectTool('RACK'); // 'SELECT' | 'RACK' | 'OBSTACLE' | 'CHARGER' | 'DOCK_INBOUND' | 'DOCK_OUTBOUND' | 'ERASE' | 'ERASE_FLOOR'
@@ -41,17 +41,20 @@ driver.selectTool('RACK'); // 'SELECT' | 'RACK' | 'OBSTACLE' | 'CHARGER' | 'DOCK
 driver.drawRectFloor(0, 0, 14, 14);
 driver.eraseFloorRect(12, 12, 14, 14); // Удаление участка пола
 
-// 3. Выбор SKU чипа
+// 3. Настройка высоты потолка помещения
+driver.setWarehouseHeight(10.5);
+
+// 4. Выбор SKU чипа
 driver.pickSkuChip('sku-1');
 
-// 4. Клики и размещение элементов
+// 5. Клики и размещение элементов
 driver.clickCell(4, 2); // Ставит выбранный элемент в ячейку (4, 2)
 driver.clickCell(20, 20, { force: true }); // Принудительно ставит элемент вне пола
 
-// 5. Задание вместимости конкретного стеллажа
+// 6. Задание вместимости конкретного стеллажа
 driver.setRackCapacity(4, 2, 24);
 
-// 6. Настройка графика поставок
+// 7. Настройка графика поставок
 driver.setSupplySchedule({
   qIn: 50,       // Объем партии приемки (паллет)
   tInHours: 24,  // Интервал приемки (часов)
@@ -59,14 +62,14 @@ driver.setSupplySchedule({
   tOutHours: 24, // Интервал отгрузки (часов)
 });
 
-// 7. Запуск расчета симуляции
+// 8. Запуск расчета симуляции
 driver.runSimulation(300 /* тиков */, 0.5 /* dt (сек) */);
 
-// 8. Машиночитаемые сырые метрики (для автотестов)
+// 9. Машиночитаемые сырые метрики (для автотестов)
 const summary = driver.getAuditSummary();
 console.log(summary.floatingElementsCount);
 
-// 9. Получение сырого дампа состояния
+// 10. Получение сырого дампа состояния
 const report = driver.dumpRawTruth();
 console.log(report);
 ```
@@ -81,6 +84,7 @@ console.log(report);
 export interface RawAuditSummary {
   tilesCount: number;             // общее количество активных плиток в сетке
   floorTilesCount: number;        // количество плиток пола
+  heightM: number;                // рабочая высота потолка склада (м)
   placedElementsCount: number;    // количество размещенных объектов (без EMPTY_FLOOR)
   floatingElementsCount: number;  // количество объектов за пределами плиток пола
   reportedCapacity: {             // сырой ответ функции calculateWarehouseCapacity(grid)
@@ -108,7 +112,7 @@ export interface RawAuditSummary {
 * `C` — зарядная станция (`CHARGER`)
 
 ### 2. Срез сетки и геометрии (Raw Grid & Geometry Dump)
-* Контур и площадь пола ($м^2$).
+* Контур, площадь пола ($м^2$) и высота потолка ($м$).
 * Поэлементный срез каждой занятой ячейки:
   `[1, 1] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°`
   `[20, 20] | Entity: OBSTACLE | Floor: NO | SKU: NONE | Slots: N/A | Rot: 0°`
@@ -121,9 +125,9 @@ export interface RawAuditSummary {
   `REO Supply Schedule Raw Params: Inbound(50 pallets / 24h), Outbound(150 pallets / 24h)`
 
 ### 4. Сырая телеметрия симуляции (`.debug_logs/oracle_telemetry.log`)
-При вызове `runSimulation()` в `.debug_logs/oracle_telemetry.log` заносится прямая фиксиция внутренних данных `engine.agents`:
+При вызове `runSimulation()` в `.debug_logs/oracle_telemetry.log` заносится прямая сериализация каждого агента в формате JSON:
 ```text
-[Tick 12 | t=6.0s] Agent agent_1: pos=(2.10, 0.50), state=MOVING_TO_PICKUP, targetNode=c_node_0_2, battery=60.0%
+[Tick 12 | t=6.0s] {"id":"agent_1","pos":{"x":2.1,"y":0.5,"z":0},"distMoved":0.75,"angleDeg":90,"speedMps":1.5,"state":"MOVING_TO_PICKUP","batterySoc":60,"cargoPayload":false,"isQueued":false,"pathNodeIds":["c_node_0_2"],"pathLeft":1,"currentNodeId":"c_node_0_0","targetNodeId":"c_node_0_2","assignedInboundNodeId":"c_node_0_2","assignedDeliveryNodeId":null,"assignedChargerNodeId":null,"accumulatedOperatingHours":0.001,"breakdownCount":0,"robotRadius":0.715,"maxSpeed":1.5,"robotModel":"Ronavi Robotics Ronavi H1500"}
 ```
 
 ---

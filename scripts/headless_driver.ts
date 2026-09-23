@@ -9,6 +9,7 @@ import {
 } from '../src/engine/constructor_engine.js';
 import { SimulationEngine } from '../src/engine/simulation_engine.js';
 import type { Robot } from '../src/types/robot.js';
+import type { FacilityRequirements } from '../src/types/facility.js';
 import { SEED_ROBOTS } from '../src/data/robots.seed.js';
 
 export type DriverTool =
@@ -23,11 +24,13 @@ export type DriverTool =
 
 export interface HeadlessDriverOptions {
   cellSizeM?: number;
+  heightM?: number;
 }
 
 export interface RawAuditSummary {
   tilesCount: number;
   floorTilesCount: number;
+  heightM: number;
   placedElementsCount: number;
   floatingElementsCount: number;
   reportedCapacity: { totalRacks: number; totalPalletCapacity: number };
@@ -38,6 +41,7 @@ export interface RawAuditSummary {
 export class HeadlessWarehouseDriver {
   private grid: ConstructorGrid;
   private floorTiles: Set<string> = new Set();
+  private heightM: number = 8.0;
   private currentTool: DriverTool = 'SELECT';
   private activeSkuId: string | null = null;
   private supplySchedule: SupplySchedule = {
@@ -53,6 +57,7 @@ export class HeadlessWarehouseDriver {
 
   constructor(options?: HeadlessDriverOptions) {
     const cellSizeM = options?.cellSizeM ?? 2.0;
+    this.heightM = options?.heightM ?? 8.0;
     this.grid = {
       cols: 0,
       rows: 0,
@@ -74,6 +79,11 @@ export class HeadlessWarehouseDriver {
 
   public pickSkuChip(skuId: string | null): this {
     this.activeSkuId = skuId;
+    return this;
+  }
+
+  public setWarehouseHeight(heightM: number): this {
+    this.heightM = Math.max(1.0, heightM);
     return this;
   }
 
@@ -243,7 +253,22 @@ export class HeadlessWarehouseDriver {
     const fleetSize =
       fleetOptions?.fleetSize ?? Math.max(2, Math.min(6, Math.floor(rackCount / 8) || 2));
 
-    const engine = new SimulationEngine(topology, robotSpec, fleetSize);
+    const qInDay = this.supplySchedule.inboundBatchVolume * (24 / (this.supplySchedule.inboundIntervalValue || 24));
+    const targetHourlyQuota = Math.max(10, Math.round(qInDay / 24));
+
+    const facilityReqs: FacilityRequirements = {
+      facilityWidthM: widthM,
+      facilityLengthM: lengthM,
+      ceilingHeightM: this.heightM,
+      aisleWidthM: 2.5,
+      industry: 'custom',
+      targetThroughputPerHour: targetHourlyQuota,
+      operatingShiftsPerDay: 1,
+      hoursPerShift: 8,
+      operatingTempRange: { min: -10, max: 40 },
+    };
+
+    const engine = new SimulationEngine(topology, robotSpec, fleetSize, facilityReqs);
     this.lastSimulationEngine = engine;
     this.lastSimTicks = ticks;
 
@@ -258,13 +283,12 @@ export class HeadlessWarehouseDriver {
       `=======================================================\n` +
         `🔮 ORACLE RAW TELEMETRY SNIFFER LOG\n` +
         `Timestamp: ${new Date().toISOString()}\n` +
-        `Fleet: ${fleetSize}x ${robotSpec.vendor} ${robotSpec.model} | Ticks: ${ticks} (dt=${dtSim}s)\n` +
+        `Height: ${this.heightM}m | Fleet: ${fleetSize}x ${robotSpec.vendor} ${robotSpec.model} | Ticks: ${ticks} (dt=${dtSim}s)\n` +
         `=======================================================\n`,
       'utf-8'
     );
 
     const prevPositionsMap = new Map<string, { x: number; y: number }>();
-    const stationaryTicksMap = new Map<string, number>();
 
     for (let tick = 1; tick <= ticks; tick++) {
       engine.update(dtSim);
@@ -278,30 +302,18 @@ export class HeadlessWarehouseDriver {
         const speedMps = distMoved / dtSim;
         prevPositionsMap.set(agent.id, { x: agent.x, y: agent.y });
 
-        const isMovingState =
-          agent.state === 'TRANSPORTING' ||
-          agent.state === 'MOVING_TO_PICKUP' ||
-          agent.state === 'MOVING_TO_CHARGE';
-
-        if (isMovingState && distMoved < 0.01) {
-          stationaryTicksMap.set(agent.id, (stationaryTicksMap.get(agent.id) || 0) + 1);
-        } else {
-          stationaryTicksMap.set(agent.id, 0);
-        }
-
-        const isDeadlocked = (stationaryTicksMap.get(agent.id) || 0) >= 60;
         const angleDeg = (agent.headingRad * 180) / Math.PI;
 
         const rawAgentSnapshot = {
           id: agent.id,
           pos: { x: Number(agent.x.toFixed(2)), y: Number(agent.y.toFixed(2)), z: agent.z },
+          distMoved: Number(distMoved.toFixed(3)),
           angleDeg: Number(angleDeg.toFixed(1)),
           speedMps: Number(speedMps.toFixed(2)),
           state: agent.state,
           batterySoc: Number(agent.batterySoc.toFixed(1)),
           cargoPayload: agent.cargoPayload,
           isQueued: agent.isQueued,
-          isDeadlocked,
           pathNodeIds: agent.pathNodeIds,
           pathLeft: agent.pathNodeIds.length,
           currentNodeId: agent.currentNodeId,
@@ -342,6 +354,7 @@ export class HeadlessWarehouseDriver {
     return {
       tilesCount: this.grid.tiles.size,
       floorTilesCount: this.floorTiles.size,
+      heightM: this.heightM,
       placedElementsCount,
       floatingElementsCount,
       reportedCapacity,
@@ -368,7 +381,8 @@ export class HeadlessWarehouseDriver {
     const bounds = this.grid.floor?.bounds || { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
     const floorAreaSqm = this.grid.floor?.areaSqm ?? 0;
     output += `Floor Contour Bounds: [minX: ${bounds.minX}, maxX: ${bounds.maxX}, minZ: ${bounds.minZ}, maxZ: ${bounds.maxZ}]\n`;
-    output += `Floor Surface Area: ${floorAreaSqm} m² (${this.floorTiles.size} floor tiles, cell size: ${this.grid.cellSizeM}m)\n\n`;
+    output += `Floor Surface Area: ${floorAreaSqm} m² (${this.floorTiles.size} floor tiles, cell size: ${this.grid.cellSizeM}m)\n`;
+    output += `Warehouse Clear Ceiling Height: ${this.heightM.toFixed(1)} m\n\n`;
 
     output += `Placed Elements Dump:\n`;
     let elementCount = 0;

@@ -443,39 +443,46 @@ export function SimulationViewport({
         offsetY: e.clientY - inspectorWindowPos.y,
       };
       setIsDraggingInspector(true);
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     },
     [inspectorWindowPos]
   );
 
-  const handleWindowPointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!isDraggingInspector || !dragOffsetRef.current) return;
-      const isSingle = selectedTileKeys.size === 1;
+  // Global pointer listeners during window dragging to ensure dragging stops reliably on button release anywhere
+  useEffect(() => {
+    if (!isDraggingInspector) return;
+
+    const handleGlobalPointerMove = (e: PointerEvent) => {
+      if (!dragOffsetRef.current) return;
+      const isSingle = stateRef.current.selectedTileKeys.size === 1;
       const winW = isSingle ? 288 : 580;
       const winH = isSingle ? 280 : 56;
 
       const rawX = e.clientX - dragOffsetRef.current.offsetX;
       const rawY = e.clientY - dragOffsetRef.current.offsetY;
 
-      // STOIC BOUNDARY GUARANTEE: Clamp so window NEVER leaves screen by even 1px
       const clampedX = Math.max(0, Math.min(rawX, window.innerWidth - winW));
       const clampedY = Math.max(0, Math.min(rawY, window.innerHeight - winH));
 
       setInspectorWindowPos({ x: clampedX, y: clampedY });
-    },
-    [isDraggingInspector, selectedTileKeys.size]
-  );
+    };
 
-  const handleWindowPointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      if (isDraggingInspector) {
-        setIsDraggingInspector(false);
-        dragOffsetRef.current = null;
-      }
-    },
-    [isDraggingInspector]
-  );
+    const handleGlobalPointerUp = () => {
+      setIsDraggingInspector(false);
+      dragOffsetRef.current = null;
+    };
+
+    window.addEventListener('pointermove', handleGlobalPointerMove);
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('mouseup', handleGlobalPointerUp);
+    window.addEventListener('blur', handleGlobalPointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handleGlobalPointerMove);
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('mouseup', handleGlobalPointerUp);
+      window.removeEventListener('blur', handleGlobalPointerUp);
+    };
+  }, [isDraggingInspector]);
 
   // Resize clamping effect
   useEffect(() => {
@@ -960,7 +967,6 @@ export function SimulationViewport({
             setDrawingPoints([]);
             setIsDrawingActive(false);
             setLiveRectDims(null);
-            setInteractionMode('SELECT');
           }
           return;
         }
@@ -1762,19 +1768,15 @@ export function SimulationViewport({
               top: `${inspectorWindowPos.y}px`,
             }}
             onPointerDown={(e) => e.stopPropagation()}
-            onPointerUp={(e) => {
-              e.stopPropagation();
-              handleWindowPointerUp(e);
-            }}
+            onPointerUp={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onMouseUp={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
-            className="z-30 bg-[#FFFFFF] border-2 border-[#D4AF37] p-2 shadow-2xl flex items-center gap-4 text-xs font-mono select-none pointer-events-auto"
-            onPointerMove={handleWindowPointerMove}
+            className="z-30 bg-[#FFFFFF] border-2 border-[#D4AF37] p-2 shadow-2xl flex items-center gap-4 text-xs font-mono select-none pointer-events-auto cursor-default"
           >
             <div
               onPointerDown={handleStartWindowDrag}
-              className="cursor-grab active:cursor-grabbing font-bold text-[#8A6826] flex items-center gap-1 bg-[#F9F9F6] px-2 py-1 border border-[#D4AF37]/30"
+              className="font-bold text-[#8A6826] flex items-center gap-1 bg-[#F9F9F6] px-2 py-1 border border-[#D4AF37]/30"
             >
               <span>Выбрано: {selectedTileKeys.size} стеллажей</span>
             </div>
@@ -1846,40 +1848,35 @@ export function SimulationViewport({
 
         {/* Rack Inspection Popover */}
         {isConstructorMode && selectedTileKeys.size === 1 && inspectorWindowPos && (
-          <div
-            onPointerMove={handleWindowPointerMove}
-            onPointerUp={handleWindowPointerUp}
-          >
-            <RackInspectionPopover
-              isOpen={true}
-              onClose={() => setSelectedTileKeys(new Set())}
-              rackKey={Array.from(selectedTileKeys)[0]}
-              gridX={parseInt(Array.from(selectedTileKeys)[0].split('_')[0], 10)}
-              gridY={parseInt(Array.from(selectedTileKeys)[0].split('_')[1], 10)}
-              currentSkuId={grid.elementDetails?.get(Array.from(selectedTileKeys)[0])?.skuId}
-              slotsPerRack={grid.elementDetails?.get(Array.from(selectedTileKeys)[0])?.slotsPerRack ?? 12}
-              skuList={skuList}
-              onChangeCapacity={(key, capacity) => {
-                setGrid((prev) => {
-                  const detailsMap = new Map(prev.elementDetails || []);
-                  const existing = detailsMap.get(key) || {};
-                  detailsMap.set(key, { ...existing, slotsPerRack: capacity });
-                  return { ...prev, elementDetails: detailsMap };
-                });
-              }}
-              onAssignSku={(key, skuId) => {
-                setGrid((prev) => {
-                  const detailsMap = new Map(prev.elementDetails || []);
-                  const existing = detailsMap.get(key) || {};
-                  detailsMap.set(key, { ...existing, skuId });
-                  return { ...prev, elementDetails: detailsMap };
-                });
-              }}
-              onDeleteRack={handleDeleteSelected}
-              screenPos={inspectorWindowPos}
-              onStartDrag={handleStartWindowDrag}
-            />
-          </div>
+          <RackInspectionPopover
+            isOpen={true}
+            onClose={() => setSelectedTileKeys(new Set())}
+            rackKey={Array.from(selectedTileKeys)[0]}
+            gridX={parseInt(Array.from(selectedTileKeys)[0].split('_')[0], 10)}
+            gridY={parseInt(Array.from(selectedTileKeys)[0].split('_')[1], 10)}
+            currentSkuId={grid.elementDetails?.get(Array.from(selectedTileKeys)[0])?.skuId}
+            slotsPerRack={grid.elementDetails?.get(Array.from(selectedTileKeys)[0])?.slotsPerRack ?? 12}
+            skuList={skuList}
+            onChangeCapacity={(key, capacity) => {
+              setGrid((prev) => {
+                const detailsMap = new Map(prev.elementDetails || []);
+                const existing = detailsMap.get(key) || {};
+                detailsMap.set(key, { ...existing, slotsPerRack: capacity });
+                return { ...prev, elementDetails: detailsMap };
+              });
+            }}
+            onAssignSku={(key, skuId) => {
+              setGrid((prev) => {
+                const detailsMap = new Map(prev.elementDetails || []);
+                const existing = detailsMap.get(key) || {};
+                detailsMap.set(key, { ...existing, skuId });
+                return { ...prev, elementDetails: detailsMap };
+              });
+            }}
+            onDeleteRack={handleDeleteSelected}
+            screenPos={inspectorWindowPos}
+            onStartDrag={handleStartWindowDrag}
+          />
         )}
 
         <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />

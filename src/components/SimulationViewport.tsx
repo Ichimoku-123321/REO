@@ -260,7 +260,7 @@ export function SimulationViewport({
   const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
-  const floorMeshRef = useRef<THREE.Mesh | null>(null);
+  const floorGroupRef = useRef<THREE.Group | null>(null);
   const gridHelperRef = useRef<THREE.GridHelper | null>(null);
   const objectsGroupRef = useRef<THREE.Group | null>(null);
   const agentsGroupRef = useRef<THREE.Group | null>(null);
@@ -593,7 +593,7 @@ export function SimulationViewport({
       viewSize / 2,
       -viewSize / 2,
       0.1,
-      1000
+      10000
     );
     cameraRef.current = camera;
 
@@ -626,8 +626,8 @@ export function SimulationViewport({
     controls.enablePan = true;
     controls.enableZoom = true;
     controls.enableRotate = true;
-    controls.minPolarAngle = Math.PI / 8;
-    controls.maxPolarAngle = Math.PI / 3.2;
+    controls.minPolarAngle = Math.PI / 16;
+    controls.maxPolarAngle = Math.PI / 2.05;
     controls.update();
     controlsRef.current = controls;
 
@@ -648,6 +648,10 @@ export function SimulationViewport({
     // 6. CAD Floor Plane (Removed as requested)
 
     // 7. Groups for Objects, Agents, Ghost, and Guides
+    const floorGroup = new THREE.Group();
+    scene.add(floorGroup);
+    floorGroupRef.current = floorGroup;
+
     const objectsGroup = new THREE.Group();
     scene.add(objectsGroup);
     objectsGroupRef.current = objectsGroup;
@@ -755,7 +759,7 @@ export function SimulationViewport({
           ghostGroup.position.set(snappedX, 1.0, snappedZ);
           ghostGroup.visible = true;
 
-          if ((event.buttons === 1 || isMouseDownRef.current) && st.selectedTileType === 'OBSTACLE' && gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
+          if ((event.buttons === 1 || isMouseDownRef.current) && st.selectedTileType === 'OBSTACLE') {
             const key = getTileKey(gx, gy);
             setGrid((prev) => {
               if (prev.tiles.get(key) !== 'OBSTACLE') {
@@ -771,7 +775,7 @@ export function SimulationViewport({
           if (event.buttons === 1 || isMouseDownRef.current) {
             const gx = Math.floor(point.x / stateRef.current.grid.cellSizeM);
             const gy = Math.floor(point.z / stateRef.current.grid.cellSizeM);
-            if (gx >= 0 && gx < stateRef.current.grid.cols && gy >= 0 && gy < stateRef.current.grid.rows) {
+            if (true) {
               const key = getTileKey(gx, gy);
               setGrid((prev) => {
                 if (prev.tiles.has(key) && prev.tiles.get(key) !== 'EMPTY_FLOOR') {
@@ -915,10 +919,10 @@ export function SimulationViewport({
             const maxZ = Math.max(startPt.z, endPt.z);
 
             const cellSize = stateRef.current.grid.cellSizeM;
-            const startCol = Math.max(0, Math.floor(minX / cellSize));
-            const endCol = Math.max(0, Math.floor(maxX / cellSize));
-            const startRow = Math.max(0, Math.floor(minZ / cellSize));
-            const endRow = Math.max(0, Math.floor(maxZ / cellSize));
+            const startCol = Math.floor(minX / cellSize);
+            const endCol = Math.floor(maxX / cellSize);
+            const startRow = Math.floor(minZ / cellSize);
+            const endRow = Math.floor(maxZ / cellSize);
 
             const isErase = st.interactionMode === 'ERASE_FLOOR_RECT';
 
@@ -969,7 +973,7 @@ export function SimulationViewport({
           return;
         }
 
-        if (event.button === 0 && st.interactionMode === 'ERASE' && gx >= 0 && gy >= 0) {
+        if (event.button === 0 && st.interactionMode === 'ERASE') {
           const key = getTileKey(gx, gy);
           setGrid((prev) => {
              const updatedTiles = new Map(prev.tiles);
@@ -982,7 +986,7 @@ export function SimulationViewport({
           return;
         }
 
-        if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT' && gx >= 0 && gy >= 0) {
+        if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT') {
           const key = getTileKey(gx, gy);
 
           if (st.selectedTileType === 'DOCK_INBOUND' || st.selectedTileType === 'DOCK_OUTBOUND') {
@@ -1019,25 +1023,23 @@ export function SimulationViewport({
           return;
         }
 
-        if (gx >= 0 && gy >= 0) {
+        if (st.interactionMode === 'SELECT') {
           const key = getTileKey(gx, gy);
-          if (st.interactionMode === 'SELECT') {
-            const tileType = stateRef.current.grid.tiles.get(key);
+          const tileType = stateRef.current.grid.tiles.get(key);
 
-            if (tileType === 'RACK') {
-              if (st.selectedSkuChip) {
-                setGrid((prev) => {
-                  const detailsMap = new Map(prev.elementDetails || []);
-                  const existing = detailsMap.get(key) || {};
-                  detailsMap.set(key, { ...existing, skuId: st.selectedSkuChip || undefined });
-                  return { ...prev, elementDetails: detailsMap };
-                });
-              }
-              setSelectedTileKeys(new Set([key]));
-            } else {
-              // Non-rack elements (walls, chargers, docks, empty floor) cannot be selected
-              setSelectedTileKeys(new Set());
+          if (tileType === 'RACK') {
+            if (st.selectedSkuChip) {
+              setGrid((prev) => {
+                const detailsMap = new Map(prev.elementDetails || []);
+                const existing = detailsMap.get(key) || {};
+                detailsMap.set(key, { ...existing, skuId: st.selectedSkuChip || undefined });
+                return { ...prev, elementDetails: detailsMap };
+              });
             }
+            setSelectedTileKeys(new Set([key]));
+          } else {
+            // Non-rack elements (walls, chargers, docks, empty floor) cannot be selected
+            setSelectedTileKeys(new Set());
           }
         }
       } else {
@@ -1317,29 +1319,82 @@ export function SimulationViewport({
     }
   }, [isConstructorMode]);
 
-  // Update Grid Helper dynamically (strictly for active drawn floor tiles)
+  // Update Floor Mesh & Grid Helper dynamically
   useEffect(() => {
-    if (!sceneRef.current) return;
+    if (!floorGroupRef.current) return;
 
-    if (gridHelperRef.current) {
-      sceneRef.current.remove(gridHelperRef.current);
-      if ((gridHelperRef.current as any).geometry) {
-        (gridHelperRef.current as any).geometry.dispose();
+    const group = floorGroupRef.current;
+
+    // Clear existing floor meshes and grid lines
+    while (group.children.length > 0) {
+      const child = group.children[0];
+      group.remove(child);
+      if ('geometry' in child && child.geometry) (child.geometry as THREE.BufferGeometry).dispose();
+      if ('material' in child && child.material) {
+        if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+        else (child.material as THREE.Material).dispose();
       }
-      gridHelperRef.current = null;
     }
 
-    if (showGrid && grid.tiles.size > 0) {
+    if (grid.tiles.size === 0) return;
+
+    const cellSize = grid.cellSizeM;
+
+    // 1. Render Solid Floor Planks/Slab Mesh
+    const positions: number[] = [];
+    const normals: number[] = [];
+
+    grid.tiles.forEach((_, key) => {
+      const [gxStr, gyStr] = key.split('_');
+      const gx = parseInt(gxStr, 10);
+      const gy = parseInt(gyStr, 10);
+      if (isNaN(gx) || isNaN(gy)) return;
+
+      const x0 = gx * cellSize;
+      const x1 = (gx + 1) * cellSize;
+      const z0 = gy * cellSize;
+      const z1 = (gy + 1) * cellSize;
+
+      // Top face of tile slab at Y=0
+      // Triangle 1
+      positions.push(x0, 0, z0,  x1, 0, z0,  x0, 0, z1);
+      normals.push(0, 1, 0,  0, 1, 0,  0, 1, 0);
+
+      // Triangle 2
+      positions.push(x1, 0, z0,  x1, 0, z1,  x0, 0, z1);
+      normals.push(0, 1, 0,  0, 1, 0,  0, 1, 0);
+    });
+
+    if (positions.length > 0) {
+      const floorGeo = new THREE.BufferGeometry();
+      floorGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      floorGeo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+
+      const floorMat = new THREE.MeshStandardMaterial({
+        color: 0xE2E2DC, // Alabaster floor slab color
+        roughness: 0.8,
+        metalness: 0.1,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
+      });
+
+      const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+      floorMesh.receiveShadow = true;
+      group.add(floorMesh);
+    }
+
+    // 2. Render Grid Border Lines over floor slab
+    if (showGrid) {
       const points: THREE.Vector3[] = [];
-      const cellSize = grid.cellSizeM;
       const addedSegments = new Set<string>();
 
       const addSegment = (x1: number, z1: number, x2: number, z2: number) => {
         const segKey = x1 < x2 || (x1 === x2 && z1 < z2) ? `${x1},${z1}_${x2},${z2}` : `${x2},${z2}_${x1},${z1}`;
         if (!addedSegments.has(segKey)) {
           addedSegments.add(segKey);
-          points.push(new THREE.Vector3(x1, 0.01, z1));
-          points.push(new THREE.Vector3(x2, 0.01, z2));
+          points.push(new THREE.Vector3(x1, 0.005, z1));
+          points.push(new THREE.Vector3(x2, 0.005, z2));
         }
       };
 
@@ -1363,13 +1418,12 @@ export function SimulationViewport({
       if (points.length > 0) {
         const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
         const lineMat = new THREE.LineBasicMaterial({
-          color: 0xd4af37,
-          opacity: 0.6,
+          color: 0xC5B288,
+          opacity: 0.7,
           transparent: true,
         });
         const lineSegments = new THREE.LineSegments(lineGeo, lineMat);
-        sceneRef.current.add(lineSegments as unknown as THREE.GridHelper);
-        gridHelperRef.current = lineSegments as unknown as THREE.GridHelper;
+        group.add(lineSegments);
       }
     }
   }, [showGrid, grid.tiles, grid.cellSizeM]);

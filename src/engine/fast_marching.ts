@@ -16,6 +16,7 @@ export class FastMarchingSolver {
   public resolutionM: number;
   public slownessMap: Float64Array; // tau(x, y) = 1 / v(x, y)
   private obstacleBoxes: Array<{ minX: number; maxX: number; minY: number; maxY: number }>;
+  private eikonalCache: Map<string, Float64Array> = new Map();
 
   constructor(options: FastMarchingGridOptions) {
     this.resolutionM = options.resolutionM ?? 0.5;
@@ -35,6 +36,7 @@ export class FastMarchingSolver {
     robot?: Robot,
     cargoLoaded: boolean = false
   ): void {
+    this.eikonalCache.clear();
     const baseSpeed = robot ? robot.maxSpeedMps : 1.5;
 
     // Floor surface quality factor
@@ -100,6 +102,12 @@ export class FastMarchingSolver {
    * Computes travel time field T(x, y) starting from target coordinates.
    */
   public solveEikonalField(targetX: number, targetY: number): Float64Array {
+    const cacheKey = `${Math.round(targetX * 2)}_${Math.round(targetY * 2)}`;
+    const cached = this.eikonalCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const size = this.widthCols * this.heightRows;
     const T = new Float64Array(size);
     T.fill(Infinity);
@@ -184,6 +192,7 @@ export class FastMarchingSolver {
       }
     }
 
+    this.eikonalCache.set(cacheKey, T);
     return T;
   }
 

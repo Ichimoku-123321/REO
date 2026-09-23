@@ -67,7 +67,7 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverPropsExtended>
       onMouseDown={stopProp}
       onMouseUp={stopProp}
       onClick={stopProp}
-      className="z-30 w-72 bg-[#FFFFFF] border-2 border-[#D4AF37] p-3.5 shadow-2xl font-mono text-xs text-[#1A1A1A] rounded-none pointer-events-auto"
+      className="z-30 w-72 bg-[#FFFFFF] border-2 border-[#D4AF37] p-3.5 shadow-2xl font-mono text-xs text-[#1A1A1A] rounded-none pointer-events-auto cursor-default"
     >
       {/* Header - Drag Handle */}
       <div
@@ -75,7 +75,7 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverPropsExtended>
           e.stopPropagation();
           onStartDrag?.(e);
         }}
-        className="flex items-center justify-between pb-2 border-b border-[#D4AF37]/40 mb-2.5 cursor-grab active:cursor-grabbing select-none bg-[#F9F9F6] -mx-3.5 -mt-3.5 p-2.5 mb-2.5 border-b border-[#D4AF37]/30"
+        className="flex items-center justify-between pb-2 border-b border-[#D4AF37]/40 mb-2.5 select-none bg-[#F9F9F6] -mx-3.5 -mt-3.5 p-2.5 mb-2.5 border-b border-[#D4AF37]/30"
       >
         <div className="flex items-center gap-1.5 font-bold uppercase text-[11px] text-[#8A6826]">
           <Boxes className="w-4 h-4 text-[#D4AF37]" />
@@ -85,7 +85,7 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverPropsExtended>
           type="button"
           onClick={onClose}
           onPointerDown={(e) => e.stopPropagation()}
-          className="p-0.5 hover:bg-[#F4F4F0] text-[#4F4F47] hover:text-[#1A1A1A] transition rounded-none cursor-pointer"
+          className="p-0.5 hover:bg-[#F4F4F0] text-[#4F4F47] hover:text-[#1A1A1A] transition rounded-none"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -155,7 +155,7 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverPropsExtended>
           onDeleteRack(rackKey);
           onClose();
         }}
-        className="w-full bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 font-bold py-1.5 uppercase text-[10px] tracking-tight transition flex items-center justify-center gap-1 rounded-none cursor-pointer"
+        className="w-full bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 font-bold py-1.5 uppercase text-[10px] tracking-tight transition flex items-center justify-center gap-1 rounded-none"
       >
         <Trash2 className="w-3.5 h-3.5 text-red-700" />
         <span>Удалить стеллаж</span>

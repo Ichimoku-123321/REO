@@ -177,96 +177,99 @@ export function rebuildTopologyFromGrid(
   const edges: GraphEdge[] = [];
   const zones: FacilityZone[] = [];
 
-  const { cols, rows, cellSizeM, tiles } = grid;
+  const { cellSizeM, tiles } = grid;
 
-  // 1. Map tiles to Graph Nodes (ignoring OBSTACLE and RACK for passage)
+  // 1. Map tiles to Graph Nodes (ignoring OBSTACLE for passage)
   const nodeGrid = new Map<string, GraphNode>();
-  let nodeSeq = 1;
 
-  for (let x = 0; x < cols; x++) {
-    for (let y = 0; y < rows; y++) {
-      const key = getTileKey(x, y);
-      const tileType = tiles.get(key) || 'EMPTY_FLOOR';
-
-      if (tileType === 'OBSTACLE') {
-        // Unpassable structural column/wall, create no node
-        continue;
-      }
-
-      const worldX = Math.round((x + 0.5) * cellSizeM * 10) / 10;
-      const worldY = Math.round((y + 0.5) * cellSizeM * 10) / 10;
-
-      let graphNodeType: NodeType = 'WAYPOINT';
-      let label: string | undefined = undefined;
-
-      if (tileType === 'DOCK_INBOUND') {
-        graphNodeType = 'INBOUND_DOCK';
-        label = `Док приемки (${x},${y})`;
-      } else if (tileType === 'DOCK_OUTBOUND') {
-        graphNodeType = 'OUTBOUND_DOCK';
-        label = `Док отгрузки (${x},${y})`;
-      } else if (tileType === 'CHARGER') {
-        graphNodeType = 'CHARGING_HUB';
-        label = `Зарядка (${x},${y})`;
-      } else if (tileType === 'RACK') {
-        graphNodeType = 'STORAGE_AISLE';
-        label = `Стеллаж (${x},${y})`;
-      }
-
-      const nodeId = `c_node_${x}_${y}`;
-      const node: GraphNode = {
-        id: nodeId,
-        type: graphNodeType,
-        x: worldX,
-        y: worldY,
-        zLevel: 0,
-        label,
-      };
-
-      nodes.push(node);
-      nodeGrid.set(key, node);
+  tiles.forEach((tileType, key) => {
+    if (tileType === 'OBSTACLE') {
+      // Unpassable structural column/wall, create no node
+      return;
     }
-  }
+
+    const [xStr, yStr] = key.split('_');
+    const x = parseInt(xStr, 10);
+    const y = parseInt(yStr, 10);
+    if (isNaN(x) || isNaN(y)) return;
+
+    const worldX = Math.round((x + 0.5) * cellSizeM * 10) / 10;
+    const worldY = Math.round((y + 0.5) * cellSizeM * 10) / 10;
+
+    let graphNodeType: NodeType = 'WAYPOINT';
+    let label: string | undefined = undefined;
+
+    if (tileType === 'DOCK_INBOUND') {
+      graphNodeType = 'INBOUND_DOCK';
+      label = `Док приемки (${x},${y})`;
+    } else if (tileType === 'DOCK_OUTBOUND') {
+      graphNodeType = 'OUTBOUND_DOCK';
+      label = `Док отгрузки (${x},${y})`;
+    } else if (tileType === 'CHARGER') {
+      graphNodeType = 'CHARGING_HUB';
+      label = `Зарядка (${x},${y})`;
+    } else if (tileType === 'RACK') {
+      graphNodeType = 'STORAGE_AISLE';
+      label = `Стеллаж (${x},${y})`;
+    }
+
+    const nodeId = `c_node_${x}_${y}`;
+    const node: GraphNode = {
+      id: nodeId,
+      type: graphNodeType,
+      x: worldX,
+      y: worldY,
+      zLevel: 0,
+      label,
+    };
+
+    nodes.push(node);
+    nodeGrid.set(key, node);
+  });
 
   // 2. Generate edges between orthogonally adjacent passable grid tiles
   let edgeSeq = 1;
-  for (let x = 0; x < cols; x++) {
-    for (let y = 0; y < rows; y++) {
-      const currKey = getTileKey(x, y);
-      const currNode = nodeGrid.get(currKey);
-      if (!currNode) continue;
+  const processedEdges = new Set<string>();
 
-      // Right neighbor
-      if (x + 1 < cols) {
-        const rightKey = getTileKey(x + 1, y);
-        const rightNode = nodeGrid.get(rightKey);
-        if (rightNode) {
-          edges.push({
-            id: `c_edge_${edgeSeq++}`,
-            source: currNode.id,
-            target: rightNode.id,
-            distanceM: cellSizeM,
-            bidirectional: true,
-          });
-        }
-      }
+  nodeGrid.forEach((currNode, currKey) => {
+    const [xStr, yStr] = currKey.split('_');
+    const x = parseInt(xStr, 10);
+    const y = parseInt(yStr, 10);
 
-      // Top/Up neighbor
-      if (y + 1 < rows) {
-        const topKey = getTileKey(x, y + 1);
-        const topNode = nodeGrid.get(topKey);
-        if (topNode) {
-          edges.push({
-            id: `c_edge_${edgeSeq++}`,
-            source: currNode.id,
-            target: topNode.id,
-            distanceM: cellSizeM,
-            bidirectional: true,
-          });
-        }
+    // Right neighbor
+    const rightKey = getTileKey(x + 1, y);
+    const rightNode = nodeGrid.get(rightKey);
+    if (rightNode) {
+      const edgeKey = x < x + 1 ? `${currKey}_${rightKey}` : `${rightKey}_${currKey}`;
+      if (!processedEdges.has(edgeKey)) {
+        processedEdges.add(edgeKey);
+        edges.push({
+          id: `c_edge_${edgeSeq++}`,
+          source: currNode.id,
+          target: rightNode.id,
+          distanceM: cellSizeM,
+          bidirectional: true,
+        });
       }
     }
-  }
+
+    // Top/Up neighbor
+    const topKey = getTileKey(x, y + 1);
+    const topNode = nodeGrid.get(topKey);
+    if (topNode) {
+      const edgeKey = y < y + 1 ? `${currKey}_${topKey}` : `${topKey}_${currKey}`;
+      if (!processedEdges.has(edgeKey)) {
+        processedEdges.add(edgeKey);
+        edges.push({
+          id: `c_edge_${edgeSeq++}`,
+          source: currNode.id,
+          target: topNode.id,
+          distanceM: cellSizeM,
+          bidirectional: true,
+        });
+      }
+    }
+  });
 
   // 3. Generate Functional Zones for visual grouping
   zones.push({

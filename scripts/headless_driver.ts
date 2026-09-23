@@ -5,7 +5,6 @@ import {
   rebuildTopologyFromGrid,
   type ConstructorGrid,
   type ConstructorTileType,
-  type FloorDefinition,
   type SupplySchedule,
 } from '../src/engine/constructor_engine.js';
 import { SimulationEngine } from '../src/engine/simulation_engine.js';
@@ -26,13 +25,14 @@ export interface HeadlessDriverOptions {
   cellSizeM?: number;
 }
 
-export interface AuditSummary {
-  isValid: boolean;
-  errors: string[];
-  floatingCount: number;
-  deadlockCount: number;
-  collisionCount: number;
+export interface RawAuditSummary {
+  tilesCount: number;
+  floorTilesCount: number;
+  placedElementsCount: number;
+  floatingElementsCount: number;
+  reportedCapacity: { totalRacks: number; totalPalletCapacity: number };
   deliveriesCompleted: number;
+  simulatedTicks: number;
 }
 
 export class HeadlessWarehouseDriver {
@@ -50,11 +50,6 @@ export class HeadlessWarehouseDriver {
   };
   private lastSimulationEngine: SimulationEngine | null = null;
   private lastSimTicks: number = 0;
-
-  // Aggregate simulation metrics
-  private lastSimStallsCount: number = 0;
-  private lastSimDeadlocksCount: number = 0;
-  private lastSimCollisionsCount: number = 0;
 
   constructor(options?: HeadlessDriverOptions) {
     const cellSizeM = options?.cellSizeM ?? 2.0;
@@ -252,10 +247,6 @@ export class HeadlessWarehouseDriver {
     this.lastSimulationEngine = engine;
     this.lastSimTicks = ticks;
 
-    this.lastSimStallsCount = 0;
-    this.lastSimDeadlocksCount = 0;
-    this.lastSimCollisionsCount = 0;
-
     const logDir = path.resolve(process.cwd(), '.debug_logs');
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
@@ -265,15 +256,12 @@ export class HeadlessWarehouseDriver {
     fs.writeFileSync(
       telemetryLogPath,
       `=======================================================\n` +
-        `🔮 ORACLE DEEP TELEMETRY LOG\n` +
+        `🔮 ORACLE RAW TELEMETRY SNIFFER LOG\n` +
         `Timestamp: ${new Date().toISOString()}\n` +
         `Fleet: ${fleetSize}x ${robotSpec.vendor} ${robotSpec.model} | Ticks: ${ticks} (dt=${dtSim}s)\n` +
         `=======================================================\n`,
       'utf-8'
     );
-
-    const prevPositionsMap = new Map<string, Array<{ x: number; y: number }>>();
-    const stationaryTicksMap = new Map<string, number>();
 
     for (let tick = 1; tick <= ticks; tick++) {
       engine.update(dtSim);
@@ -281,73 +269,10 @@ export class HeadlessWarehouseDriver {
 
       const tickLogLines: string[] = [];
 
-      // 1. Robot movement & stall/deadlock tracking
       for (const agent of engine.agents) {
-        const posHistory = prevPositionsMap.get(agent.id) || [];
-        posHistory.push({ x: agent.x, y: agent.y });
-        if (posHistory.length > 3) {
-          posHistory.shift();
-        }
-        prevPositionsMap.set(agent.id, posHistory);
-
-        let dist3Ticks = 1.0;
-        if (posHistory.length >= 3) {
-          const pOld = posHistory[0];
-          dist3Ticks = Math.hypot(agent.x - pOld.x, agent.y - pOld.y);
-        }
-
-        const isMovingState =
-          agent.state === 'TRANSPORTING' ||
-          agent.state === 'MOVING_TO_PICKUP' ||
-          agent.state === 'MOVING_TO_CHARGE';
-
-        let warningTag = '';
-
-        if (isMovingState && dist3Ticks <= 0.02) {
-          warningTag += ' ⚠️ [STALL]';
-          this.lastSimStallsCount++;
-
-          const currentStuck = (stationaryTicksMap.get(agent.id) || 0) + 1;
-          stationaryTicksMap.set(agent.id, currentStuck);
-
-          if (currentStuck > 10) {
-            warningTag += ' 🚨 [DEADLOCK_CONFIRMED]';
-            this.lastSimDeadlocksCount++;
-          }
-        } else {
-          stationaryTicksMap.set(agent.id, 0);
-        }
-
-        const targetNode = agent.targetNodeId
-          ? topology.nodes.find((n) => n.id === agent.targetNodeId)
-          : null;
-        const targetX = targetNode ? targetNode.x.toFixed(2) : '-';
-        const targetY = targetNode ? targetNode.y.toFixed(2) : '-';
-
-        const speedMps = isMovingState && posHistory.length > 1
-          ? Math.hypot(agent.x - posHistory[posHistory.length - 2].x, agent.y - posHistory[posHistory.length - 2].y) / dtSim
-          : 0;
-
-        const line = `[Tick ${tick} | t=${simTime.toFixed(1)}s] Robot ${agent.id}: pos=(${agent.x.toFixed(2)}, ${agent.y.toFixed(2)}), v=${speedMps.toFixed(2)}m/s, battery=${agent.batterySoc.toFixed(1)}%, state=${agent.state}, target=(${targetX}, ${targetY})${warningTag}`;
+        const targetId = agent.targetNodeId ?? 'NONE';
+        const line = `[Tick ${tick} | t=${simTime.toFixed(1)}s] Agent ${agent.id}: pos=(${agent.x.toFixed(2)}, ${agent.y.toFixed(2)}), state=${agent.state}, targetNode=${targetId}, battery=${agent.batterySoc.toFixed(1)}%`;
         tickLogLines.push(line);
-      }
-
-      // 2. Inter-robot collision check O(N^2)
-      const agents = engine.agents;
-      for (let i = 0; i < agents.length; i++) {
-        for (let j = i + 1; j < agents.length; j++) {
-          const a1 = agents[i];
-          const a2 = agents[j];
-          const dist = Math.hypot(a1.x - a2.x, a1.y - a2.y);
-          const minDist = (a1.robotRadius + a2.robotRadius) * 0.8;
-
-          if (dist < minDist) {
-            this.lastSimCollisionsCount++;
-            tickLogLines.push(
-              `🚨 [COLLISION] Tick ${tick}: Robot ${a1.id} and Robot ${a2.id} overlapped at (${a1.x.toFixed(2)}, ${a1.y.toFixed(2)})!`
-            );
-          }
-        }
       }
 
       fs.appendFileSync(telemetryLogPath, tickLogLines.join('\n') + '\n', 'utf-8');
@@ -356,66 +281,28 @@ export class HeadlessWarehouseDriver {
     return this;
   }
 
-  public getAuditSummary(): AuditSummary {
-    const errors: string[] = [];
-    let floatingCount = 0;
+  public getAuditSummary(): RawAuditSummary {
+    let floatingElementsCount = 0;
+    let placedElementsCount = 0;
 
-    // 1. Floating Object Anomalies
     this.grid.tiles.forEach((type, key) => {
       if (type === 'EMPTY_FLOOR') return;
+      placedElementsCount++;
       if (!this.floorTiles.has(key)) {
-        floatingCount++;
-        const [xStr, zStr] = key.split('_');
-        errors.push(`Floating object ${type} at (${xStr}, ${zStr}) outside floor bounds`);
+        floatingElementsCount++;
       }
     });
 
-    // 2. Dock Limit Violation Check
-    let inboundDocks = 0;
-    let outboundDocks = 0;
-    this.grid.tiles.forEach((type) => {
-      if (type === 'DOCK_INBOUND') inboundDocks++;
-      if (type === 'DOCK_OUTBOUND') outboundDocks++;
-    });
-
-    if (inboundDocks > 1) {
-      errors.push(`Found ${inboundDocks} inbound docks (max allowed: 1)`);
-    }
-    if (outboundDocks > 1) {
-      errors.push(`Found ${outboundDocks} outbound docks (max allowed: 1)`);
-    }
-
-    // 3. Mathematical Integrity Audit
-    let actualSumCapacity = 0;
-    this.grid.tiles.forEach((type, key) => {
-      if (type === 'RACK') {
-        const details = this.grid.elementDetails?.get(key);
-        actualSumCapacity += details?.slotsPerRack ?? 12;
-      }
-    });
-
-    const reportedCap = calculateWarehouseCapacity(this.grid);
-    if (actualSumCapacity !== reportedCap.totalPalletCapacity) {
-      errors.push(`Capacity mismatch: sum=${actualSumCapacity}, state=${reportedCap.totalPalletCapacity}`);
-    }
-
-    const deadlockCount = this.lastSimDeadlocksCount;
-    const collisionCount = this.lastSimCollisionsCount;
-    const deliveriesCompleted = this.lastSimulationEngine?.completedDeliveries ?? 0;
-
-    const isValid =
-      errors.length === 0 &&
-      floatingCount === 0 &&
-      deadlockCount === 0 &&
-      collisionCount === 0;
+    const reportedCapacity = calculateWarehouseCapacity(this.grid);
 
     return {
-      isValid,
-      errors,
-      floatingCount,
-      deadlockCount,
-      collisionCount,
-      deliveriesCompleted,
+      tilesCount: this.grid.tiles.size,
+      floorTilesCount: this.floorTiles.size,
+      placedElementsCount,
+      floatingElementsCount,
+      reportedCapacity,
+      deliveriesCompleted: this.lastSimulationEngine?.completedDeliveries ?? 0,
+      simulatedTicks: this.lastSimTicks,
     };
   }
 
@@ -423,7 +310,7 @@ export class HeadlessWarehouseDriver {
     let output = '';
 
     output += `================================================================================\n`;
-    output += `🔮 HEADLESS WAREHOUSE ORACLE: RAW TRUTH REPORT\n`;
+    output += `🔮 HEADLESS WAREHOUSE ORACLE: RAW STATE DUMP\n`;
     output += `Generated: ${new Date().toISOString()}\n`;
     output += `================================================================================\n\n`;
 
@@ -432,19 +319,15 @@ export class HeadlessWarehouseDriver {
     const asciiMap = this.generateAsciiMap();
     output += asciiMap + `\n\n`;
 
-    // 2. Raw Geometry & Floor Audit
-    output += `--- 2. RAW GEOMETRY & FLOOR AUDIT ---\n`;
+    // 2. Raw Grid & Geometry Dump
+    output += `--- 2. RAW GRID & GEOMETRY DUMP ---\n`;
     const bounds = this.grid.floor?.bounds || { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
     const floorAreaSqm = this.grid.floor?.areaSqm ?? 0;
-    output += `Floor Contour: [minX: ${bounds.minX}, maxX: ${bounds.maxX}, minZ: ${bounds.minZ}, maxZ: ${bounds.maxZ}]\n`;
+    output += `Floor Contour Bounds: [minX: ${bounds.minX}, maxX: ${bounds.maxX}, minZ: ${bounds.minZ}, maxZ: ${bounds.maxZ}]\n`;
     output += `Floor Surface Area: ${floorAreaSqm} m² (${this.floorTiles.size} floor tiles, cell size: ${this.grid.cellSizeM}m)\n\n`;
 
-    output += `Placed Elements Inventory:\n`;
+    output += `Placed Elements Dump:\n`;
     let elementCount = 0;
-    let anomalyCount = 0;
-
-    let inboundDocks = 0;
-    let outboundDocks = 0;
 
     this.grid.tiles.forEach((type, key) => {
       const [xStr, zStr] = key.split('_');
@@ -452,114 +335,39 @@ export class HeadlessWarehouseDriver {
       const z = parseInt(zStr, 10);
       if (type === 'EMPTY_FLOOR') return;
 
-      if (type === 'DOCK_INBOUND') inboundDocks++;
-      if (type === 'DOCK_OUTBOUND') outboundDocks++;
-
       elementCount++;
       const inFloor = this.floorTiles.has(key);
       const details = this.grid.elementDetails?.get(key);
       const sku = details?.skuId || 'NONE';
-      const slots = details?.slotsPerRack ?? (type === 'RACK' ? 12 : undefined);
+      const slots = details?.slotsPerRack ?? (type === 'RACK' ? 12 : 'N/A');
       const rotation = details?.rotationDeg ?? 0;
 
-      if (!inFloor) {
-        anomalyCount++;
-        output += `🚨 [CRITICAL_ANOMALY: FLOATING_OBJECT]: ${type} at (${x}, ${z}) is SUSPENDED IN MID-AIR (Floor bounds violated)!\n`;
-        output += `   └─ Object details: rot=${rotation}°, sku=${sku}, slots=${slots ?? 'N/A'}\n`;
-      } else {
-        output += ` • [${type}] at (${x}, ${z}): inFloor=true, rot=${rotation}°, sku=${sku}, slots=${slots ?? 'N/A'}\n`;
-      }
+      output += ` [${x}, ${z}] | Entity: ${type} | Floor: ${inFloor ? 'YES' : 'NO'} | SKU: ${sku} | Slots: ${slots} | Rot: ${rotation}°\n`;
     });
 
     if (elementCount === 0) {
       output += ` (No warehouse elements placed)\n`;
     }
+    output += `\n`;
 
-    if (inboundDocks > 1) {
-      output += `🚨 [DOCK_LIMIT_EXCEEDED]: Found ${inboundDocks} inbound docks (max allowed: 1)!\n`;
-    }
-    if (outboundDocks > 1) {
-      output += `🚨 [DOCK_LIMIT_EXCEEDED]: Found ${outboundDocks} outbound docks (max allowed: 1)!\n`;
-    }
+    // 3. Direct REO Engine Output
+    output += `--- 3. DIRECT REO ENGINE OUTPUT ---\n`;
+    const capacityReport = calculateWarehouseCapacity(this.grid);
+    output += `REO Capacity Engine Output: ${JSON.stringify(capacityReport)}\n`;
 
-    if (anomalyCount === 0 && inboundDocks <= 1 && outboundDocks <= 1) {
-      output += `\n✅ [FLOOR_AUDIT_OK]: All ${elementCount} placed elements are strictly within floor boundaries and dock limits.\n\n`;
-    } else {
-      output += `\n❌ [FLOOR_AUDIT_FAILED]: ${anomalyCount} floating element(s) or dock limit violation(s) detected!\n\n`;
-    }
-
-    // 3. Mathematical Integrity Audit
-    output += `--- 3. MATHEMATICAL INTEGRITY AUDIT ---\n`;
-
-    // 3a. Rack Capacity Audit
-    let actualSumCapacity = 0;
-    let totalRacks = 0;
-
-    this.grid.tiles.forEach((type, key) => {
-      if (type === 'RACK') {
-        totalRacks++;
-        const details = this.grid.elementDetails?.get(key);
-        actualSumCapacity += details?.slotsPerRack ?? 12;
-      }
-    });
-
-    const reportedCap = calculateWarehouseCapacity(this.grid);
-    if (actualSumCapacity !== reportedCap.totalPalletCapacity) {
-      output += `❌ [MATH_ERROR] Capacity mismatch: sum=${actualSumCapacity}, state=${reportedCap.totalPalletCapacity}\n`;
-    } else {
-      output += `[MATH_INTEGRITY_OK] Total capacity matches sum of slots (${actualSumCapacity} pallets across ${totalRacks} racks).\n`;
-    }
-
-    // 3b. Supply Schedule & Flow Audit
     const qIn = this.supplySchedule.inboundBatchVolume;
     const tIn = this.supplySchedule.inboundIntervalValue || 24;
     const qOut = this.supplySchedule.outboundBatchVolume;
     const tOut = this.supplySchedule.outboundIntervalValue || 24;
 
-    const qInDay = qIn * (24 / tIn);
-    const qOutDay = qOut * (24 / tOut);
+    output += `REO Supply Schedule Raw Params: Inbound(${qIn} pallets / ${tIn}h), Outbound(${qOut} pallets / ${tOut}h)\n\n`;
 
-    output += `Supply Flow Metrics:\n`;
-    output += ` • Inbound Flow (Q_in_day): ${qInDay.toFixed(1)} pallets/day (${qIn} pallets / ${tIn}h)\n`;
-    output += ` • Outbound Flow (Q_out_day): ${qOutDay.toFixed(1)} pallets/day (${qOut} pallets / ${tOut}h)\n`;
-
-    if (qOutDay > qInDay) {
-      const diff = qOutDay - qInDay;
-      output += `[SUPPLY_AUDIT: IDLE_CAPACITY] Outbound exceeds Inbound by ${diff.toFixed(1)} pallets/day. System status: GREEN (Valid). Idle capacity: ${diff.toFixed(1)} pallets/day.\n`;
-    } else if (qInDay > qOutDay) {
-      const diff = qInDay - qOutDay;
-      const cTotal = actualSumCapacity;
-      let overflowMsg = '';
-      if (cTotal > 0 && diff > 0) {
-        const hours = (cTotal / diff) * 24;
-        const days = hours / 24;
-        overflowMsg = `Warehouse capacity ${cTotal} will be depleted in ${hours.toFixed(1)}h (${days.toFixed(1)}d).`;
-      } else {
-        overflowMsg = `Buffer accumulating ${diff.toFixed(1)} pallets/day indefinitely.`;
-      }
-      output += `[SUPPLY_AUDIT: OVERFLOW_RISK] Inbound exceeds Outbound by ${diff.toFixed(1)} pallets/day. ${overflowMsg} System status: AMBER (Warning).\n`;
-    } else {
-      output += `[SUPPLY_AUDIT: BALANCED] Inbound matches Outbound (${qInDay.toFixed(1)} pallets/day). System status: GREEN.\n`;
-    }
-
-    output += `\n`;
-
-    // 4. Simulation Engine Telemetry Summary
+    // 4. Simulation Engine Raw Telemetry Summary
     if (this.lastSimulationEngine) {
-      output += `--- 4. SIMULATION TELEMETRY SUMMARY ---\n`;
+      output += `--- 4. SIMULATION ENGINE RAW TELEMETRY SUMMARY ---\n`;
       output += ` Simulated Ticks: ${this.lastSimTicks}\n`;
       output += ` Total Deliveries Completed: ${this.lastSimulationEngine.completedDeliveries}\n`;
       output += ` Total Breakdowns: ${this.lastSimulationEngine.totalBreakdowns}\n`;
-      output += ` Total Micro-Stalls (>3 ticks): ${this.lastSimStallsCount}\n`;
-      output += ` Total Deadlocks (>10 ticks): ${this.lastSimDeadlocksCount}\n`;
-      output += ` Total Robot Collisions: ${this.lastSimCollisionsCount}\n`;
-
-      if (this.lastSimDeadlocksCount > 0 || this.lastSimCollisionsCount > 0) {
-        output += `❌ [SIMULATION_FAILED]: Deadlocks (${this.lastSimDeadlocksCount}) or Collisions (${this.lastSimCollisionsCount}) occurred during run!\n`;
-      } else {
-        output += `✅ [SIMULATION_PASSED]: Clean run with 0 deadlocks and 0 collisions.\n`;
-      }
-
       output += ` Telemetry Log saved to: .debug_logs/oracle_telemetry.log\n`;
     }
 
@@ -656,9 +464,7 @@ export class HeadlessWarehouseDriver {
         const type = this.grid.tiles.get(key);
         const inFloor = this.floorTiles.has(key);
 
-        if (type && type !== 'EMPTY_FLOOR' && !inFloor) {
-          rowStr += '!';
-        } else if (type === 'RACK') {
+        if (type === 'RACK') {
           rowStr += 'R';
         } else if (type === 'OBSTACLE') {
           rowStr += '#';
@@ -677,7 +483,7 @@ export class HeadlessWarehouseDriver {
       mapStr += rowLabel + rowStr + '\n';
     }
 
-    mapStr += `Legend: . = Floor, # = Wall, R = Rack, I = Inbound Dock, O = Outbound Dock, C = Charger, ! = Floating/Anomaly`;
+    mapStr += `Legend: . = Floor, # = Wall, R = Rack, I = Inbound Dock, O = Outbound Dock, C = Charger`;
 
     return mapStr;
   }

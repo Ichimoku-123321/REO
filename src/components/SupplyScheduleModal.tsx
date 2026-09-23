@@ -34,18 +34,16 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
   const rInPerDay = inHours > 0 ? (schedule.inboundBatchVolume / inHours) * 24 : 0;
   const rOutPerDay = outHours > 0 ? (schedule.outboundBatchVolume / outHours) * 24 : 0;
 
-  const netAccumulationPerDay = rInPerDay - rOutPerDay;
-
   // Single batch exceeding total rack capacity
   const isSingleBatchOverflow = schedule.inboundBatchVolume > totalPalletCapacity;
 
-  // Flow imbalance (Inbound flow > Outbound flow)
-  const isAccumulating = netAccumulationPerDay > 0;
+  const netAccumulationPerDay = Math.round(rInPerDay - rOutPerDay);
+  const diffOutboundExcess = Math.round(rOutPerDay - rInPerDay);
 
-  // Days until warehouse capacity is completely full
-  const daysToFull = isAccumulating && netAccumulationPerDay > 0
-    ? Math.ceil(totalPalletCapacity / netAccumulationPerDay)
+  const hoursToFull = netAccumulationPerDay > 0
+    ? Math.round((totalPalletCapacity / (rInPerDay - rOutPerDay)) * 24)
     : null;
+  const daysToFull = hoursToFull !== null ? (hoursToFull / 24).toFixed(1) : null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 font-mono text-xs">
@@ -221,20 +219,7 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
         </div>
 
         {/* Dynamic Status / Alert Banner */}
-        {isAccumulating ? (
-          <div className="p-3 bg-red-100 border border-red-400 text-red-900 font-bold mb-4 flex items-start gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-            <div>
-              <div className="uppercase text-xs tracking-tight">
-                ⚠️ Внимание: Дисбаланс потоков (Приход {Math.round(rInPerDay)} п/сут &gt; Отгрузка {Math.round(rOutPerDay)} п/сут)!
-              </div>
-              <div className="text-[11px] font-normal mt-1">
-                Накопление груза составляет <strong>{Math.round(netAccumulationPerDay)} паллет/сут</strong>.
-                Склад будет полностью забит на <strong>{daysToFull}-й день</strong> (вместимость {totalPalletCapacity} паллет).
-              </div>
-            </div>
-          </div>
-        ) : isSingleBatchOverflow ? (
+        {isSingleBatchOverflow ? (
           <div className="p-3 bg-red-100 border border-red-400 text-red-900 font-bold mb-4 flex items-start gap-2">
             <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
             <div>
@@ -244,10 +229,24 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
               </div>
             </div>
           </div>
+        ) : netAccumulationPerDay > 0 ? (
+          <div className="p-3 bg-amber-50 border border-amber-400 text-amber-900 font-bold mb-4 flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              ⚠️ Внимание: привоз превышает отгрузку на {netAccumulationPerDay} паллет/сут. Буфер склада будет полностью исчерпан примерно через {hoursToFull} ч. ({daysToFull} дн.).
+            </div>
+          </div>
+        ) : diffOutboundExcess > 0 ? (
+          <div className="p-3 bg-emerald-50 border border-emerald-400 text-emerald-800 font-bold mb-4 flex items-start gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              ℹ️ Внимание: объем отгрузки превышает привоз на {diffOutboundExcess} паллет/сут. Склад не будет заполняться на 100%, {diffOutboundExcess} паллет суточной пропускной способности отгрузки будут работать вхолостую.
+            </div>
+          </div>
         ) : (
-          <div className="p-3 bg-emerald-50 border border-emerald-400 text-emerald-900 font-bold mb-4 flex items-center gap-2">
+          <div className="p-3 bg-emerald-50 border border-emerald-400 text-emerald-800 font-bold mb-4 flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span>Баланс партий в норме: вместимость покрывает привоз, исходящий поток покрывает входящий.</span>
+            <span className="text-xs">✅ Баланс партий в норме: суточный входящий поток полностью соответствует исходящему.</span>
           </div>
         )}
 

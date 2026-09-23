@@ -422,9 +422,9 @@ export function SimulationViewport({
     setSelectedTileKeys(new Set());
   }, [selectedTileKeys]);
 
-  // Window centering on selection change
+  // Window centering on selection change (only for single element inspection)
   useEffect(() => {
-    if (selectedTileKeys.size === 0) {
+    if (selectedTileKeys.size !== 1) {
       setInspectorWindowPos(null);
       setTargetScreenPos(null);
       return;
@@ -432,9 +432,8 @@ export function SimulationViewport({
 
     setInspectorWindowPos((prev) => {
       if (prev !== null) return prev;
-      const isSingle = selectedTileKeys.size === 1;
-      const winW = isSingle ? 288 : 580;
-      const winH = isSingle ? 280 : 56;
+      const winW = 288;
+      const winH = 280;
 
       const centerX = Math.max(0, (window.innerWidth - winW) / 2);
       const centerY = Math.max(0, (window.innerHeight - winH) / 2);
@@ -1260,28 +1259,17 @@ export function SimulationViewport({
         drawingLineRef.current.visible = false;
       }
 
-      // Compute 2D Projected Screen Position for Inspector Connector Beam Line
+      // Compute 2D Projected Screen Position for Inspector Connector Beam Line (single selection only)
       const currentSelected = stateRef.current.selectedTileKeys;
-      if (currentSelected.size > 0 && cameraRef.current && containerRef.current) {
-        let sumX = 0;
-        let sumZ = 0;
-        let count = 0;
+      if (currentSelected.size === 1 && cameraRef.current && containerRef.current) {
+        const key = Array.from(currentSelected)[0];
         const currentGrid = stateRef.current.grid;
-
-        currentSelected.forEach((key) => {
-          const [gxStr, gyStr] = key.split('_');
-          const gx = parseInt(gxStr, 10);
-          const gy = parseInt(gyStr, 10);
-          if (!isNaN(gx) && !isNaN(gy)) {
-            sumX += (gx + 0.5) * currentGrid.cellSizeM;
-            sumZ += (gy + 0.5) * currentGrid.cellSizeM;
-            count++;
-          }
-        });
-
-        if (count > 0) {
-          const avgX = sumX / count;
-          const avgZ = sumZ / count;
+        const [gxStr, gyStr] = key.split('_');
+        const gx = parseInt(gxStr, 10);
+        const gy = parseInt(gyStr, 10);
+        if (!isNaN(gx) && !isNaN(gy)) {
+          const avgX = (gx + 0.5) * currentGrid.cellSizeM;
+          const avgZ = (gy + 0.5) * currentGrid.cellSizeM;
           const targetVec = new THREE.Vector3(avgX, 1.0, avgZ);
           targetVec.project(cameraRef.current);
 
@@ -1836,12 +1824,12 @@ export function SimulationViewport({
           </div>
         )}
 
-        {/* SVG Connector Beam Line to 3D object/zone */}
-        {isConstructorMode && selectedTileKeys.size > 0 && inspectorWindowPos && targetScreenPos && (
+        {/* SVG Connector Beam Line to 3D object/zone (single selection only) */}
+        {isConstructorMode && selectedTileKeys.size === 1 && inspectorWindowPos && targetScreenPos && (
           <svg className="fixed inset-0 w-full h-full pointer-events-none z-20">
             <line
-              x1={inspectorWindowPos.x + (selectedTileKeys.size === 1 ? 144 : 290)}
-              y1={inspectorWindowPos.y + (selectedTileKeys.size === 1 ? 140 : 28)}
+              x1={inspectorWindowPos.x + 144}
+              y1={inspectorWindowPos.y + 140}
               x2={targetScreenPos.x}
               y2={targetScreenPos.y}
               stroke="#D4AF37"
@@ -1850,99 +1838,12 @@ export function SimulationViewport({
             />
             <circle cx={targetScreenPos.x} cy={targetScreenPos.y} r="6" fill="#D4AF37" stroke="#FFFFFF" strokeWidth="2" />
             <circle
-              cx={inspectorWindowPos.x + (selectedTileKeys.size === 1 ? 144 : 290)}
-              cy={inspectorWindowPos.y + (selectedTileKeys.size === 1 ? 140 : 28)}
+              cx={inspectorWindowPos.x + 144}
+              cy={inspectorWindowPos.y + 140}
               r="4"
               fill="#D4AF37"
             />
           </svg>
-        )}
-
-        {/* Bulk Inspector Banner */}
-        {isConstructorMode && selectedTileKeys.size > 1 && inspectorWindowPos && (
-          <div
-            style={{
-              position: 'fixed',
-              left: `${inspectorWindowPos.x}px`,
-              top: `${inspectorWindowPos.y}px`,
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onPointerUp={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onMouseUp={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            className="z-30 bg-[#FFFFFF] border-2 border-[#D4AF37] p-2 shadow-2xl flex items-center gap-4 text-xs font-mono select-none pointer-events-auto cursor-default"
-          >
-            <div
-              onPointerDown={handleStartWindowDrag}
-              className="font-bold text-[#8A6826] flex items-center gap-1 bg-[#F9F9F6] px-2 py-1 border border-[#D4AF37]/30"
-            >
-              <span>Выбрано: {selectedTileKeys.size} стеллажей</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[#4F4F47]">SKU:</span>
-              <select
-                onChange={(e) => {
-                  const val = e.target.value || undefined;
-                  setGrid((prev) => {
-                    const detailsMap = new Map(prev.elementDetails || []);
-                    for (const key of selectedTileKeys) {
-                      const existing = detailsMap.get(key) || {};
-                      detailsMap.set(key, { ...existing, skuId: val || undefined });
-                    }
-                    return { ...prev, elementDetails: detailsMap };
-                  });
-                }}
-                className="bg-[#F4F4F0] border border-[#D4AF37]/50 px-2 py-0.5 outline-none"
-              >
-                <option value="">-- Назначить товар --</option>
-                {skuList.map((sku) => (
-                  <option key={sku.id} value={sku.id}>{sku.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[#4F4F47]">Вместимость:</span>
-              <input
-                type="number"
-                min="1"
-                max="200"
-                defaultValue={12}
-                onBlur={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  if (!isNaN(val) && val > 0) {
-                    setGrid((prev) => {
-                      const detailsMap = new Map(prev.elementDetails || []);
-                      for (const key of selectedTileKeys) {
-                        const existing = detailsMap.get(key) || {};
-                        detailsMap.set(key, { ...existing, slotsPerRack: val });
-                      }
-                      return { ...prev, elementDetails: detailsMap };
-                    });
-                  }
-                }}
-                className="w-16 bg-[#F4F4F0] border border-[#D4AF37]/50 px-2 py-0.5 outline-none"
-              />
-              <span className="text-[#4F4F47]">паллет</span>
-            </div>
-
-            <button
-              onClick={handleDeleteSelected}
-              className="px-2 py-0.5 bg-red-100 hover:bg-red-200 text-red-900 border border-red-300 transition cursor-pointer"
-            >
-              Удалить (Del)
-            </button>
-
-            <button
-              onClick={() => setSelectedTileKeys(new Set())}
-              className="p-1 text-[#4F4F47] hover:text-[#1A1A1A] transition cursor-pointer"
-              title="Закрыть"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
         )}
 
         {/* Rack Inspection Popover */}

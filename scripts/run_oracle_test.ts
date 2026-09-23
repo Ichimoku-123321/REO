@@ -46,8 +46,12 @@ function runOracleTest(): void {
 
   // 6. Output formatted raw truth report to stdout and save to .debug_logs/oracle_dump.txt
   const rawTruthReport = driver.dumpRawTruth();
-
   console.log(rawTruthReport);
+
+  // 7. Output machine-readable audit summary
+  const auditSummary = driver.getAuditSummary();
+  console.log('📊 Machine-Readable Audit Summary:');
+  console.log(JSON.stringify(auditSummary, null, 2));
 
   const logDir = path.resolve(process.cwd(), '.debug_logs');
   if (!fs.existsSync(logDir)) {

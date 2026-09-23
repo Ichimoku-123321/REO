@@ -19,10 +19,20 @@ export type DriverTool =
   | 'CHARGER'
   | 'DOCK_INBOUND'
   | 'DOCK_OUTBOUND'
-  | 'ERASE';
+  | 'ERASE'
+  | 'ERASE_FLOOR';
 
 export interface HeadlessDriverOptions {
   cellSizeM?: number;
+}
+
+export interface AuditSummary {
+  isValid: boolean;
+  errors: string[];
+  floatingCount: number;
+  deadlockCount: number;
+  collisionCount: number;
+  deliveriesCompleted: number;
 }
 
 export class HeadlessWarehouseDriver {
@@ -40,6 +50,11 @@ export class HeadlessWarehouseDriver {
   };
   private lastSimulationEngine: SimulationEngine | null = null;
   private lastSimTicks: number = 0;
+
+  // Aggregate simulation metrics
+  private lastSimStallsCount: number = 0;
+  private lastSimDeadlocksCount: number = 0;
+  private lastSimCollisionsCount: number = 0;
 
   constructor(options?: HeadlessDriverOptions) {
     const cellSizeM = options?.cellSizeM ?? 2.0;
@@ -87,9 +102,38 @@ export class HeadlessWarehouseDriver {
     return this;
   }
 
+  public eraseFloorRect(x1: number, z1: number, x2: number, z2: number): this {
+    const minX = Math.min(x1, x2);
+    const maxX = Math.max(x1, x2);
+    const minZ = Math.min(z1, z2);
+    const maxZ = Math.max(z1, z2);
+
+    for (let x = minX; x <= maxX; x++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        const key = `${x}_${z}`;
+        this.floorTiles.delete(key);
+        if (this.grid.tiles.get(key) === 'EMPTY_FLOOR') {
+          this.grid.tiles.delete(key);
+        }
+      }
+    }
+
+    this.recalculateFloorDefinition();
+    return this;
+  }
+
   public clickCell(x: number, z: number, options?: { force?: boolean }): this {
     const key = `${x}_${z}`;
     const inFloor = this.floorTiles.has(key);
+
+    if (this.currentTool === 'ERASE_FLOOR') {
+      this.floorTiles.delete(key);
+      if (this.grid.tiles.get(key) === 'EMPTY_FLOOR') {
+        this.grid.tiles.delete(key);
+      }
+      this.recalculateFloorDefinition();
+      return this;
+    }
 
     if (!inFloor && !options?.force) {
       console.warn(`[HeadlessDriver] Click at (${x}, ${z}) ignored: Outside floor bounds (use force: true to override).`);
@@ -208,6 +252,10 @@ export class HeadlessWarehouseDriver {
     this.lastSimulationEngine = engine;
     this.lastSimTicks = ticks;
 
+    this.lastSimStallsCount = 0;
+    this.lastSimDeadlocksCount = 0;
+    this.lastSimCollisionsCount = 0;
+
     const logDir = path.resolve(process.cwd(), '.debug_logs');
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
@@ -233,6 +281,7 @@ export class HeadlessWarehouseDriver {
 
       const tickLogLines: string[] = [];
 
+      // 1. Robot movement & stall/deadlock tracking
       for (const agent of engine.agents) {
         const posHistory = prevPositionsMap.get(agent.id) || [];
         posHistory.push({ x: agent.x, y: agent.y });
@@ -256,11 +305,14 @@ export class HeadlessWarehouseDriver {
 
         if (isMovingState && dist3Ticks <= 0.02) {
           warningTag += ' ⚠️ [STALL]';
+          this.lastSimStallsCount++;
+
           const currentStuck = (stationaryTicksMap.get(agent.id) || 0) + 1;
           stationaryTicksMap.set(agent.id, currentStuck);
 
           if (currentStuck > 10) {
             warningTag += ' 🚨 [DEADLOCK_CONFIRMED]';
+            this.lastSimDeadlocksCount++;
           }
         } else {
           stationaryTicksMap.set(agent.id, 0);
@@ -280,10 +332,91 @@ export class HeadlessWarehouseDriver {
         tickLogLines.push(line);
       }
 
+      // 2. Inter-robot collision check O(N^2)
+      const agents = engine.agents;
+      for (let i = 0; i < agents.length; i++) {
+        for (let j = i + 1; j < agents.length; j++) {
+          const a1 = agents[i];
+          const a2 = agents[j];
+          const dist = Math.hypot(a1.x - a2.x, a1.y - a2.y);
+          const minDist = (a1.robotRadius + a2.robotRadius) * 0.8;
+
+          if (dist < minDist) {
+            this.lastSimCollisionsCount++;
+            tickLogLines.push(
+              `🚨 [COLLISION] Tick ${tick}: Robot ${a1.id} and Robot ${a2.id} overlapped at (${a1.x.toFixed(2)}, ${a1.y.toFixed(2)})!`
+            );
+          }
+        }
+      }
+
       fs.appendFileSync(telemetryLogPath, tickLogLines.join('\n') + '\n', 'utf-8');
     }
 
     return this;
+  }
+
+  public getAuditSummary(): AuditSummary {
+    const errors: string[] = [];
+    let floatingCount = 0;
+
+    // 1. Floating Object Anomalies
+    this.grid.tiles.forEach((type, key) => {
+      if (type === 'EMPTY_FLOOR') return;
+      if (!this.floorTiles.has(key)) {
+        floatingCount++;
+        const [xStr, zStr] = key.split('_');
+        errors.push(`Floating object ${type} at (${xStr}, ${zStr}) outside floor bounds`);
+      }
+    });
+
+    // 2. Dock Limit Violation Check
+    let inboundDocks = 0;
+    let outboundDocks = 0;
+    this.grid.tiles.forEach((type) => {
+      if (type === 'DOCK_INBOUND') inboundDocks++;
+      if (type === 'DOCK_OUTBOUND') outboundDocks++;
+    });
+
+    if (inboundDocks > 1) {
+      errors.push(`Found ${inboundDocks} inbound docks (max allowed: 1)`);
+    }
+    if (outboundDocks > 1) {
+      errors.push(`Found ${outboundDocks} outbound docks (max allowed: 1)`);
+    }
+
+    // 3. Mathematical Integrity Audit
+    let actualSumCapacity = 0;
+    this.grid.tiles.forEach((type, key) => {
+      if (type === 'RACK') {
+        const details = this.grid.elementDetails?.get(key);
+        actualSumCapacity += details?.slotsPerRack ?? 12;
+      }
+    });
+
+    const reportedCap = calculateWarehouseCapacity(this.grid);
+    if (actualSumCapacity !== reportedCap.totalPalletCapacity) {
+      errors.push(`Capacity mismatch: sum=${actualSumCapacity}, state=${reportedCap.totalPalletCapacity}`);
+    }
+
+    const deadlockCount = this.lastSimDeadlocksCount;
+    const collisionCount = this.lastSimCollisionsCount;
+    const deliveriesCompleted = this.lastSimulationEngine?.completedDeliveries ?? 0;
+
+    const isValid =
+      errors.length === 0 &&
+      floatingCount === 0 &&
+      deadlockCount === 0 &&
+      collisionCount === 0;
+
+    return {
+      isValid,
+      errors,
+      floatingCount,
+      deadlockCount,
+      collisionCount,
+      deliveriesCompleted,
+    };
   }
 
   public dumpRawTruth(): string {
@@ -310,11 +443,17 @@ export class HeadlessWarehouseDriver {
     let elementCount = 0;
     let anomalyCount = 0;
 
+    let inboundDocks = 0;
+    let outboundDocks = 0;
+
     this.grid.tiles.forEach((type, key) => {
       const [xStr, zStr] = key.split('_');
       const x = parseInt(xStr, 10);
       const z = parseInt(zStr, 10);
       if (type === 'EMPTY_FLOOR') return;
+
+      if (type === 'DOCK_INBOUND') inboundDocks++;
+      if (type === 'DOCK_OUTBOUND') outboundDocks++;
 
       elementCount++;
       const inFloor = this.floorTiles.has(key);
@@ -336,10 +475,17 @@ export class HeadlessWarehouseDriver {
       output += ` (No warehouse elements placed)\n`;
     }
 
-    if (anomalyCount === 0) {
-      output += `\n✅ [FLOOR_AUDIT_OK]: All ${elementCount} placed elements are strictly within floor boundaries.\n\n`;
+    if (inboundDocks > 1) {
+      output += `🚨 [DOCK_LIMIT_EXCEEDED]: Found ${inboundDocks} inbound docks (max allowed: 1)!\n`;
+    }
+    if (outboundDocks > 1) {
+      output += `🚨 [DOCK_LIMIT_EXCEEDED]: Found ${outboundDocks} outbound docks (max allowed: 1)!\n`;
+    }
+
+    if (anomalyCount === 0 && inboundDocks <= 1 && outboundDocks <= 1) {
+      output += `\n✅ [FLOOR_AUDIT_OK]: All ${elementCount} placed elements are strictly within floor boundaries and dock limits.\n\n`;
     } else {
-      output += `\n❌ [FLOOR_AUDIT_FAILED]: ${anomalyCount} floating element(s) detected outside floor boundaries!\n\n`;
+      output += `\n❌ [FLOOR_AUDIT_FAILED]: ${anomalyCount} floating element(s) or dock limit violation(s) detected!\n\n`;
     }
 
     // 3. Mathematical Integrity Audit
@@ -404,6 +550,16 @@ export class HeadlessWarehouseDriver {
       output += ` Simulated Ticks: ${this.lastSimTicks}\n`;
       output += ` Total Deliveries Completed: ${this.lastSimulationEngine.completedDeliveries}\n`;
       output += ` Total Breakdowns: ${this.lastSimulationEngine.totalBreakdowns}\n`;
+      output += ` Total Micro-Stalls (>3 ticks): ${this.lastSimStallsCount}\n`;
+      output += ` Total Deadlocks (>10 ticks): ${this.lastSimDeadlocksCount}\n`;
+      output += ` Total Robot Collisions: ${this.lastSimCollisionsCount}\n`;
+
+      if (this.lastSimDeadlocksCount > 0 || this.lastSimCollisionsCount > 0) {
+        output += `❌ [SIMULATION_FAILED]: Deadlocks (${this.lastSimDeadlocksCount}) or Collisions (${this.lastSimCollisionsCount}) occurred during run!\n`;
+      } else {
+        output += `✅ [SIMULATION_PASSED]: Clean run with 0 deadlocks and 0 collisions.\n`;
+      }
+
       output += ` Telemetry Log saved to: .debug_logs/oracle_telemetry.log\n`;
     }
 

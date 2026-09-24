@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "sim:run": "tsx scripts/run_simulation_headless.ts",
     "sim:scenario": "tsx",
+    "oracle:run": "tsx scripts/run_oracle_test.ts",
     "test": "tsc && node --test dist/tests/dss.test.js dist/tests/topology.test.js dist/tests/simulation.test.js dist/tests/spectral.test.js dist/tests/constructor.test.js dist/tests/export_import.test.js dist/tests/export_pdf.test.js dist/tests/fast_forward.test.js dist/tests/fleet_optimizer.test.js dist/tests/heterogeneous_simulation.test.js dist/tests/audio_replay.test.js dist/tests/economics.test.js"
   },
   "dependencies": {

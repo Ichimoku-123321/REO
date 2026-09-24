@@ -1,62 +1,72 @@
 ================================================================================
 🔮 HEADLESS WAREHOUSE ORACLE: RAW STATE DUMP
-Generated: 2026-09-24T11:32:45.412Z
+Generated: 2026-09-24T18:40:46.802Z
 ================================================================================
 
 --- 1. ASCII WAREHOUSE MAP ---
-   012345678901
- 0 C.########RR
- 1 I..........O
- 2 ..########RR
- 3 C.########..
+   012345678901234567890
+ 0 .CC............
+ 1 ...............
+ 2 I...R.R.R.R....
+ 3 ...............
+ 4 ....R.R.R.R....
+ 5 ...............
+ 6 ....R.R.R......
+ 7 ...............
+ 8 ....R.R.R......
+ 9 ...............
+10 ....R.R.R......
+11 ...............
+12 ....R.R.R.....O
+13 ...............
+14 ...............
+15
+16
+17
+18
+19
+20                     #
 Legend: . = Floor, # = Wall, R = Rack, I = Inbound Dock, O = Outbound Dock, C = Charger
 
 --- 2. RAW GRID & GEOMETRY DUMP ---
-Floor Contour Bounds: [minX: 0, maxX: 11, minZ: 0, maxZ: 3]
-Floor Surface Area: 192 m² (48 floor tiles, cell size: 2m)
+Floor Contour Bounds: [minX: 0, maxX: 14, minZ: 0, maxZ: 14]
+Floor Surface Area: 900 m² (225 floor tiles, cell size: 2m)
 Warehouse Clear Ceiling Height: 8.0 m
 
 Placed Elements Dump:
- [0, 0] | Entity: CHARGER | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [0, 1] | Entity: DOCK_INBOUND | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [0, 3] | Entity: CHARGER | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [2, 0] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [2, 2] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [2, 3] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [3, 0] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [3, 2] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [3, 3] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [4, 0] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [4, 2] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [4, 3] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [5, 0] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [5, 2] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [5, 3] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [6, 0] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [6, 2] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [6, 3] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [7, 0] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [7, 2] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [7, 3] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [8, 0] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [8, 2] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [8, 3] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [9, 0] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [9, 2] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [9, 3] | Entity: OBSTACLE | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [10, 0] | Entity: RACK | Floor: YES | SKU: sku-test-corridor | Slots: 12 | Rot: 0°
- [10, 2] | Entity: RACK | Floor: YES | SKU: sku-test-corridor | Slots: 12 | Rot: 0°
- [11, 0] | Entity: RACK | Floor: YES | SKU: sku-test-corridor | Slots: 12 | Rot: 0°
- [11, 1] | Entity: DOCK_OUTBOUND | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
- [11, 2] | Entity: RACK | Floor: YES | SKU: sku-test-corridor | Slots: 12 | Rot: 0°
+ [0, 2] | Entity: DOCK_INBOUND | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
+ [1, 0] | Entity: CHARGER | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
+ [2, 0] | Entity: CHARGER | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
+ [4, 2] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [4, 4] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [4, 6] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [4, 8] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [4, 10] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [4, 12] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [6, 2] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [6, 4] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [6, 6] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [6, 8] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [6, 10] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [6, 12] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [8, 2] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [8, 4] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [8, 6] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [8, 8] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [8, 10] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [8, 12] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [10, 2] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [10, 4] | Entity: RACK | Floor: YES | SKU: NONE | Slots: 12 | Rot: 0°
+ [14, 12] | Entity: DOCK_OUTBOUND | Floor: YES | SKU: NONE | Slots: N/A | Rot: 0°
+ [20, 20] | Entity: OBSTACLE | Floor: NO | SKU: NONE | Slots: N/A | Rot: 0°
 
 --- 3. DIRECT REO ENGINE OUTPUT ---
-REO Capacity Engine Output: {"totalRacks":4,"totalPalletCapacity":48}
-REO Supply Schedule Raw Params: Inbound(50 pallets / 24h), Outbound(50 pallets / 24h)
+REO Capacity Engine Output: {"totalRacks":20,"totalPalletCapacity":240}
+REO Supply Schedule Raw Params: Inbound(50 pallets / 24h), Outbound(150 pallets / 24h)
 
 --- 4. SIMULATION ENGINE RAW TELEMETRY SUMMARY ---
- Simulated Ticks: 400
- Total Deliveries Completed: 1
+ Simulated Ticks: 300
+ Total Deliveries Completed: 7
  Total Breakdowns: 0
  Telemetry Log saved to: .debug_logs/oracle_telemetry.log
 ================================================================================

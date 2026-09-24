@@ -50,7 +50,7 @@ interface SimulationViewportProps {
   fleetSize: number;
   targetThroughputPerHour: number;
   replayFrames?: SimulationReplayFrame[];
-  onTriggerSimulationRun: () => void;
+  onTriggerSimulationRun: (schedule?: SupplySchedule) => void;
   showToast: (msg: string) => void;
 }
 
@@ -372,10 +372,10 @@ export function SimulationViewport({
       return;
     }
 
-    onTriggerSimulationRun();
+    onTriggerSimulationRun(supplySchedule);
     onAppModeChange('SIMULATION');
     setIsPlaying(true);
-  }, [gridElementCounts, grid, facilityDims, onTriggerSimulationRun, onAppModeChange, showToast]);
+  }, [gridElementCounts, grid, facilityDims, supplySchedule, onTriggerSimulationRun, onAppModeChange, showToast]);
 
   // Return to CAD Editor Handler
   const handleReturnToEditor = useCallback(() => {

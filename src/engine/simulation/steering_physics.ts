@@ -112,14 +112,12 @@ export function computeSteeringStep(
 
   const headCos = Math.cos(agent.headingRad);
   const headSin = Math.sin(agent.headingRad);
-  const vRightX = headSin;
-  const vRightY = -headCos;
 
   for (let j = 0; j < agents.length; j++) {
     if (agentIdx === j) continue;
     const other = agents[j];
     const rSum = agent.robotRadius + other.robotRadius;
-    const dDetect = rSum + 0.5;
+    const dDetect = rSum + 0.8;
     const dxOther = agent.x - other.x;
     const dyOther = agent.y - other.y;
     const distOtherSq = dxOther * dxOther + dyOther * dyOther;
@@ -130,19 +128,9 @@ export function computeSteeringStep(
       const uAwayX = dxOther / distOther;
       const uAwayY = dyOther / distOther;
 
-      const otherCos = Math.cos(other.headingRad);
-      const otherSin = Math.sin(other.headingRad);
-      const dotHeadings = headCos * otherCos + headSin * otherSin;
-      const approachSpeed = -(uAwayX * headCos + uAwayY * headSin);
-
-      const factor = (dDetect - distOther) / 0.5;
-      fAvoidX += factor * uAwayX * 1.0;
-      fAvoidY += factor * uAwayY * 1.0;
-
-      if (dotHeadings < -0.2 && approachSpeed > 0) {
-        fAvoidX += factor * vRightX * 1.2;
-        fAvoidY += factor * vRightY * 1.2;
-      }
+      const factor = (dDetect - distOther) / 0.8;
+      fAvoidX += factor * uAwayX * 1.5;
+      fAvoidY += factor * uAwayY * 1.5;
 
       totalNegotiationDelaySec += dtSim * 0.1;
     }

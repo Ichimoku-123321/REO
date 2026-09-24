@@ -1,6 +1,6 @@
 ================================================================================
 🔮 HEADLESS WAREHOUSE ORACLE: RAW STATE DUMP
-Generated: 2026-09-24T07:02:38.557Z
+Generated: 2026-09-24T10:24:14.538Z
 ================================================================================
 
 --- 1. ASCII WAREHOUSE MAP ---
@@ -56,7 +56,7 @@ REO Supply Schedule Raw Params: Inbound(50 pallets / 24h), Outbound(50 pallets /
 
 --- 4. SIMULATION ENGINE RAW TELEMETRY SUMMARY ---
  Simulated Ticks: 400
- Total Deliveries Completed: 10
+ Total Deliveries Completed: 1
  Total Breakdowns: 0
  Telemetry Log saved to: .debug_logs/oracle_telemetry.log
 ================================================================================

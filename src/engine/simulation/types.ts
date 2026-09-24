@@ -44,6 +44,8 @@ export interface ExtendedSimulationResult {
   deliveriesByRobotType: Record<string, number>;
   totalBreakdowns: number;
   totalNegotiationDelaySeconds: number;
+  totalCorridorWaitSeconds: number;
+  bottleneckDetected: boolean;
 }
 
 export interface SimulationReplayFrame {
@@ -63,6 +65,10 @@ export interface AgentState {
   cargoPayload: boolean;
   isQueued: boolean;
   timerSeconds: number;
+
+  // Schedule & Bottleneck Delay Tracking
+  corridorWaitTimeSec: number;
+  scheduleLagSec: number;
 
   // Physical & Battery TTX
   robotSpec: Robot;
@@ -113,6 +119,8 @@ export interface SimulationTelemetry {
   congestionDetected: boolean;
   congestionNodeLabel: string | null;
   isCalibrating: boolean;
+  totalCorridorWaitSeconds: number;
+  bottleneckDetected: boolean;
 }
 
 export interface ObstacleBox {

@@ -65,6 +65,8 @@ const DEFAULT_TELEMETRY: SimulationTelemetry = {
   congestionDetected: false,
   congestionNodeLabel: null,
   isCalibrating: true,
+  totalCorridorWaitSeconds: 0,
+  bottleneckDetected: false,
 };
 
 function lerp(a: number, b: number, t: number): number {

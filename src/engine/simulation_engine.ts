@@ -20,6 +20,7 @@ import { findShortestPath } from './simulation/pathfinding.js';
 import { computeSteeringStep } from './simulation/steering_physics.js';
 import { updateAgentBatteryAndWear } from './simulation/agent_lifecycle.js';
 import { ReplayRecorder } from './simulation/replay_recorder.js';
+import { TrafficArbiter } from './simulation/traffic_arbiter.js';
 
 // Re-export all types & standalone functions to maintain full backward compatibility
 export type {
@@ -67,6 +68,7 @@ export class SimulationEngine {
   public obstacleBoxes: ObstacleBox[] = [];
 
   private fastMarchingSolvers: Map<string, FastMarchingSolver> = new Map();
+  private trafficArbiter: TrafficArbiter;
 
   constructor(
     topology: FacilityTopology,
@@ -91,6 +93,7 @@ export class SimulationEngine {
 
     this.classifyNodes();
     this.extractObstacleBoxes();
+    this.trafficArbiter = new TrafficArbiter(this.topology, this.obstacleBoxes);
     this.initializeFleet();
 
     // Initialize Fast Marching solvers for static grid map
@@ -352,6 +355,9 @@ export class SimulationEngine {
         isQueued: false,
         timerSeconds: 0,
 
+        corridorWaitTimeSec: 0,
+        scheduleLagSec: 0,
+
         robotSpec,
         robotRadius,
         maxSpeed,
@@ -450,6 +456,27 @@ export class SimulationEngine {
           const wearRes = updateAgentBatteryAndWear(agent, { dtSim, facility: this.facility });
           if (wearRes.breakdownOccurred) {
             this.totalBreakdowns += 1;
+          }
+
+          // Traffic Arbiter corridor reservation check
+          const hasAccess = this.trafficArbiter.requestCorridorAccess(agent, this.nodeMap);
+
+          if (!hasAccess) {
+            // Access denied by TrafficArbiter: agent must hold at entrance pocket
+            agent.isQueued = true;
+            agent.corridorWaitTimeSec += dtSim;
+            agent.scheduleLagSec += dtSim;
+            this.totalNegotiationDelaySeconds += dtSim;
+
+            // Orient towards target without moving forward
+            let targetNode = agent.targetNodeId ? this.nodeMap.get(agent.targetNodeId) || null : null;
+            if (targetNode) {
+              const targetHeading = Math.atan2(targetNode.y - agent.y, targetNode.x - agent.x);
+              const diff = Math.atan2(Math.sin(targetHeading - agent.headingRad), Math.cos(targetHeading - agent.headingRad));
+              const alpha = Math.min(1.0, 0.15 * 60 * dtSim);
+              agent.headingRad += alpha * diff;
+            }
+            break;
           }
 
           let targetNode = agent.targetNodeId ? this.nodeMap.get(agent.targetNodeId) || null : null;
@@ -679,6 +706,9 @@ export class SimulationEngine {
         ? Math.round((recorder.totalIdleTicks / (N * totalTicks)) * 10000) / 100
         : 0;
 
+    const totalCorridorWaitSeconds = this.agents.reduce((sum, a) => sum + a.corridorWaitTimeSec, 0);
+    const bottleneckDetected = this.agents.some((a) => a.corridorWaitTimeSec >= 5.0);
+
     return {
       durationHours,
       simulatedSeconds: Math.round(this.elapsedSimSeconds),
@@ -694,6 +724,8 @@ export class SimulationEngine {
       deliveriesByRobotType: { ...this.deliveriesByRobotType },
       totalBreakdowns: this.totalBreakdowns,
       totalNegotiationDelaySeconds: Math.round(this.totalNegotiationDelaySeconds * 10) / 10,
+      totalCorridorWaitSeconds: Math.round(totalCorridorWaitSeconds * 10) / 10,
+      bottleneckDetected,
     };
   }
 
@@ -772,6 +804,9 @@ export class SimulationEngine {
       congestionNodeLabel = node?.label || node?.id || 'Узел трассы';
     }
 
+    const totalCorridorWaitSeconds = this.agents.reduce((sum, a) => sum + a.corridorWaitTimeSec, 0);
+    const bottleneckDetected = this.agents.some((a) => a.corridorWaitTimeSec >= 5.0);
+
     return {
       elapsedSimSeconds: Math.round(this.elapsedSimSeconds),
       completedDeliveries: this.completedDeliveries,
@@ -783,6 +818,8 @@ export class SimulationEngine {
       congestionDetected,
       congestionNodeLabel,
       isCalibrating,
+      totalCorridorWaitSeconds: Math.round(totalCorridorWaitSeconds * 10) / 10,
+      bottleneckDetected,
     };
   }
 }

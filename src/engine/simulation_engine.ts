@@ -443,6 +443,26 @@ export class SimulationEngine {
 
       switch (agent.state) {
         case 'IDLE': {
+          const currNode = this.nodeMap.get(agent.currentNodeId);
+          const isOnChargerNode = currNode?.type === 'CHARGING_HUB';
+
+          // If robot is IDLE on a charger pad, it MUST vacate the charger pad immediately to unblock others!
+          if (isOnChargerNode) {
+            agent.assignedChargerNodeId = null;
+            const nonChargerCandidates = [...this.waypointNodes, ...this.inboundNodes, ...this.storageNodes];
+            const vacateTarget = this.findClosestNode(agent.currentNodeId, nonChargerCandidates);
+            if (vacateTarget && vacateTarget.id !== agent.currentNodeId) {
+              agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, vacateTarget.id);
+              if (agent.pathNodeIds.length > 1) {
+                agent.pathNodeIds.shift();
+                agent.targetNodeId = agent.pathNodeIds[0];
+                agent.state = 'MOVING_TO_PICKUP'; // Repositioning
+                agent.isQueued = false;
+                break;
+              }
+            }
+          }
+
           const freeCharger = this.findUnoccupiedChargerNode(agent.currentNodeId);
 
           // 1. Mandatory Charge Check (battery < 20%)
@@ -460,7 +480,7 @@ export class SimulationEngine {
                 agent.isQueued = false;
               }
             } else {
-              // Queue for charger: do NOT accept transport tasks and drain to 0%!
+              // Queue for charger: do NOT accept transport tasks, zero out traction discharge, wait safely!
               agent.isQueued = true;
               agent.corridorWaitTimeSec += dtSim;
             }

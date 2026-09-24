@@ -487,8 +487,8 @@ export class SimulationEngine {
             break;
           }
 
-          // 3. Opportunity Charging (when IDLE, no work available, SoC < 80%)
-          if (this.inboundPalletsAvailable === 0 && agent.batterySoc < 80 && freeCharger) {
+          // 3. Opportunity Charging (when IDLE, no work available, SoC < 95%)
+          if (this.inboundPalletsAvailable === 0 && agent.batterySoc < 95 && freeCharger) {
             agent.assignedChargerNodeId = freeCharger.id;
             agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, freeCharger.id);
             if (agent.pathNodeIds.length > 1) {

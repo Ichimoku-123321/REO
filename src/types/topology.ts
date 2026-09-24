@@ -44,12 +44,22 @@ export const facilityZoneSchema = z.object({
 
 export type FacilityZone = z.infer<typeof facilityZoneSchema>;
 
+export const obstacleBoxSchema = z.object({
+  minX: z.number(),
+  maxX: z.number(),
+  minY: z.number(),
+  maxY: z.number(),
+});
+
+export type ObstacleBox = z.infer<typeof obstacleBoxSchema>;
+
 export const facilityTopologySchema = z.object({
   widthM: z.number().positive(),
   lengthM: z.number().positive(),
   nodes: z.array(graphNodeSchema),
   edges: z.array(graphEdgeSchema),
   zones: z.array(facilityZoneSchema),
+  obstacles: z.array(obstacleBoxSchema).optional(),
 });
 
 export type FacilityTopology = z.infer<typeof facilityTopologySchema>;

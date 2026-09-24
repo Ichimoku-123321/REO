@@ -417,6 +417,13 @@ export class SimulationEngine {
   private extractObstacleBoxes(): void {
     this.obstacleBoxes = [];
 
+    // Add obstacles explicitly listed in topology (e.g. from ConstructorGrid OBSTACLE tiles)
+    if (this.topology.obstacles) {
+      for (const obs of this.topology.obstacles) {
+        this.obstacleBoxes.push({ ...obs });
+      }
+    }
+
     this.topology.zones.forEach((zone) => {
       if (zone.type === 'STORAGE_AISLE') {
         const isVertical = zone.height > zone.width * 1.2;
@@ -851,8 +858,8 @@ export class SimulationEngine {
           agent.isQueued = nearbyRobotCount >= 2;
 
           // 4. Combine Forces with Weighting Factors
-          const fTotalX = 1.0 * fAttX + 1.6 * fObsX + 1.3 * fAvoidX;
-          const fTotalY = 1.0 * fAttY + 1.6 * fObsY + 1.3 * fAvoidY;
+      const fTotalX = 1.0 * fAttX + 1.6 * fObsX + 1.3 * fAvoidX;
+      const fTotalY = 1.0 * fAttY + 1.6 * fObsY + 1.3 * fAvoidY;
           const fTotalLen = Math.hypot(fTotalX, fTotalY);
 
           let vx = 0;

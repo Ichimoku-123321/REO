@@ -509,7 +509,26 @@ export function rebuildTopologyFromGrid(
     color: '#f59e0b',
   });
 
-  return { widthM, lengthM, nodes, edges, zones };
+  const obstacles: Array<{ minX: number; maxX: number; minY: number; maxY: number }> = [];
+
+  // Extract explicit OBSTACLE boxes from grid tiles
+  tiles.forEach((tileType, key) => {
+    if (tileType === 'OBSTACLE') {
+      const [xStr, yStr] = key.split('_');
+      const x = parseInt(xStr, 10);
+      const y = parseInt(yStr, 10);
+      if (!isNaN(x) && !isNaN(y)) {
+        obstacles.push({
+          minX: x * cellSizeM,
+          maxX: (x + 1) * cellSizeM,
+          minY: y * cellSizeM,
+          maxY: (y + 1) * cellSizeM,
+        });
+      }
+    }
+  });
+
+  return { widthM, lengthM, nodes, edges, zones, obstacles };
 }
 
 /**

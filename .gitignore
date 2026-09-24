@@ -1,6 +1,4 @@
 node_modules/
 dist/
-.debug_logs/
 *.xlsx
-*.log
 *.pdf

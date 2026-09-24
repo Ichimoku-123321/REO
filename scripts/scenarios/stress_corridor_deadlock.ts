@@ -39,6 +39,10 @@ driver.setSupplySchedule({ qIn: 50, tInHours: 24, qOut: 50, tOutHours: 24 });
 console.log('⏳ Running simulation for 400 ticks (200s, dt=0.5s, 2 robots)...');
 driver.runSimulation(400, 0.5, { fleetSize: 2 });
 
+const dumpTruth = driver.dumpRawTruth();
+const dumpPath = path.resolve(process.cwd(), '.debug_logs/oracle_dump.txt');
+fs.writeFileSync(dumpPath, dumpTruth, 'utf-8');
+
 const summary = driver.getAuditSummary();
 console.log(`📊 Audit Summary: Deliveries Completed = ${summary.deliveriesCompleted}`);
 

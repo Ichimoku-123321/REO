@@ -12,10 +12,13 @@ export class TrafficArbiter {
   }
 
   /**
-   * Identifies narrow single-lane corridor nodes bounded strictly by obstacles on both sides.
+   * Identifies narrow single-lane corridor nodes bounded strictly by obstacles on both sides,
+   * plus transit throat entrance nodes (`c_node_1_1` and `c_node_10_1`) to keep exit throats completely clear.
    */
   private identifyCorridorNodes(topology: FacilityTopology, obstacleBoxes: ObstacleBox[]): void {
     this.corridorNodeIds.clear();
+
+    const singleLaneNodes = new Set<string>();
 
     for (const node of topology.nodes) {
       let northWallDist = Infinity;
@@ -34,7 +37,18 @@ export class TrafficArbiter {
 
       // Single lane if bounded by solid obstacles on both north & south within 1.2m
       if (northWallDist < 1.2 && southWallDist < 1.2) {
+        singleLaneNodes.add(node.id);
         this.corridorNodeIds.add(node.id);
+      }
+    }
+
+    // Include exit/entrance throat nodes connected to single-lane corridor nodes into the reservation zone
+    for (const edge of topology.edges) {
+      if (singleLaneNodes.has(edge.source)) {
+        this.corridorNodeIds.add(edge.target);
+      }
+      if (singleLaneNodes.has(edge.target)) {
+        this.corridorNodeIds.add(edge.source);
       }
     }
   }

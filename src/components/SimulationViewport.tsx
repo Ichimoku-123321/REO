@@ -2004,6 +2004,15 @@ export function SimulationViewport({
         onChangeSchedule={setSupplySchedule}
         totalPalletCapacity={warehouseCapacity.totalPalletCapacity}
         totalRacks={warehouseCapacity.totalRacks}
+        onApplySchedule={(calculatedQuota) => {
+          if (onChangeFacility) {
+            onChangeFacility({
+              ...facility,
+              targetThroughputPerHour: calculatedQuota,
+            });
+          }
+          showToast(`REO: Грузопоток обновлен по расписанию: ${calculatedQuota} шт/ч`);
+        }}
       />
     </div>
   );

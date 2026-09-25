@@ -41,6 +41,9 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
   onRunSimulation,
   isCalculating,
 }) => {
+  const isTopologyValid =
+    facility.totalAreaSqm > 0 &&
+    aiOptimizationResult.composition.length > 0;
   return (
     <div className="bg-[#FFFFFF] border border-[#D4AF37]/30 p-3 space-y-3 rounded-none text-xs text-[#1A1A1A]">
       <div className="flex items-center justify-between border-b border-[#D4AF37]/20 pb-2 rounded-none">
@@ -82,14 +85,14 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
       {/* Mode 1: AI Composition Display */}
       {mode === 'ai' && (
         <div className="p-2.5 bg-[#FFFFFF] border border-[#D4AF37]/30 text-xs rounded-none space-y-1.5">
-          {aiOptimizationResult.composition.length === 0 ? (
+          {!isTopologyValid ? (
             <div className="p-2.5 bg-amber-50 border border-amber-300 text-amber-900 rounded-none space-y-1">
               <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-800">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>⚠️ Склад не готов к расчету</span>
+                <span>⚠️ Склад не укомплектован</span>
               </div>
               <p className="text-[10px] leading-tight text-amber-900">
-                Разместите ворота приемки, ворота отгрузки и хотя бы один стеллаж в CAD-конструкторе. Невозможно рассчитать флот при нулевой вместимости.
+                Добавьте зоны приемки, отгрузки и хотя бы один стеллаж в CAD-редакторе перед расчетом флота.
               </p>
             </div>
           ) : (

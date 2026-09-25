@@ -731,14 +731,14 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
               {/* Mode 1: AI Composition Display */}
               {fleetMode === 'ai' && (
                 <div className="p-2.5 bg-[#FFFFFF] border border-[#D4AF37]/30 text-xs rounded-none space-y-2">
-                  {aiOptimizationResult.composition.length === 0 ? (
+                  {aiOptimizationResult.composition.length === 0 || facility.totalAreaSqm === 0 ? (
                     <div className="p-2.5 bg-amber-50 border border-amber-300 text-amber-900 rounded-none space-y-1">
                       <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-800">
                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span>⚠️ Склад не готов к расчету</span>
+                        <span>⚠️ Склад не укомплектован</span>
                       </div>
                       <p className="text-[10px] leading-tight text-amber-900">
-                        Разместите ворота приемки, ворота отгрузки и хотя бы один стеллаж в CAD-конструкторе. Невозможно рассчитать флот при нулевой вместимости.
+                        Добавьте зоны приемки, отгрузки и хотя бы один стеллаж в CAD-редакторе перед расчетом флота.
                       </p>
                     </div>
                   ) : (

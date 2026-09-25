@@ -533,7 +533,7 @@ export class SimulationEngine {
           }
 
           // Traffic Arbiter corridor reservation check
-          const hasAccess = this.trafficArbiter.requestCorridorAccess(agent, this.nodeMap);
+          const hasAccess = this.trafficArbiter.requestCorridorAccess(agent, this.nodeMap, this.elapsedSimSeconds);
 
           if (!hasAccess) {
             // Access denied by TrafficArbiter: agent must hold at entrance pocket

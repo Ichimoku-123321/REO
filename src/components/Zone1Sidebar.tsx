@@ -281,23 +281,26 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
 
           {openSections.program && (
             <div className="p-3 space-y-2.5">
-              {/* Target Hourly Throughput Q_target */}
+              {/* Автоматический грузопоток Q_target (Read-only) */}
               <div>
-                <label className="text-[11px] font-bold text-[#1A1A1A] flex items-center justify-between mb-0.5">
-                  <span>Целевой грузопоток Q_target:</span>
+                <label className="text-[11px] font-bold text-[#1A1A1A] flex items-center justify-between mb-1">
+                  <span>Целевой грузопоток (Авторасчет):</span>
                   <span className="text-[10px] text-[#8A6826] font-mono font-bold">шт/час</span>
                 </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={targetQ}
-                  onChange={(e) => {
-                    const val = Math.max(1, Number(e.target.value) || 1);
-                    updateFacility({ targetThroughputPerHour: val });
-                    onChangeSimulationParams({ ...simulationParams, targetHourlyQuota: val });
-                  }}
-                  className="w-full bg-[#FFFFFF] border-2 border-[#D4AF37] px-2 py-1 font-mono text-sm text-[#1A1A1A] font-bold tabular-nums focus:outline-none focus:border-[#BFA02E] rounded-none"
-                />
+                <div className="grid grid-cols-2 gap-2 font-mono">
+                  <div className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/40">
+                    <span className="text-[9px] text-[#4F4F47] block uppercase font-semibold">Средний Q_avg:</span>
+                    <strong className="text-sm font-bold text-[#1A1A1A] tabular-nums">
+                      {targetQ} шт/ч
+                    </strong>
+                  </div>
+                  <div className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/40">
+                    <span className="text-[9px] text-[#8A6826] block uppercase font-semibold">Пиковый Q_peak:</span>
+                    <strong className="text-sm font-bold text-[#8A6826] tabular-nums">
+                      {Math.ceil(targetQ * peakK)} шт/ч
+                    </strong>
+                  </div>
+                </div>
               </div>
 
               {/* Peak Hour Factor k_peak */}
@@ -317,32 +320,8 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
                 />
               </div>
 
-              {/* Shift Schedule */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <span className="text-[10px] text-[#4F4F47] font-semibold block mb-0.5">Режим сменности</span>
-                  <select
-                    value={facility.shiftsPerDay}
-                    onChange={(e) => updateFacility({ shiftsPerDay: Number(e.target.value) || 1 })}
-                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
-                  >
-                    <option value={1}>1 смена (8 ч/сут)</option>
-                    <option value={2}>2 смены (16 ч/сут)</option>
-                    <option value={3}>3 смены (24 ч/сут)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-[#4F4F47] font-semibold block mb-0.5">Дней в году</span>
-                  <select
-                    value={facility.annualOperatingDays ?? 247}
-                    onChange={(e) => updateFacility({ annualOperatingDays: Number(e.target.value) || 247 })}
-                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
-                  >
-                    <option value={247}>247 дн (Пятидневка)</option>
-                    <option value={365}>365 дн (24/7 Хаб)</option>
-                  </select>
-                </div>
+              <div className="p-2 bg-[#F9F9F6] border border-[#D4AF37]/30 text-[10px] font-mono text-[#4F4F47]">
+                ℹ️ Значение рассчитывается автоматически из баланса буфера графика поставок и отгрузок.
               </div>
             </div>
           )}
@@ -388,7 +367,35 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
                 />
               </div>
 
-              {/* Live Formula Caption */}
+              {/* Режим сменности и рабочий календарь (Перенесены из Блока 2) */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-[10px] text-[#4F4F47] font-semibold block mb-0.5">Режим сменности</span>
+                  <select
+                    value={facility.shiftsPerDay}
+                    onChange={(e) => updateFacility({ shiftsPerDay: Number(e.target.value) || 1 })}
+                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
+                  >
+                    <option value={1}>1 смена (8 ч/сут)</option>
+                    <option value={2}>2 смены (16 ч/сут)</option>
+                    <option value={3}>3 смены (24 ч/сут)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-[#4F4F47] font-semibold block mb-0.5">Дней в году</span>
+                  <select
+                    value={facility.annualOperatingDays ?? 247}
+                    onChange={(e) => updateFacility({ annualOperatingDays: Number(e.target.value) || 247 })}
+                    className="w-full bg-[#FFFFFF] border border-[#D4AF37]/40 px-2 py-1 font-mono text-xs text-[#1A1A1A] focus:outline-none focus:border-[#D4AF37] rounded-none"
+                  >
+                    <option value={247}>247 дн (Пятидневка)</option>
+                    <option value={365}>365 дн (24/7 Хаб)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Честный расчет штата от реального Q_target */}
               <div className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/30 text-[10px] font-mono leading-tight rounded-none">
                 <span className="text-[#8A6826] font-bold block mb-0.5">Формула расчета штата:</span>
                 <span className="text-[#4F4F47]">

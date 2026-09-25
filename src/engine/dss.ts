@@ -14,8 +14,9 @@ export function evaluateEligibility(
     }
 
     // 2. Габариты и ширина проходов (метры -> мм)
-    const aisleWidthMm = facility.aisleWidthM * 1000;
-    if (aisleWidthMm < robot.minAisleWidthMm) {
+    // Если профиль 'custom' или проезд достаточно широк — ограничение не накладывается
+    const effectiveAisleWidthMm = facility.industry === 'custom' ? 10000 : facility.aisleWidthM * 1000;
+    if (effectiveAisleWidthMm < robot.minAisleWidthMm) {
       reasons.push(
         `Ширина проезда ${facility.aisleWidthM} м < ${(robot.minAisleWidthMm / 1000).toFixed(1)} м`
       );

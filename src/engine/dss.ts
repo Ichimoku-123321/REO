@@ -9,7 +9,7 @@ export function evaluateEligibility(
     const reasons: string[] = [];
 
     // 1. Отраслевое соответствие
-    if (!robot.supportedIndustries.includes(facility.industry)) {
+    if (facility.industry !== 'custom' && !robot.supportedIndustries.includes(facility.industry)) {
       reasons.push(`Решение не поддерживает выбранный тип объекта: ${facility.industry}`);
     }
 

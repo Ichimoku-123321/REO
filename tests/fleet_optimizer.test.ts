@@ -2,7 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import type { FacilityRequirements } from '../src/types/facility.js';
 import type { Robot } from '../src/types/robot.js';
-import { optimizeFleetComposition } from '../src/engine/fleet_optimizer.js';
+import { optimizeFleetComposition, isWarehouseValidForFleet, calculateCycleDistance } from '../src/engine/fleet_optimizer.js';
+import type { FacilityTopology } from '../src/types/topology.js';
 
 describe('Fleet Optimizer (src/engine/fleet_optimizer.ts)', () => {
   const baseFacility: FacilityRequirements = {
@@ -224,5 +225,95 @@ describe('Fleet Optimizer (src/engine/fleet_optimizer.ts)', () => {
       duration < 50,
       `Стресс-тест производительности превысил 50 мс: фактически ${duration.toFixed(2)} мс`
     );
+  });
+
+  describe('isWarehouseValidForFleet (CAD Guard)', () => {
+    it('должен возвращать false для null, undefined или пустой топологии', () => {
+      assert.strictEqual(isWarehouseValidForFleet(null), false);
+      assert.strictEqual(isWarehouseValidForFleet(undefined), false);
+      assert.strictEqual(isWarehouseValidForFleet({ widthM: 10, lengthM: 10, nodes: [], edges: [], zones: [] }), false);
+    });
+
+    it('должен возвращать false если отсутствуют ворота приемки, отгрузки или стеллажи', () => {
+      const incompleteTopo: FacilityTopology = {
+        widthM: 20,
+        lengthM: 20,
+        zones: [],
+        nodes: [
+          { id: 'in_1', type: 'INBOUND_DOCK', x: 2, y: 10, zLevel: 0 },
+          { id: 'rack_1', type: 'STORAGE_AISLE', x: 10, y: 10, zLevel: 0 },
+          // outbound dock missing!
+        ],
+        edges: [
+          { id: 'e1', source: 'in_1', target: 'rack_1', distanceM: 8, bidirectional: true },
+        ],
+      };
+
+      assert.strictEqual(isWarehouseValidForFleet(incompleteTopo), false);
+    });
+
+    it('должен возвращать false при наличии изолированных узлов в графе', () => {
+      const isolatedTopo: FacilityTopology = {
+        widthM: 20,
+        lengthM: 20,
+        zones: [],
+        nodes: [
+          { id: 'in_1', type: 'INBOUND_DOCK', x: 2, y: 10, zLevel: 0 },
+          { id: 'rack_1', type: 'STORAGE_AISLE', x: 10, y: 10, zLevel: 0 },
+          { id: 'out_1', type: 'OUTBOUND_DOCK', x: 18, y: 10, zLevel: 0 },
+        ],
+        edges: [
+          { id: 'e1', source: 'in_1', target: 'rack_1', distanceM: 8, bidirectional: true },
+          // out_1 is isolated!
+        ],
+      };
+
+      assert.strictEqual(isWarehouseValidForFleet(isolatedTopo), false);
+    });
+
+    it('должен возвращать true для полностью укомплектованного и связного склада', () => {
+      const validTopo: FacilityTopology = {
+        widthM: 20,
+        lengthM: 20,
+        zones: [],
+        nodes: [
+          { id: 'in_1', type: 'INBOUND_DOCK', x: 2, y: 10, zLevel: 0 },
+          { id: 'rack_1', type: 'STORAGE_AISLE', x: 10, y: 10, zLevel: 0 },
+          { id: 'out_1', type: 'OUTBOUND_DOCK', x: 18, y: 10, zLevel: 0 },
+        ],
+        edges: [
+          { id: 'e1', source: 'in_1', target: 'rack_1', distanceM: 8, bidirectional: true },
+          { id: 'e2', source: 'rack_1', target: 'out_1', distanceM: 8, bidirectional: true },
+        ],
+      };
+
+      assert.strictEqual(isWarehouseValidForFleet(validTopo), true);
+    });
+  });
+
+  describe('D_cycle & Dynamic Topology Throughput', () => {
+    it('должен рассчитывать среднее расстояние D_cycle и динамическую производительность по графу', () => {
+      const graphTopo: FacilityTopology = {
+        widthM: 40,
+        lengthM: 20,
+        zones: [],
+        nodes: [
+          { id: 'in_1', type: 'INBOUND_DOCK', x: 2, y: 10, zLevel: 0 },
+          { id: 'rack_1', type: 'STORAGE_AISLE', x: 20, y: 10, zLevel: 0 },
+          { id: 'out_1', type: 'OUTBOUND_DOCK', x: 38, y: 10, zLevel: 0 },
+        ],
+        edges: [
+          { id: 'e1', source: 'in_1', target: 'rack_1', distanceM: 18, bidirectional: true },
+          { id: 'e2', source: 'rack_1', target: 'out_1', distanceM: 18, bidirectional: true },
+        ],
+      };
+
+      const cycleD = calculateCycleDistance(graphTopo);
+      assert.strictEqual(cycleD, 36); // 18m + 18m = 36m
+
+      const result = optimizeFleetComposition(baseFacility, [robotA], undefined, graphTopo);
+      assert.strictEqual(result.composition.length, 1);
+      assert.ok(result.totalFleetSize > 0);
+    });
   });
 });

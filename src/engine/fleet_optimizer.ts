@@ -1,7 +1,9 @@
 import type { FacilityRequirements } from '../types/facility.js';
 import type { Robot } from '../types/robot.js';
+import type { FacilityTopology } from '../types/topology.js';
 import type { WhatIfParams } from './economics.js';
 import { DEFAULT_WHAT_IF_PARAMS, calculateAvailabilityCoefficient } from './economics.js';
+import { checkGraphIsolation } from './constructor_engine.js';
 
 export interface FleetCompositionItem {
   robot: Robot;
@@ -21,6 +23,148 @@ export interface HeterogeneousOptimizationResult {
   tcoSavingsPercentVsBestMono: number; // Экономия TCO относительно лучшего монофлота в %
   bestMonoRobotId: string;
   bestMonoTcoRub: number;
+}
+
+/**
+ * Валидирует готовность объекта склада для расчета флота (CAD Guard).
+ * Склад считается валидным, если:
+ * 1. inboundDocks.length >= 1
+ * 2. outboundDocks.length >= 1
+ * 3. racks.length >= 1 и totalPalletCapacity > 0
+ * 4. checkGraphIsolation(topology) === false (доки и стеллажи физически соединены связным графом)
+ */
+export function isWarehouseValidForFleet(topology?: FacilityTopology | null): boolean {
+  if (!topology || !topology.nodes || topology.nodes.length === 0) {
+    return false;
+  }
+
+  const inboundDocks =
+    (topology as any).inboundDocks ??
+    topology.nodes.filter((n) => n.type === 'INBOUND_DOCK');
+  const outboundDocks =
+    (topology as any).outboundDocks ??
+    topology.nodes.filter((n) => n.type === 'OUTBOUND_DOCK');
+  const racks =
+    (topology as any).racks ??
+    topology.nodes.filter((n) => n.type === 'STORAGE_AISLE');
+  const totalPalletCapacity =
+    (topology as any).totalPalletCapacity ??
+    (racks.length > 0 ? racks.length * 12 : 0);
+
+  if (inboundDocks.length < 1) return false;
+  if (outboundDocks.length < 1) return false;
+  if (racks.length < 1) return false;
+  if (totalPalletCapacity <= 0) return false;
+
+  if (checkGraphIsolation(topology)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Кратчайшее расстояние между узлами графа по алгоритму Дейкстры.
+ */
+function getShortestDistance(
+  topology: FacilityTopology,
+  startNodeId: string,
+  targetNodeId: string
+): number {
+  if (startNodeId === targetNodeId) return 0;
+
+  const adj = new Map<string, Array<{ target: string; distance: number }>>();
+  topology.nodes.forEach((n) => adj.set(n.id, []));
+
+  topology.edges.forEach((e) => {
+    adj.get(e.source)?.push({ target: e.target, distance: e.distanceM });
+    if (e.bidirectional) {
+      adj.get(e.target)?.push({ target: e.source, distance: e.distanceM });
+    }
+  });
+
+  const distances = new Map<string, number>();
+  const unvisited = new Set<string>();
+
+  topology.nodes.forEach((n) => {
+    distances.set(n.id, Infinity);
+    unvisited.add(n.id);
+  });
+
+  distances.set(startNodeId, 0);
+
+  while (unvisited.size > 0) {
+    let current: string | null = null;
+    let minD = Infinity;
+
+    unvisited.forEach((id) => {
+      const d = distances.get(id)!;
+      if (d < minD) {
+        minD = d;
+        current = id;
+      }
+    });
+
+    if (current === null || minD === Infinity) break;
+    if (current === targetNodeId) return minD;
+
+    unvisited.delete(current);
+
+    const neighbors = adj.get(current) || [];
+    for (const edge of neighbors) {
+      if (!unvisited.has(edge.target)) continue;
+      const alt = minD + edge.distance;
+      if (alt < distances.get(edge.target)!) {
+        distances.set(edge.target, alt);
+      }
+    }
+  }
+
+  const res = distances.get(targetNodeId);
+  return res !== undefined && res !== Infinity ? res : Infinity;
+}
+
+/**
+ * Вычисляет среднюю длину полного цикла транспортировки:
+ * D_cycle = L_avg(Dock_in -> Rack) + L_avg(Rack -> Dock_out)
+ */
+export function calculateCycleDistance(topology: FacilityTopology): number {
+  const inboundNodes = topology.nodes.filter((n) => n.type === 'INBOUND_DOCK');
+  const outboundNodes = topology.nodes.filter((n) => n.type === 'OUTBOUND_DOCK');
+  const rackNodes = topology.nodes.filter((n) => n.type === 'STORAGE_AISLE');
+
+  if (inboundNodes.length === 0 || outboundNodes.length === 0 || rackNodes.length === 0) {
+    return 0;
+  }
+
+  let totalInboundDist = 0;
+  let inboundCount = 0;
+  for (const inNode of inboundNodes) {
+    for (const rackNode of rackNodes) {
+      const d = getShortestDistance(topology, inNode.id, rackNode.id);
+      if (d < Infinity) {
+        totalInboundDist += d;
+        inboundCount++;
+      }
+    }
+  }
+
+  let totalOutboundDist = 0;
+  let outboundCount = 0;
+  for (const rackNode of rackNodes) {
+    for (const outNode of outboundNodes) {
+      const d = getShortestDistance(topology, rackNode.id, outNode.id);
+      if (d < Infinity) {
+        totalOutboundDist += d;
+        outboundCount++;
+      }
+    }
+  }
+
+  const avgInbound = inboundCount > 0 ? totalInboundDist / inboundCount : 0;
+  const avgOutbound = outboundCount > 0 ? totalOutboundDist / outboundCount : 0;
+
+  return avgInbound + avgOutbound;
 }
 
 /**
@@ -72,10 +216,12 @@ function createFleetCompositionItem(
   robot: Robot,
   count: number,
   kAvail: number,
-  capexDiscountFactor: number
+  capexDiscountFactor: number,
+  unitThroughputPerHour?: number
 ): FleetCompositionItem {
+  const baseThroughput = unitThroughputPerHour ?? robot.throughputPerHour;
   // Эффективный часовой грузопоток группы роботов с учетом коэффициента готовности АКБ
-  const totalThroughputPerHour = count * robot.throughputPerHour * kAvail;
+  const totalThroughputPerHour = count * baseThroughput * kAvail;
 
   // CAPEX с учетом коэффициента интеграции/инфраструктуры (1.15) и скидки What-If
   const totalCapexRub = count * robot.capexCostRub * 1.15 * capexDiscountFactor;
@@ -103,7 +249,8 @@ function createFleetCompositionItem(
 export function optimizeFleetComposition(
   facility: FacilityRequirements,
   availableRobots: Robot[],
-  whatIf: WhatIfParams = DEFAULT_WHAT_IF_PARAMS
+  whatIf: WhatIfParams = DEFAULT_WHAT_IF_PARAMS,
+  topology?: FacilityTopology | null
 ): HeterogeneousOptimizationResult {
   // Безопасный дефолтный результат (fallback)
   const emptyFallback: HeterogeneousOptimizationResult = {
@@ -131,6 +278,12 @@ export function optimizeFleetComposition(
     return emptyFallback;
   }
 
+  // Расчет дистанции цикла D_cycle по графу топологии склада (если она передана и валидна)
+  let cycleDistanceM = 0;
+  if (topology && isWarehouseValidForFleet(topology)) {
+    cycleDistanceM = calculateCycleDistance(topology);
+  }
+
   // Шаг 2: Фильтрация допустимости (Physical & Industry Compatibility Filter)
   const eligibleEvals: RobotEvaluation[] = [];
 
@@ -140,7 +293,17 @@ export function optimizeFleetComposition(
         robot.batteryRuntimeHours,
         robot.batteryChargeMinutes
       );
-      const effectiveThroughputPerUnit = robot.throughputPerHour * kAvail;
+
+      // Рассчитываем динамическую производительность throughputPerHour если есть топология
+      let unitThroughputPerHour = robot.throughputPerHour;
+      if (cycleDistanceM > 0) {
+        const vMax = robot.maxSpeedMps > 0 ? robot.maxSpeedMps : 1.5;
+        const etaTraffic = 0.85; // Коэффициент замедления в трафике
+        const tTripSec = cycleDistanceM / (vMax * etaTraffic) + 10; // +10s (tau_load + tau_unload)
+        unitThroughputPerHour = Math.round((3600 / tTripSec) * 100) / 100;
+      }
+
+      const effectiveThroughputPerUnit = unitThroughputPerHour * kAvail;
 
       if (effectiveThroughputPerUnit > 0) {
         const singleUnitCapex = robot.capexCostRub * 1.15 * capexDiscountFactor;
@@ -170,7 +333,8 @@ export function optimizeFleetComposition(
       item.robot,
       count,
       item.kAvail,
-      capexDiscountFactor
+      capexDiscountFactor,
+      item.effectiveThroughputPerUnit / item.kAvail
     );
 
     if (!bestMonoItem || compositionItem.fiveYearTcoRub < bestMonoItem.fiveYearTcoRub) {
@@ -248,13 +412,15 @@ export function optimizeFleetComposition(
           evalI.robot,
           bestPairCountI,
           evalI.kAvail,
-          capexDiscountFactor
+          capexDiscountFactor,
+          evalI.effectiveThroughputPerUnit / evalI.kAvail
         );
         const finalItemJ = createFleetCompositionItem(
           evalJ.robot,
           bestPairCountJ,
           evalJ.kAvail,
-          capexDiscountFactor
+          capexDiscountFactor,
+          evalJ.effectiveThroughputPerUnit / evalJ.kAvail
         );
         bestHeteroComposition = [finalItemI, finalItemJ];
       }

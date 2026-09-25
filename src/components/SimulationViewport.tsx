@@ -52,6 +52,7 @@ interface SimulationViewportProps {
   replayFrames?: SimulationReplayFrame[];
   onTriggerSimulationRun: (schedule?: SupplySchedule) => void;
   showToast: (msg: string) => void;
+  onTopologyChange?: (topology: FacilityTopology) => void;
 }
 
 const DEFAULT_TELEMETRY: SimulationTelemetry = {
@@ -97,6 +98,7 @@ export function SimulationViewport({
   replayFrames = [],
   onTriggerSimulationRun,
   showToast,
+  onTopologyChange,
 }: SimulationViewportProps) {
   const outerContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -212,20 +214,20 @@ export function SimulationViewport({
 
   // Derived active topology
   const topology: FacilityTopology = useMemo(() => {
-    if (isConstructorMode) {
-      return {
-        widthM: facilityDims.widthM,
-        lengthM: facilityDims.lengthM,
-        nodes: [],
-        edges: [],
-        zones: [],
-      };
+    if (gridElementCounts.racks > 0 || gridElementCounts.inboundDocks > 0 || gridElementCounts.outboundDocks > 0) {
+      return rebuildTopologyFromGrid(grid, facilityDims.widthM, facilityDims.lengthM);
     }
-    if (gridElementCounts.racks > 0 && gridElementCounts.inboundDocks > 0) {
+    if (isConstructorMode) {
       return rebuildTopologyFromGrid(grid, facilityDims.widthM, facilityDims.lengthM);
     }
     return generateFacilityTopology(facility);
   }, [isConstructorMode, grid, facilityDims, facility, gridElementCounts]);
+
+  useEffect(() => {
+    if (onTopologyChange) {
+      onTopologyChange(topology);
+    }
+  }, [topology, onTopologyChange]);
 
   // Check graph isolation warning (ONLY in SIMULATION mode)
   const isIsolatedZone = useMemo(() => {

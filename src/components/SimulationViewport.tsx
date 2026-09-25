@@ -788,36 +788,38 @@ export function SimulationViewport({
           ghostGroup.position.set(snappedX, 1.0, snappedZ);
           ghostGroup.visible = true;
 
+          // 1. Рисование стен с зажатой ЛКМ ТОЛЬКО по существующему полу
           if ((event.buttons === 1 || isMouseDownRef.current) && st.selectedTileType === 'OBSTACLE') {
             const key = getTileKey(gx, gy);
-            setGrid((prev) => {
-              if (prev.tiles.get(key) !== 'OBSTACLE') {
+            // Стену можно ставить ТОЛЬКО если под ней УЖЕ есть пол и это не ворота/зарядка
+            if (st.grid.tiles.has(key) && st.grid.tiles.get(key) === 'EMPTY_FLOOR') {
+              setGrid((prev) => {
                 const updatedTiles = new Map(prev.tiles);
                 updatedTiles.set(key, 'OBSTACLE');
                 return { ...prev, tiles: updatedTiles };
-              }
-              return prev;
-            });
+              });
+            }
           }
         } else if (st.interactionMode === 'ERASE') {
           ghostGroup.visible = false;
           if (event.buttons === 1 || isMouseDownRef.current) {
             const gx = Math.floor(point.x / stateRef.current.grid.cellSizeM);
             const gy = Math.floor(point.z / stateRef.current.grid.cellSizeM);
-            if (true) {
-              const key = getTileKey(gx, gy);
-              setGrid((prev) => {
-                if (prev.tiles.has(key) && prev.tiles.get(key) !== 'EMPTY_FLOOR') {
-                  const updatedTiles = new Map(prev.tiles);
-                  updatedTiles.set(key, 'EMPTY_FLOOR');
-                  const updatedDetails = new Map(prev.elementDetails || []);
-                  updatedDetails.delete(key);
-                  return { ...prev, tiles: updatedTiles, elementDetails: updatedDetails };
-                }
-                return prev;
-              });
-            }
+            const key = getTileKey(gx, gy);
+            
+            // ЛАСТИК: стирает объект в EMPTY_FLOOR только если плитка реально существует в сетке!
+            setGrid((prev) => {
+              if (prev.tiles.has(key) && prev.tiles.get(key) !== 'EMPTY_FLOOR') {
+                const updatedTiles = new Map(prev.tiles);
+                updatedTiles.set(key, 'EMPTY_FLOOR');
+                const updatedDetails = new Map(prev.elementDetails || []);
+                updatedDetails.delete(key);
+                return { ...prev, tiles: updatedTiles, elementDetails: updatedDetails };
+              }
+              return prev;
+            });
           }
+        }
         } else {
           ghostGroup.visible = false;
         }
@@ -953,7 +955,32 @@ export function SimulationViewport({
             const startRow = Math.floor(minZ / cellSize);
             const endRow = Math.floor(maxZ / cellSize);
 
-            const isErase = st.interactionMode === 'ERASE_FLOOR_RECT';
+            if (!isErase && st.grid.tiles.size > 0) {
+              let touchesExistingFloor = false;
+              for (let cx = startCol; cx <= endCol; cx++) {
+                for (let cy = startRow; cy <= endRow; cy++) {
+                  const neighbors = [
+                    getTileKey(cx - 1, cy),
+                    getTileKey(cx + 1, cy),
+                    getTileKey(cx, cy - 1),
+                    getTileKey(cx, cy + 1),
+                  ];
+                  if (neighbors.some((nKey) => st.grid.tiles.has(nKey))) {
+                    touchesExistingFloor = true;
+                    break;
+                  }
+                }
+                if (touchesExistingFloor) break;
+              }
+
+              if (!touchesExistingFloor) {
+                showToast('⚠️ Пол должен быть единым контуром и соединяться с существующим зданием');
+                setDrawingPoints([]);
+                setIsDrawingActive(false);
+                setLiveRectDims(null);
+                return;
+              }
+            }
 
             setGrid((prev) => {
               const newTiles = new Map(prev.tiles);
@@ -1027,6 +1054,9 @@ export function SimulationViewport({
         if (event.button === 0 && st.interactionMode === 'ERASE') {
           const key = getTileKey(gx, gy);
           setGrid((prev) => {
+             if (!prev.tiles.has(key) || prev.tiles.get(key) === 'EMPTY_FLOOR') {
+               return prev;
+             }
              const updatedTiles = new Map(prev.tiles);
              updatedTiles.set(key, 'EMPTY_FLOOR');
              const updatedDetails = new Map(prev.elementDetails || []);

@@ -19,6 +19,7 @@ import {
 import { SimulationEngine, type SimulationReplayFrame } from './engine/simulation_engine.js';
 import type { SupplySchedule } from './engine/constructor_engine.js';
 import type { FacilityRequirements } from './types/facility.js';
+import type { FacilityTopology } from './types/topology.js';
 import { generateFeasibilityPdf } from './engine/export_pdf.js';
 import { exportFeasibilityToExcel } from './engine/export_excel.js';
 
@@ -72,11 +73,18 @@ export default function App() {
     }));
   }, [facility.targetThroughputPerHour]);
 
-  // 4. Fleet Configuration Mode
+  // 4. Fleet Configuration Mode & AI Calculation State
   const [fleetMode, setFleetMode] = useState<FleetConfigMode>('ai');
   const [manualFleetCounts, setManualFleetCounts] = useState<Record<string, number>>({
     'ronavi-h1500': 2,
   });
+  const [currentTopology, setCurrentTopology] = useState<FacilityTopology | null>(null);
+  const [hasCalculatedAiFleet, setHasCalculatedAiFleet] = useState<boolean>(false);
+
+  const handleCalculateAiFleet = useCallback(() => {
+    setHasCalculatedAiFleet(true);
+    showToast('REO: Аналитический расчет оптимального флота выполнен');
+  }, []);
 
   // 5. Layout Toggles & Analytics Tab Switcher
   const [isLeftOpen, setIsLeftOpen] = useState<boolean>(true);
@@ -127,9 +135,21 @@ export default function App() {
 
   // AI Fleet Optimization Result
   const aiOptimizationResult: HeterogeneousOptimizationResult = useMemo(() => {
+    if (!hasCalculatedAiFleet) {
+      return {
+        isHeterogeneous: false,
+        composition: [],
+        totalFleetSize: 0,
+        totalThroughputPerHour: 0,
+        fiveYearTcoRub: 0,
+        tcoSavingsPercentVsBestMono: 0,
+        bestMonoRobotId: '',
+        bestMonoTcoRub: 0,
+      };
+    }
     const eligibleRobotSpecs = eligibleRobots.map((e) => e.robot);
-    return optimizeFleetComposition(facility, eligibleRobotSpecs, whatIf);
-  }, [facility, eligibleRobots, whatIf]);
+    return optimizeFleetComposition(facility, eligibleRobotSpecs, whatIf, currentTopology);
+  }, [facility, eligibleRobots, whatIf, currentTopology, hasCalculatedAiFleet]);
 
   // Active Fleet Composition
   const activeComposition: FleetCompositionItem[] = useMemo(() => {
@@ -368,6 +388,9 @@ export default function App() {
             manualFleetCounts={manualFleetCounts}
             onManualCountChange={handleManualCountChange}
             activeFleetSize={activeFleetSize}
+            topology={currentTopology}
+            onCalculateAiFleet={handleCalculateAiFleet}
+            hasCalculatedAiFleet={hasCalculatedAiFleet}
           />
         )}
 
@@ -427,6 +450,7 @@ export default function App() {
               replayFrames={replayFrames}
               onTriggerSimulationRun={handleRunSimulation}
               showToast={showToast}
+              onTopologyChange={setCurrentTopology}
             />
           </div>
         </section>

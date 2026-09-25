@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import type { FacilityRequirements, FacilityType, FloorSurfaceQuality, CleanlinessClass } from '../types/facility.js';
+import type { FacilityTopology } from '../types/topology.js';
 import type { FleetCompositionItem, HeterogeneousOptimizationResult } from '../engine/fleet_optimizer.js';
+import { isWarehouseValidForFleet } from '../engine/fleet_optimizer.js';
 import { SEED_ROBOTS } from '../data/robots.seed.js';
 import { isRobotEligible } from '../engine/dss.js';
 import type { SimulationParams } from './SimulationParamsPanel.js';
@@ -16,6 +18,7 @@ import {
   Sparkles,
   HardDrive,
   AlertTriangle,
+  Info,
   Check,
 } from 'lucide-react';
 
@@ -30,6 +33,9 @@ interface Zone1SidebarProps {
   manualFleetCounts: Record<string, number>;
   onManualCountChange: (robotId: string, count: number) => void;
   activeFleetSize: number;
+  topology?: FacilityTopology | null;
+  onCalculateAiFleet?: () => void;
+  hasCalculatedAiFleet?: boolean;
 }
 
 export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
@@ -43,7 +49,11 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
   manualFleetCounts,
   onManualCountChange,
   activeFleetSize,
+  topology,
+  onCalculateAiFleet,
+  hasCalculatedAiFleet = false,
 }) => {
+  const isTopologyValid = isWarehouseValidForFleet(topology);
   // Accordion section open/close states (open by default)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     geometry: true,
@@ -731,17 +741,30 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
               {/* Mode 1: AI Composition Display */}
               {fleetMode === 'ai' && (
                 <div className="p-2.5 bg-[#FFFFFF] border border-[#D4AF37]/30 text-xs rounded-none space-y-2">
-                  {aiOptimizationResult.composition.length === 0 || facility.totalAreaSqm === 0 ? (
+                  {!isTopologyValid ? (
+                    /* State 1: Invalid Topology Warning */
                     <div className="p-2.5 bg-amber-50 border border-amber-300 text-amber-900 rounded-none space-y-1">
                       <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-800">
                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                         <span>⚠️ Склад не укомплектован</span>
                       </div>
                       <p className="text-[10px] leading-tight text-amber-900">
-                        Добавьте зоны приемки, отгрузки и хотя бы один стеллаж в CAD-редакторе перед расчетом флота.
+                        Разместите ворота приемки, ворота отгрузки и хотя бы один стеллаж в CAD-редакторе.
+                      </p>
+                    </div>
+                  ) : !hasCalculatedAiFleet ? (
+                    /* State 2: Topology Valid, Calculation Pending */
+                    <div className="p-2.5 bg-blue-50 border border-blue-200 text-blue-900 rounded-none space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-[11px] text-blue-800">
+                        <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span>Топология склада корректна</span>
+                      </div>
+                      <p className="text-[10px] leading-tight text-blue-900">
+                        Запустите расчет для подбора оптимального парка роботов по методике TCO.
                       </p>
                     </div>
                   ) : (
+                    /* State 3: Calculated Result Card */
                     <>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-[#8A6826] font-semibold uppercase flex items-center gap-1">
@@ -782,6 +805,21 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
                       </div>
                     </>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={onCalculateAiFleet}
+                    disabled={!isTopologyValid}
+                    title={
+                      !isTopologyValid
+                        ? 'Для расчета установите ворота приемки, ворота отгрузки и стеллажи'
+                        : undefined
+                    }
+                    className="w-full mt-2 py-2 bg-[#D4AF37] hover:bg-[#BFA02E] disabled:bg-gray-200 disabled:text-gray-400 disabled:border-gray-300 disabled:cursor-not-allowed text-[#1A1A1A] font-bold text-[11px] uppercase tracking-wider border border-[#BFA02E] transition rounded-none cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-[#1A1A1A]" />
+                    <span>⚡ РАССЧИТАТЬ ОПТИМАЛЬНЫЙ ФЛОТ</span>
+                  </button>
                 </div>
               )}
 

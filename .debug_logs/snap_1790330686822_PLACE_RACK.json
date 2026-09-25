@@ -1,0 +1,47 @@
+{
+  "action": "PLACE_RACK",
+  "timestamp": 1790330686822,
+  "cursor": {
+    "x": 27,
+    "y": 27
+  },
+  "floor": {
+    "type": "RECTANGLE",
+    "areaSqm": 2485,
+    "bounds": {
+      "minX": 0,
+      "maxX": 34,
+      "minZ": 0,
+      "maxZ": 70
+    }
+  },
+  "tilesCount": 2,
+  "elements": [
+    {
+      "key": "11_27",
+      "type": "DOCK_INBOUND",
+      "x": 11,
+      "z": 27,
+      "rotationDeg": 0,
+      "inFloor": true
+    },
+    {
+      "key": "27_27",
+      "type": "RACK",
+      "x": 27,
+      "z": 27,
+      "slots": 12,
+      "rotationDeg": 0,
+      "inFloor": true
+    }
+  ],
+  "docks": {
+    "inbound": 1,
+    "outbound": 0
+  },
+  "validation": {
+    "hasOutOfBoundsElements": false,
+    "errors": []
+  },
+  "healthCheck": "HEALTHY"
+}

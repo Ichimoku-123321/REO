@@ -1,31 +1,33 @@
 import React from 'react';
 import type { Robot } from '../types/robot.js';
 import type { FacilityRequirements } from '../types/facility.js';
+import type { FacilityTopology } from '../types/topology.js';
 import type { FleetCompositionItem, HeterogeneousOptimizationResult } from '../engine/fleet_optimizer.js';
+import { isWarehouseValidForFleet } from '../engine/fleet_optimizer.js';
 import { SEED_ROBOTS } from '../data/robots.seed.js';
 import { isRobotEligible } from '../engine/dss.js';
 import {
   Sparkles,
-  Sliders,
   Check,
-  Plus,
-  Minus,
   Bot,
-  Percent,
   AlertTriangle,
+  Info,
 } from 'lucide-react';
 
 export type FleetConfigMode = 'ai' | 'manual';
 
-interface FleetConfigPanelProps {
+export interface FleetConfigPanelProps {
   mode: FleetConfigMode;
   onModeChange: (mode: FleetConfigMode) => void;
   aiOptimizationResult: HeterogeneousOptimizationResult;
   manualFleetCounts: Record<string, number>;
   onManualCountChange: (robotId: string, count: number) => void;
   facility: FacilityRequirements;
+  topology?: FacilityTopology | null;
   allRobots?: Robot[];
   eligibleRobots?: Robot[];
+  onCalculateAiFleet?: () => void;
+  hasCalculatedAiFleet?: boolean;
   onRunSimulation: () => void;
   isCalculating: boolean;
 }
@@ -37,13 +39,14 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
   manualFleetCounts,
   onManualCountChange,
   facility,
+  topology,
   allRobots = SEED_ROBOTS,
+  onCalculateAiFleet,
+  hasCalculatedAiFleet = false,
   onRunSimulation,
   isCalculating,
 }) => {
-  const isTopologyValid =
-    facility.totalAreaSqm > 0 &&
-    aiOptimizationResult.composition.length > 0;
+  const isTopologyValid = isWarehouseValidForFleet(topology);
   return (
     <div className="bg-[#FFFFFF] border border-[#D4AF37]/30 p-3 space-y-3 rounded-none text-xs text-[#1A1A1A]">
       <div className="flex items-center justify-between border-b border-[#D4AF37]/20 pb-2 rounded-none">
@@ -86,16 +89,29 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
       {mode === 'ai' && (
         <div className="p-2.5 bg-[#FFFFFF] border border-[#D4AF37]/30 text-xs rounded-none space-y-1.5">
           {!isTopologyValid ? (
+            /* State 1: Invalid Topology Warning */
             <div className="p-2.5 bg-amber-50 border border-amber-300 text-amber-900 rounded-none space-y-1">
               <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-800">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>⚠️ Склад не укомплектован</span>
               </div>
               <p className="text-[10px] leading-tight text-amber-900">
-                Добавьте зоны приемки, отгрузки и хотя бы один стеллаж в CAD-редакторе перед расчетом флота.
+                Разместите ворота приемки, ворота отгрузки и хотя бы один стеллаж в CAD-редакторе.
+              </p>
+            </div>
+          ) : !hasCalculatedAiFleet ? (
+            /* State 2: Topology Valid, Calculation Pending */
+            <div className="p-2.5 bg-blue-50 border border-blue-200 text-blue-900 rounded-none space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-[11px] text-blue-800">
+                <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>Топология склада корректна</span>
+              </div>
+              <p className="text-[10px] leading-tight text-blue-900">
+                Запустите расчет для подбора оптимального парка роботов по методике TCO.
               </p>
             </div>
           ) : (
+            /* State 3: Calculated Result Card */
             <>
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-[#8A6826] font-semibold uppercase flex items-center gap-1">
@@ -121,7 +137,9 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
                     className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/20 flex items-center justify-between rounded-none"
                   >
                     <div>
-                      <p className="text-xs font-bold text-[#1A1A1A] leading-tight">{item.robot.vendor} {item.robot.model}</p>
+                      <p className="text-xs font-bold text-[#1A1A1A] leading-tight">
+                        {item.robot.vendor} {item.robot.model}
+                      </p>
                       <p className="text-[10px] text-[#4F4F47]">до {item.robot.payloadKg} кг</p>
                     </div>
                     <span className="bg-[#D4AF37] text-[#1A1A1A] text-xs font-bold font-mono px-2 py-0.5 rounded-none">
@@ -135,9 +153,14 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
 
           <button
             type="button"
-            onClick={onRunSimulation}
-            disabled={isCalculating}
-            className="w-full mt-2 py-2 bg-[#D4AF37] hover:bg-[#BFA02E] text-[#1A1A1A] font-bold text-[11px] uppercase tracking-wider border border-[#BFA02E] transition rounded-none cursor-pointer flex items-center justify-center gap-1.5"
+            onClick={onCalculateAiFleet}
+            disabled={!isTopologyValid || isCalculating}
+            title={
+              !isTopologyValid
+                ? 'Для расчета установите ворота приемки, ворота отгрузки и стеллажи'
+                : undefined
+            }
+            className="w-full mt-2 py-2 bg-[#D4AF37] hover:bg-[#BFA02E] disabled:bg-gray-200 disabled:text-gray-400 disabled:border-gray-300 disabled:cursor-not-allowed text-[#1A1A1A] font-bold text-[11px] uppercase tracking-wider border border-[#BFA02E] transition rounded-none cursor-pointer flex items-center justify-center gap-1.5"
           >
             <Sparkles className="w-3.5 h-3.5 text-[#1A1A1A]" />
             <span>⚡ РАССЧИТАТЬ ОПТИМАЛЬНЫЙ ФЛОТ</span>

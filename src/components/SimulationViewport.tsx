@@ -124,6 +124,23 @@ export function SimulationViewport({
 
   // SKU & Supply Schedule State
   const [skuList, setSkuList] = useState<SkuItem[]>(DEFAULT_SKU_LIST);
+  // REO: Синхронизация максимального веса активных SKU с требованиями объекта
+  useEffect(() => {
+    if (!onChangeFacility || !skuList || skuList.length === 0) return;
+    
+    // Безопасно достаем вес паллеты (учитывая любое имя поля: weightKg, m_unit, massKg)
+    const weights = skuList.map((s: any) => 
+      Number(s.weightKg ?? s.m_unit ?? s.massKg ?? s.weight ?? 500) || 500
+    );
+    const maxWeight = Math.max(...weights);
+
+    if (facility.requiredPayloadKg !== maxWeight) {
+      onChangeFacility({
+        ...facility,
+        requiredPayloadKg: maxWeight,
+      });
+    }
+  }, [skuList, facility.requiredPayloadKg, onChangeFacility]);
   const [selectedSkuForBox, setSelectedSkuForBox] = useState<SkuItem | null>(DEFAULT_SKU_LIST[0]);
   const [supplySchedule, setSupplySchedule] = useState<SupplySchedule>(DEFAULT_SUPPLY_SCHEDULE);
 
@@ -1976,9 +1993,21 @@ export function SimulationViewport({
         isOpen={isSkuModalOpen}
         onClose={() => setIsSkuModalOpen(false)}
         skuList={skuList}
-        onAddSku={(newSku) => setSkuList((prev) => [...prev, newSku])}
+        onAddSku={(newSku) => {
+          const updated = [...skuList, newSku];
+          setSkuList(updated);
+          if (onChangeFacility) {
+            const weights = updated.map((s: any) => Number(s.weightKg ?? s.m_unit ?? s.massKg ?? s.weight ?? 500) || 500);
+            onChangeFacility({ ...facility, requiredPayloadKg: Math.max(...weights) });
+          }
+        }}
         onDeleteSku={(id) => {
-          setSkuList((prev) => prev.filter((s) => s.id !== id));
+          const updated = skuList.filter((s) => s.id !== id);
+          setSkuList(updated);
+          if (onChangeFacility) {
+            const weights = updated.map((s: any) => Number(s.weightKg ?? s.m_unit ?? s.massKg ?? s.weight ?? 500) || 500);
+            onChangeFacility({ ...facility, requiredPayloadKg: weights.length > 0 ? Math.max(...weights) : 500 });
+          }
           setGrid((prev) => {
             const detailsMap = new Map(prev.elementDetails || []);
             let changed = false;

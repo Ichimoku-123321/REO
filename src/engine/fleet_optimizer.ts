@@ -48,7 +48,7 @@ function isRobotEligible(facility: FacilityRequirements, robot: Robot): boolean 
     return false;
   }
 
-  // 3. Грузоподъемность (грузоподъемность робота должна быть не меньше требуемой)
+  // 3. Грузоподъемность: Q_m^payload >= P_req (грузоподъемность робота должна быть не меньше требуемой)
   const robotPayload = robot.payloadKg ?? (robot as { maxPayloadKg?: number }).maxPayloadKg ?? 0;
   if (robotPayload < facility.requiredPayloadKg) {
     return false;

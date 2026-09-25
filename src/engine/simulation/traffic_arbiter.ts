@@ -6,6 +6,7 @@ export class TrafficArbiter {
   private activeCorridorAgentId: string | null = null;
   private activeDirection: 'EAST' | 'WEST' | null = null;
   private currentCorridorUsers: Set<string> = new Set();
+  private waitingAgentQueueTimestamps: Map<string, number> = new Map();
 
   constructor(topology: FacilityTopology, obstacleBoxes: ObstacleBox[]) {
     this.identifyCorridorNodes(topology, obstacleBoxes);
@@ -59,8 +60,13 @@ export class TrafficArbiter {
 
   /**
    * Requests access to enter or traverse a narrow corridor segment.
+   * Implements FIFO / Fair Queuing priority to prevent Starvation.
    */
-  public requestCorridorAccess(agent: AgentState, nodeMap: Map<string, GraphNode>): boolean {
+  public requestCorridorAccess(
+    agent: AgentState,
+    nodeMap: Map<string, GraphNode>,
+    currentTimeSec: number = 0
+  ): boolean {
     const currentIsCorridor = this.corridorNodeIds.has(agent.currentNodeId);
     const targetIsCorridor = agent.targetNodeId ? this.corridorNodeIds.has(agent.targetNodeId) : false;
     const nextIsCorridor = agent.pathNodeIds.length > 0 && this.corridorNodeIds.has(agent.pathNodeIds[0]);
@@ -68,6 +74,7 @@ export class TrafficArbiter {
     const needsCorridor = currentIsCorridor || targetIsCorridor || nextIsCorridor;
 
     if (!needsCorridor) {
+      this.waitingAgentQueueTimestamps.delete(agent.id);
       if (this.currentCorridorUsers.has(agent.id)) {
         this.releaseCorridor(agent.id);
       }
@@ -76,30 +83,65 @@ export class TrafficArbiter {
 
     // If agent is ALREADY inside the corridor nodes, allow it to proceed and exit
     if (currentIsCorridor) {
+      this.waitingAgentQueueTimestamps.delete(agent.id);
       this.currentCorridorUsers.add(agent.id);
       this.activeCorridorAgentId = agent.id;
       return true;
     }
 
-    // Agent is in the pocket attempting to enter the corridor
+    // Agent is in the entrance pocket attempting to enter the corridor
+    if (!this.waitingAgentQueueTimestamps.has(agent.id)) {
+      this.waitingAgentQueueTimestamps.set(agent.id, currentTimeSec);
+    }
+
+    // Check FIFO priority: if another agent has been waiting in the queue longer, yield priority!
+    const myWaitTime = this.waitingAgentQueueTimestamps.get(agent.id) ?? currentTimeSec;
+    let hasOlderWaitingAgent = false;
+
+    this.waitingAgentQueueTimestamps.forEach((waitTs, otherId) => {
+      if (otherId !== agent.id && waitTs < myWaitTime - 0.1) {
+        hasOlderWaitingAgent = true;
+      }
+    });
+
+    if (hasOlderWaitingAgent && this.activeCorridorAgentId !== agent.id) {
+      if (this.currentCorridorUsers.size === 0) {
+        // Find the oldest waiting agent and grant them corridor lock
+        let oldestAgentId: string | null = null;
+        let oldestTs = Infinity;
+        this.waitingAgentQueueTimestamps.forEach((waitTs, otherId) => {
+          if (waitTs < oldestTs) {
+            oldestTs = waitTs;
+            oldestAgentId = otherId;
+          }
+        });
+        if (oldestAgentId && oldestAgentId !== agent.id) {
+          this.activeCorridorAgentId = oldestAgentId;
+          return false;
+        }
+      } else {
+        return false;
+      }
+    }
+
+    // Check if corridor is currently occupied or reserved by another agent
+    if (this.activeCorridorAgentId !== null && this.activeCorridorAgentId !== agent.id) {
+      if (this.currentCorridorUsers.size > 0) {
+        return false;
+      }
+    }
+
     let direction: 'EAST' | 'WEST' = 'EAST';
     const targetNode = agent.targetNodeId ? nodeMap.get(agent.targetNodeId) : null;
     if (targetNode && targetNode.x < agent.x) {
       direction = 'WEST';
     }
 
-    // Check if corridor is currently occupied or reserved by another agent
-    if (this.activeCorridorAgentId !== null && this.activeCorridorAgentId !== agent.id) {
-      // If another agent is in the corridor or moving in opposite direction -> deny
-      if (this.currentCorridorUsers.size > 0) {
-        return false;
-      }
-    }
-
     // Lock corridor for this agent and direction
     this.activeCorridorAgentId = agent.id;
     this.activeDirection = direction;
     this.currentCorridorUsers.add(agent.id);
+    this.waitingAgentQueueTimestamps.delete(agent.id);
     return true;
   }
 

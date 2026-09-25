@@ -731,43 +731,57 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
               {/* Mode 1: AI Composition Display */}
               {fleetMode === 'ai' && (
                 <div className="p-2.5 bg-[#FFFFFF] border border-[#D4AF37]/30 text-xs rounded-none space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-[#8A6826] font-semibold uppercase flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-[#8A6826]" />
-                      Оптимальный состав REO:
-                    </span>
-
-                    {aiOptimizationResult.isHeterogeneous ? (
-                      <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 border border-emerald-300 rounded-none">
-                        Мульти-флот (-{aiOptimizationResult.tcoSavingsPercentVsBestMono}%)
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono font-bold bg-[#D4AF37]/20 text-[#8A6826] px-1.5 py-0.5 rounded-none">
-                        Монофлот
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    {aiOptimizationResult.composition.map((item: FleetCompositionItem) => (
-                      <div
-                        key={item.robot.id}
-                        className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/20 flex items-center justify-between rounded-none"
-                      >
-                        <div>
-                          <p className="text-xs font-bold text-[#1A1A1A] leading-tight">
-                            {item.robot.vendor} {item.robot.model}
-                          </p>
-                          <p className="text-[10px] text-[#4F4F47] font-mono">
-                            до {item.robot.payloadKg} кг • {item.robot.throughputPerHour} шт/ч
-                          </p>
-                        </div>
-                        <span className="bg-[#D4AF37] text-[#1A1A1A] text-xs font-bold font-mono px-2 py-0.5 rounded-none">
-                          {item.count} ед.
-                        </span>
+                  {aiOptimizationResult.composition.length === 0 || facility.totalAreaSqm === 0 ? (
+                    <div className="p-2.5 bg-amber-50 border border-amber-300 text-amber-900 rounded-none space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-800">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>⚠️ Склад не укомплектован</span>
                       </div>
-                    ))}
-                  </div>
+                      <p className="text-[10px] leading-tight text-amber-900">
+                        Добавьте зоны приемки, отгрузки и хотя бы один стеллаж в CAD-редакторе перед расчетом флота.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-[#8A6826] font-semibold uppercase flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-[#8A6826]" />
+                          Оптимальный состав REO:
+                        </span>
+
+                        {aiOptimizationResult.isHeterogeneous ? (
+                          <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 border border-emerald-300 rounded-none">
+                            Мульти-флот (-{aiOptimizationResult.tcoSavingsPercentVsBestMono}%)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-mono font-bold bg-[#D4AF37]/20 text-[#8A6826] px-1.5 py-0.5 rounded-none">
+                            Монофлот
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        {aiOptimizationResult.composition.map((item: FleetCompositionItem) => (
+                          <div
+                            key={item.robot.id}
+                            className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/20 flex items-center justify-between rounded-none"
+                          >
+                            <div>
+                              <p className="text-xs font-bold text-[#1A1A1A] leading-tight">
+                                {item.robot.vendor} {item.robot.model}
+                              </p>
+                              <p className="text-[10px] text-[#4F4F47] font-mono">
+                                до {item.robot.payloadKg} кг • {item.robot.throughputPerHour} шт/ч
+                              </p>
+                            </div>
+                            <span className="bg-[#D4AF37] text-[#1A1A1A] text-xs font-bold font-mono px-2 py-0.5 rounded-none">
+                              {item.count} ед.
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

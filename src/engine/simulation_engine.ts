@@ -51,6 +51,11 @@ export class SimulationEngine {
   public totalBreakdowns: number = 0;
   public totalNegotiationDelaySeconds: number = 0;
 
+  // Supply Schedule & Pallet Buffer Tracking
+  public inboundPalletsAvailable: number = 0;
+  private supplySchedule?: RunSimulationOptions['supplySchedule'];
+  private lastInboundSpawnTimeSec: number = -Infinity;
+
   // Key node caches and O(1) map
   private nodeMap: Map<string, GraphNode> = new Map();
   private nodeIndexMap: Map<string, number> = new Map();
@@ -290,7 +295,7 @@ export class SimulationEngine {
     return true;
   }
 
-  public initializeFleet(): void {
+  public initializeFleet(supplySchedule?: RunSimulationOptions['supplySchedule']): void {
     this.agents = [];
     this.replayFrames = [];
     this.elapsedSimSeconds = 0;
@@ -298,6 +303,14 @@ export class SimulationEngine {
     this.deliveriesByRobotType = {};
     this.totalBreakdowns = 0;
     this.totalNegotiationDelaySeconds = 0;
+    this.supplySchedule = supplySchedule;
+    this.lastInboundSpawnTimeSec = -Infinity;
+
+    if (supplySchedule && supplySchedule.inboundBatchVolume > 0) {
+      this.inboundPalletsAvailable = 0; // Will spawn on tick 0 or during update
+    } else {
+      this.inboundPalletsAvailable = Infinity; // Default infinite mode when schedule is not specified
+    }
 
     const totalFleetSize = this.fleetSize;
     if (totalFleetSize === 0 || this.topology.nodes.length === 0) return;
@@ -412,28 +425,71 @@ export class SimulationEngine {
 
     this.elapsedSimSeconds += dtSim;
 
+    // Check discrete pallet batch spawning at DOCK_INBOUND
+    if (this.supplySchedule && this.supplySchedule.inboundBatchVolume > 0) {
+      let intervalHours = this.supplySchedule.inboundIntervalValue || 24;
+      if (this.supplySchedule.inboundIntervalUnit === 'minutes') intervalHours /= 60;
+      if (this.supplySchedule.inboundIntervalUnit === 'days') intervalHours *= 24;
+      const intervalSec = Math.max(1, intervalHours * 3600);
+
+      if (this.lastInboundSpawnTimeSec < 0 || this.elapsedSimSeconds - this.lastInboundSpawnTimeSec >= intervalSec) {
+        this.inboundPalletsAvailable += this.supplySchedule.inboundBatchVolume;
+        this.lastInboundSpawnTimeSec = this.elapsedSimSeconds;
+      }
+    }
+
     for (let i = 0; i < this.agents.length; i++) {
       const agent = this.agents[i];
 
       switch (agent.state) {
         case 'IDLE': {
-          const occupiedChargersCount = this.agents.filter((a) => a.state === 'CHARGING' || a.state === 'MOVING_TO_CHARGE').length;
-          const availableChargersCount = Math.max(1, this.chargingNodes.length);
+          const currNode = this.nodeMap.get(agent.currentNodeId);
+          const isOnChargerNode = currNode?.type === 'CHARGING_HUB';
 
-          const shouldCharge = (agent.batterySoc < 20 || (agent.batterySoc < 30 && occupiedChargersCount < availableChargersCount)) && this.chargingNodes.length > 0;
+          // If robot is IDLE on a charger pad, it MUST vacate the charger pad immediately to unblock others!
+          if (isOnChargerNode) {
+            agent.assignedChargerNodeId = null;
+            const nonChargerCandidates = [...this.waypointNodes, ...this.inboundNodes, ...this.storageNodes];
+            const vacateTarget = this.findClosestNode(agent.currentNodeId, nonChargerCandidates);
+            if (vacateTarget && vacateTarget.id !== agent.currentNodeId) {
+              agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, vacateTarget.id);
+              if (agent.pathNodeIds.length > 1) {
+                agent.pathNodeIds.shift();
+                agent.targetNodeId = agent.pathNodeIds[0];
+                agent.state = 'MOVING_TO_PICKUP'; // Repositioning
+                agent.isQueued = false;
+                break;
+              }
+            }
+          }
 
-          if (shouldCharge) {
-            const charger = this.findClosestNode(agent.currentNodeId, this.chargingNodes);
-            if (charger) {
-              agent.assignedChargerNodeId = charger.id;
-              agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, charger.id);
+          const freeCharger = this.findUnoccupiedChargerNode(agent.currentNodeId);
+
+          // 1. Mandatory Charge Check (battery < 20%)
+          if (agent.batterySoc < 20 && this.chargingNodes.length > 0) {
+            if (freeCharger) {
+              agent.assignedChargerNodeId = freeCharger.id;
+              agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, freeCharger.id);
               if (agent.pathNodeIds.length > 1) {
                 agent.pathNodeIds.shift();
                 agent.targetNodeId = agent.pathNodeIds[0];
                 agent.state = 'MOVING_TO_CHARGE';
+                agent.isQueued = false;
+              } else {
+                agent.state = 'CHARGING';
+                agent.isQueued = false;
               }
+            } else {
+              // Queue for charger: do NOT accept transport tasks, zero out traction discharge, wait safely!
+              agent.isQueued = true;
+              agent.corridorWaitTimeSec += dtSim;
             }
-          } else if (this.inboundNodes.length > 0) {
+            break;
+          }
+
+          // 2. Normal Task Assignment
+          if (this.inboundNodes.length > 0 && this.inboundPalletsAvailable > 0 && agent.batterySoc >= 20) {
+            this.inboundPalletsAvailable -= 1;
             const pickupNode = this.inboundNodes[i % this.inboundNodes.length];
             agent.assignedInboundNodeId = pickupNode.id;
             agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, pickupNode.id);
@@ -442,9 +498,27 @@ export class SimulationEngine {
               agent.pathNodeIds.shift();
               agent.targetNodeId = agent.pathNodeIds[0];
               agent.state = 'MOVING_TO_PICKUP';
+              agent.isQueued = false;
             } else {
               agent.state = 'LOADING';
               agent.timerSeconds = 2.5;
+              agent.isQueued = false;
+            }
+            break;
+          }
+
+          // 3. Opportunity Charging (when IDLE, no work available, SoC < 95%)
+          if (this.inboundPalletsAvailable === 0 && agent.batterySoc < 95 && freeCharger) {
+            agent.assignedChargerNodeId = freeCharger.id;
+            agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, freeCharger.id);
+            if (agent.pathNodeIds.length > 1) {
+              agent.pathNodeIds.shift();
+              agent.targetNodeId = agent.pathNodeIds[0];
+              agent.state = 'MOVING_TO_CHARGE';
+              agent.isQueued = false;
+            } else {
+              agent.state = 'CHARGING';
+              agent.isQueued = false;
             }
           }
           break;
@@ -459,7 +533,7 @@ export class SimulationEngine {
           }
 
           // Traffic Arbiter corridor reservation check
-          const hasAccess = this.trafficArbiter.requestCorridorAccess(agent, this.nodeMap);
+          const hasAccess = this.trafficArbiter.requestCorridorAccess(agent, this.nodeMap, this.elapsedSimSeconds);
 
           if (!hasAccess) {
             // Access denied by TrafficArbiter: agent must hold at entrance pocket
@@ -567,7 +641,7 @@ export class SimulationEngine {
             }
 
             if (agent.batterySoc < 20 && this.chargingNodes.length > 0) {
-              const charger = this.findClosestNode(agent.currentNodeId, this.chargingNodes);
+              const charger = this.findUnoccupiedChargerNode(agent.currentNodeId);
               if (charger) {
                 agent.assignedChargerNodeId = charger.id;
                 agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, charger.id);
@@ -576,11 +650,14 @@ export class SimulationEngine {
                   agent.pathNodeIds.shift();
                   agent.targetNodeId = agent.pathNodeIds[0];
                   agent.state = 'MOVING_TO_CHARGE';
+                  agent.isQueued = false;
                 } else {
                   agent.state = 'CHARGING';
+                  agent.isQueued = false;
                 }
               } else {
                 agent.state = 'IDLE';
+                agent.isQueued = true;
               }
             } else {
               agent.state = 'IDLE';
@@ -592,7 +669,20 @@ export class SimulationEngine {
         case 'CHARGING': {
           agent.batterySoc = Math.min(100, agent.batterySoc + agent.chargeRatePerSec * dtSim);
 
+          // Preemption: if new pallets arrived at DOCK_INBOUND
+          if (this.inboundPalletsAvailable > 0) {
+            const chargingRobots = this.agents.filter((a) => a.state === 'CHARGING');
+            const highestSocRobot = chargingRobots.reduce((max, curr) => (curr.batterySoc > max.batterySoc ? curr : max), chargingRobots[0]);
+
+            if (highestSocRobot && highestSocRobot.id === agent.id && agent.batterySoc >= 30) {
+              agent.assignedChargerNodeId = null;
+              agent.state = 'IDLE';
+              break;
+            }
+          }
+
           if (agent.batterySoc >= 98) {
+            agent.assignedChargerNodeId = null;
             agent.state = 'IDLE';
           }
           break;
@@ -615,6 +705,34 @@ export class SimulationEngine {
     }
   }
 
+  private findUnoccupiedChargerNode(fromNodeId: string): GraphNode | null {
+    const fromNode = this.nodeMap.get(fromNodeId);
+    if (!fromNode || this.chargingNodes.length === 0) return null;
+
+    const claimedChargerIds = new Set(
+      this.agents
+        .filter((a) => a.state === 'CHARGING' || a.state === 'MOVING_TO_CHARGE')
+        .map((a) => a.assignedChargerNodeId)
+        .filter((id): id is string => id !== null)
+    );
+
+    const freeChargers = this.chargingNodes.filter((c) => !claimedChargerIds.has(c.id));
+    if (freeChargers.length === 0) return null;
+
+    let closest: GraphNode | null = null;
+    let minD = Infinity;
+
+    freeChargers.forEach((cand) => {
+      const d = Math.hypot(cand.x - fromNode.x, cand.y - fromNode.y);
+      if (d < minD) {
+        minD = d;
+        closest = cand;
+      }
+    });
+
+    return closest;
+  }
+
   private findClosestNode(fromNodeId: string, candidates: GraphNode[]): GraphNode | null {
     const fromNode = this.nodeMap.get(fromNodeId);
     if (!fromNode || candidates.length === 0) return null;
@@ -634,7 +752,7 @@ export class SimulationEngine {
   }
 
   public runSimulation(options: RunSimulationOptions): ExtendedSimulationResult {
-    this.initializeFleet();
+    this.initializeFleet(options.supplySchedule);
 
     const durationHours = Math.max(1, options.durationHours ?? 1.0);
     const dtSim = 0.5;

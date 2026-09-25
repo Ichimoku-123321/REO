@@ -17,6 +17,7 @@ import {
   type HeterogeneousOptimizationResult,
 } from './engine/fleet_optimizer.js';
 import { SimulationEngine, type SimulationReplayFrame } from './engine/simulation_engine.js';
+import type { SupplySchedule } from './engine/constructor_engine.js';
 import type { FacilityRequirements } from './types/facility.js';
 import { generateFeasibilityPdf } from './engine/export_pdf.js';
 import { exportFeasibilityToExcel } from './engine/export_excel.js';
@@ -194,7 +195,7 @@ export default function App() {
   };
 
   // Run Simulation Handler
-  const handleRunSimulation = useCallback(() => {
+  const handleRunSimulation = useCallback((supplySchedule?: SupplySchedule) => {
     setIsCalculating(true);
     setCalculationStep(1);
 
@@ -219,6 +220,7 @@ export default function App() {
           durationHours: simulationParams.durationHours,
           recordReplay: true,
           targetReplayFramesCount: simulationParams.targetReplayFramesCount,
+          supplySchedule,
         });
 
         setCalculationStep(3);

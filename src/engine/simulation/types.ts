@@ -1,4 +1,5 @@
 import type { Robot } from '../../types/robot.js';
+import type { SupplySchedule } from '../constructor_engine.js';
 
 export type AgentFSMState =
   | 'IDLE'
@@ -27,6 +28,7 @@ export interface RunSimulationOptions {
   durationHours?: number;         // время работы (от 1 до 72 часов, по дефолту 1.0)
   recordReplay?: boolean;         // сохранять ли кадры в память
   targetReplayFramesCount?: number; // желаемое кол-во кадров в буфере (по дефолту 7200)
+  supplySchedule?: SupplySchedule; // график поставок и отгрузок
 }
 
 export interface ExtendedSimulationResult {

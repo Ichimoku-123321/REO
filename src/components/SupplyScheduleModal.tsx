@@ -9,6 +9,7 @@ interface SupplyScheduleModalProps {
   onChangeSchedule: (updated: SupplySchedule) => void;
   totalPalletCapacity: number;
   totalRacks: number;
+  onApplySchedule?: (calculatedThroughputPerHour: number) => void;
 }
 
 function getHoursFromInterval(val: number, unit: 'hours' | 'days' | 'minutes'): number {
@@ -24,6 +25,7 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
   onChangeSchedule,
   totalPalletCapacity,
   totalRacks,
+  onApplySchedule,
 }) => {
   if (!isOpen) return null;
 
@@ -252,11 +254,24 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
 
         <button
           type="button"
-          onClick={onClose}
-          className="w-full bg-[#D4AF37] hover:bg-[#BFA02E] text-[#1A1A1A] font-bold py-2 uppercase tracking-tight transition rounded-none cursor-pointer"
-        >
-          Применить расписание
-        </button>
+           onClick={() => {
+          const inH = getHoursFromInterval(schedule.inboundIntervalValue, schedule.inboundIntervalUnit);
+          const outH = getHoursFromInterval(schedule.outboundIntervalValue, schedule.outboundIntervalUnit);
+
+          const qInPerHour = inH > 0 ? schedule.inboundBatchVolume / inH : 0;
+          const qOutPerHour = outH > 0 ? schedule.outboundBatchVolume / outH : 0;
+
+          const totalRequiredPerHour = Math.max(1, Math.ceil(qInPerHour + qOutPerHour));
+
+          if (onApplySchedule) {
+            onApplySchedule(totalRequiredPerHour);
+          }
+          onClose();
+        }}
+        className="w-full bg-[#D4AF37] hover:bg-[#BFA02E] text-[#1A1A1A] font-bold py-2 uppercase tracking-tight transition rounded-none cursor-pointer"
+      >
+        Применить расписание
+      </button>
       </div>
     </div>
   );

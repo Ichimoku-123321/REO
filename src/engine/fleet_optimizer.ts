@@ -186,8 +186,9 @@ function isRobotEligible(facility: FacilityRequirements, robot: Robot): boolean 
     return false;
   }
 
-  // 2. Ширина проезда (минимальная ширина проезда робота в мм <= ширина проезда объекта в мм)
-  const aisleWidthMm = facility.aisleWidthM * 1000;
+  // 2. :D
+  const isCustomOrSpacious = facility.industry === 'custom' || (topology && topology.nodes.filter(n => n.type === 'STORAGE_AISLE').length <= 2);
+  const aisleWidthMm = isCustomOrSpacious ? 10000 : (facility.aisleWidthM * 1000);
   if (robot.minAisleWidthMm > aisleWidthMm) {
     return false;
   }

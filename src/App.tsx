@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Zone3Container } from './components/zone3/Zone3Container.js';
+import { FeasibilityPreviewModal } from './components/FeasibilityPreviewModal.js';
 import { SEED_ROBOTS } from './data/robots.seed.js';
 import { FACILITY_PRESETS } from './data/presets.js';
 import { evaluateEligibility } from './engine/dss.js';
@@ -121,6 +122,7 @@ useEffect(() => {
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
   const [calculationStep, setCalculationStep] = useState<number>(0);
   const [isFormulaModalOpen, setIsFormulaModalOpen] = useState<boolean>(false);
+  const [isPdfPreviewOpen, setIsPdfPreviewOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -287,19 +289,11 @@ useEffect(() => {
 
   // Export Handlers
   const handleExportPdf = () => {
-    if (!selectedRobot || !activeEconomics) return;
-    generateFeasibilityPdf({
-      projectTitle: `ТЭО Роботизации - ${facility.industry.toUpperCase()}`,
-      facility,
-      selectedRobot,
-      fleetSize: activeFleetSize || activeEconomics.fleetSize,
-      economicEvaluation: activeEconomics,
-      spectralResult,
-      whatIf,
-      generatedAt: new Date(),
-      version: 'СППР v1.0',
-    });
-    showToast('REO: ТЭО сформировано и выгружено в PDF');
+    if (!selectedRobot || !activeEconomics) {
+      showToast('Сначала сформируйте склад и запустите расчёт');
+      return;
+    }
+    setIsPdfPreviewOpen(true);
   };
 
   const handleExportExcel = () => {
@@ -511,6 +505,18 @@ useEffect(() => {
       {/* Progress & Formula Modals */}
       <CalculationProgressModal isOpen={isCalculating} currentStep={calculationStep} />
       <FormulaModal isOpen={isFormulaModalOpen} onClose={() => setIsFormulaModalOpen(false)} />
+      {selectedRobot && activeEconomics && (
+        <FeasibilityPreviewModal
+          isOpen={isPdfPreviewOpen}
+          onClose={() => setIsPdfPreviewOpen(false)}
+          facility={facility}
+          selectedRobot={selectedRobot}
+          fleetSize={activeFleetSize || activeEconomics.fleetSize}
+          evaluation={activeEconomics}
+          whatIf={whatIf}
+          spectralResult={spectralResult}
+        />
+      )}
 
       {/* Toast Notification */}
       {toastMessage && (

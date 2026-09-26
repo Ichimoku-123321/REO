@@ -288,13 +288,13 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
                   <span className="text-[10px] text-[#8A6826] font-mono font-bold">шт/час</span>
                 </label>
                 <div className="grid grid-cols-2 gap-2 font-mono">
-                  <div className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/40">
+                  <div className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/40 rounded-none">
                     <span className="text-[9px] text-[#4F4F47] block uppercase font-semibold">Средний Q_avg:</span>
                     <strong className="text-sm font-bold text-[#1A1A1A] tabular-nums">
                       {targetQ} шт/ч
                     </strong>
                   </div>
-                  <div className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/40">
+                  <div className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/40 rounded-none">
                     <span className="text-[9px] text-[#8A6826] block uppercase font-semibold">Пиковый Q_peak:</span>
                     <strong className="text-sm font-bold text-[#8A6826] tabular-nums">
                       {Math.ceil(targetQ * peakK)} шт/ч
@@ -320,7 +320,7 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
                 />
               </div>
 
-              <div className="p-2 bg-[#F9F9F6] border border-[#D4AF37]/30 text-[10px] font-mono text-[#4F4F47]">
+              <div className="p-2 bg-[#F9F9F6] border border-[#D4AF37]/30 text-[10px] font-mono text-[#4F4F47] rounded-none">
                 ℹ️ Значение рассчитывается автоматически из баланса буфера графика поставок и отгрузок.
               </div>
             </div>

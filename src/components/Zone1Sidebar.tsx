@@ -80,7 +80,7 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
   };
 
   // Derived values for Baseline Manual Labor Model
-  const targetQ = simulationParams.targetHourlyQuota || facility.targetThroughputPerHour;
+  const targetQ = simulationParams.targetHourlyQuota ?? facility.targetThroughputPerHour;
   const peakK = facility.peakHourFactor ?? 1.0;
   const norm = facility.manualWorkerNorm ?? 12;
   const shifts = facility.shiftsPerDay || 2;
@@ -280,51 +280,26 @@ export const Zone1Sidebar: React.FC<Zone1SidebarProps> = ({
           </button>
 
           {openSections.program && (
-            <div className="p-3 space-y-2.5">
-              {/* Автоматический грузопоток Q_target (Read-only) */}
-              <div>
-                <label className="text-[11px] font-bold text-[#1A1A1A] flex items-center justify-between mb-1">
-                  <span>Целевой грузопоток (Авторасчет):</span>
-                  <span className="text-[10px] text-[#8A6826] font-mono font-bold">шт/час</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2 font-mono">
-                  <div className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/40 rounded-none">
-                    <span className="text-[9px] text-[#4F4F47] block uppercase font-semibold">Средний Q_avg:</span>
-                    <strong className="text-sm font-bold text-[#1A1A1A] tabular-nums">
-                      {targetQ} шт/ч
-                    </strong>
-                  </div>
-                  <div className="p-2 bg-[#F4F4F0] border border-[#D4AF37]/40 rounded-none">
-                    <span className="text-[9px] text-[#8A6826] block uppercase font-semibold">Пиковый Q_peak:</span>
-                    <strong className="text-sm font-bold text-[#8A6826] tabular-nums">
-                      {Math.ceil(targetQ * peakK)} шт/ч
-                    </strong>
-                  </div>
-                </div>
-              </div>
+         <div className="p-3 space-y-2.5">
+           {/* Автоматический грузопоток Q_target (Read-only) */}
+           <div>
+             <label className="text-[11px] font-bold text-[#1A1A1A] flex items-center justify-between mb-1">
+               <span>Целевой грузопоток (Авторасчет):</span>
+               <span className="text-[10px] text-[#8A6826] font-mono font-bold">шт/час</span>
+             </label>
+             <div className="p-2.5 bg-[#F4F4F0] border border-[#D4AF37]/40 rounded-none text-center font-mono">
+               <span className="text-[9px] text-[#4F4F47] block uppercase font-semibold">Грузопоток расписания:</span>
+               <strong className="text-base font-bold text-[#8A6826] tabular-nums">
+                 {targetQ} шт/ч
+               </strong>
+             </div>
+           </div>
 
-              {/* Peak Hour Factor k_peak */}
-              <div>
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className="text-[10px] text-[#4F4F47] font-semibold">Пиковый коэффициент k_peak:</span>
-                  <span className="font-mono font-bold text-xs text-[#8A6826]">{peakK.toFixed(1)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="1.0"
-                  max="2.0"
-                  step="0.1"
-                  value={peakK}
-                  onChange={(e) => updateFacility({ peakHourFactor: Number(e.target.value) || 1.0 })}
-                  className="w-full accent-[#D4AF37] cursor-pointer"
-                />
-              </div>
-
-              <div className="p-2 bg-[#F9F9F6] border border-[#D4AF37]/30 text-[10px] font-mono text-[#4F4F47] rounded-none">
-                ℹ️ Значение рассчитывается автоматически из баланса буфера графика поставок и отгрузок.
-              </div>
-            </div>
-          )}
+           <div className="p-2 bg-[#F9F9F6] border border-[#D4AF37]/30 text-[10px] font-mono text-[#4F4F47] rounded-none">
+             ℹ️ Значение рассчитывается автоматически из баланса буфера графика поставок и отгрузок.
+           </div>
+         </div>
+       )}
         </div>
 
         {/* 3. Baseline Manual Labor Model Accordion */}

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { Zone3Container } from './components/zone3/Zone3Container.js';
 import { SEED_ROBOTS } from './data/robots.seed.js';
 import { FACILITY_PRESETS } from './data/presets.js';
 import { evaluateEligibility } from './engine/dss.js';
@@ -486,120 +487,24 @@ useEffect(() => {
         {/* ================= ZONE 3: RIGHT COLUMN (ANALYTICS & FEASIBILITY) ================= */}
         <aside
           className={`transition-all duration-300 shrink-0 z-20 flex flex-col bg-[#F9F9F6] border-l border-[#D4AF37]/40 overflow-hidden rounded-none ${
-            isRightOpen ? 'w-96 sm:w-[440px]' : 'w-0 border-l-0'
+            isRightOpen ? 'w-96 sm:w-[480px] lg:w-[540px]' : 'w-0 border-l-0'
           }`}
         >
-          {/* Tab Switcher Header */}
-          <div className="border-b border-[#D4AF37]/40 bg-[#FFFFFF] p-1 flex items-center text-xs font-mono rounded-none">
-            <button
-              onClick={() => setRightTab('economics')}
-              className={`flex-1 py-1.5 font-bold uppercase text-[11px] transition rounded-none ${
-                rightTab === 'economics'
-                  ? 'bg-[#D4AF37] text-[#1A1A1A]'
-                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
-              }`}
-            >
-              3 Сценария
-            </button>
-            <button
-              onClick={() => setRightTab('xai')}
-              className={`flex-1 py-1.5 font-bold uppercase text-[11px] transition rounded-none ${
-                rightTab === 'xai'
-                  ? 'bg-[#D4AF37] text-[#1A1A1A]'
-                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
-              }`}
-            >
-              Side-by-Side и XAI
-            </button>
-            <button
-              onClick={() => setRightTab('whatif')}
-              className={`flex-1 py-1.5 font-bold uppercase text-[11px] transition rounded-none ${
-                rightTab === 'whatif'
-                  ? 'bg-[#D4AF37] text-[#1A1A1A]'
-                  : 'text-[#4F4F47] hover:text-[#1A1A1A]'
-              }`}
-            >
-              What-If
-            </button>
-          </div>
-
-          {/* Tab Contents */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs text-[#1A1A1A] rounded-none flex flex-col justify-start">
-            {!hasCalculatedAnalytics ? (
-              <div className="my-auto py-8 px-4 text-center space-y-4 flex flex-col items-center justify-center font-mono">
-                <div className="w-12 h-12 border-2 border-[#D4AF37] bg-[#F4F4F0] flex items-center justify-center text-[#8A6826] font-bold text-sm">
-                  REO
-                </div>
-                <div className="space-y-1.5">
-                  <h3 className="font-bold text-xs uppercase tracking-wider text-[#1A1A1A]">
-                    Требуется расчет ТЭО
-                  </h3>
-                  <p className="text-[11px] text-[#4F4F47] leading-relaxed max-w-[280px]">
-                    Параметры склада, грузопотока или флота были изменены. Сформируйте склад и запустите моделирование для сквозного расчета.
-                  </p>
-                </div>
-
-                <div className="p-3 bg-[#F4F4F0] border border-[#D4AF37]/40 text-[10px] text-left text-[#4F4F47] space-y-1 w-full max-w-[300px]">
-                  <span className="font-bold text-[#8A6826] block mb-1 uppercase text-[9px]">
-                    Чек-лист готовности к расчету:
-                  </span>
-                  <div>✓ Заданы габариты и стены (Зона 2)</div>
-                  <div>✓ Установлены ворота и стеллажи (Зона 2)</div>
-                  <div>✓ Рассчитан оптимальный флот (Блок 6)</div>
-                </div>
-
-                <div className="text-[10px] text-[#8A6826] animate-pulse">
-                  Нажмите кнопку запуска внизу по центру
-                </div>
-              </div>
-            ) : (
-              <>
-                {rightTab === 'economics' && selectedRobot && activeEconomics && (
-                  <div className="space-y-3.5">
-                    {/* 3-Scenario Financial Matrix */}
-                    <ScenarioMatrix
-                      evaluation={activeEconomics}
-                      robot={selectedRobot}
-                      facility={facility}
-                      whatIf={whatIf}
-                      spectralResult={spectralResult}
-                    />
-                  </div>
-                )}
-
-                {rightTab === 'xai' && (
-                  <div className="space-y-3.5">
-                    {eligibleRobots.length > 0 && (
-                      <RobotComparisonTable
-                        robots={eligibleRobots.map((e) => e.robot)}
-                        facility={facility}
-                        whatIf={whatIf}
-                        selectedRobotId={selectedRobotId}
-                        onSelectRobot={setSelectedRobotId}
-                      />
-                    )}
-
-                    <ExcludedRobotsAccordion excludedRobots={ineligibleRobots} />
-                  </div>
-                )}
-
-                {rightTab === 'whatif' && (
-                  <div className="space-y-3.5">
-                    <WhatIfPanel
-                      whatIf={whatIf}
-                      onChange={setWhatIf}
-                      onOpenFormulaModal={() => setIsFormulaModalOpen(true)}
-                    />
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Legal Disclaimer Footer */}
-          <div className="p-3 border-t border-[#D4AF37]/30 bg-[#FFFFFF] text-[10px] text-[#4F4F47] font-mono text-center rounded-none">
-            Расчет носит предварительный индикативный характер и не является публичной офертой.
-          </div>
+          {isRightOpen && (
+            <Zone3Container
+              hasCalculatedAnalytics={hasCalculatedAnalytics}
+              activeEconomics={activeEconomics}
+              selectedRobot={selectedRobot}
+              robots={SEED_ROBOTS}
+              facility={facility}
+              whatIf={whatIf}
+              onChangeWhatIf={setWhatIf}
+              selectedRobotId={selectedRobotId}
+              onSelectRobotId={setSelectedRobotId}
+              spectralResult={spectralResult}
+              onOpenFormulaModal={() => setIsFormulaModalOpen(true)}
+            />
+          )}
         </aside>
       </div>
 

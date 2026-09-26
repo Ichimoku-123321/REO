@@ -819,7 +819,6 @@ export function SimulationViewport({
               return prev;
             });
           }
-        }
         } else {
           ghostGroup.visible = false;
         }

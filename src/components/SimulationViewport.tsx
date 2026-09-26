@@ -2027,11 +2027,20 @@ export function SimulationViewport({
 
           <button
             type="button"
+            disabled={!fleetSize || fleetSize <= 0}
             onClick={handleFinishConstructionAndSimulate}
-            className="px-6 py-2.5 bg-[#D4AF37] hover:bg-[#BFA02E] active:bg-[#8A6826] text-[#1A1A1A] font-bold uppercase tracking-wider text-xs border border-[#BFA02E] shadow-xs rounded-none cursor-pointer flex items-center gap-2 transition"
+            className={`px-6 py-2.5 font-bold uppercase tracking-wider text-xs border shadow-xs rounded-none flex items-center gap-2 transition ${
+              !fleetSize || fleetSize <= 0
+                ? 'bg-[#E5E5DF] text-[#8C8C85] border-[#D1D1CB] cursor-not-allowed'
+                : 'bg-[#D4AF37] hover:bg-[#BFA02E] active:bg-[#8A6826] text-[#1A1A1A] border-[#BFA02E] cursor-pointer'
+            }`}
           >
-            <Play className="w-4 h-4 text-[#1A1A1A] fill-[#1A1A1A]" />
-            <span>[ СКЛАД ГОТОВ: ЗАПУСТИТЬ РАСЧЕТ И МОДЕЛИРОВАНИЕ ]</span>
+            <Play className="w-4 h-4 fill-current" />
+            <span>
+              {!fleetSize || fleetSize <= 0
+                ? '[ ТРЕБУЕТСЯ РАСЧЕТ ФЛОТА В БЛОКЕ 6 ]'
+                : '[ СКЛАД ГОТОВ: ЗАПУСТИТЬ РАСЧЕТ И МОДЕЛИРОВАНИЕ ]'}
+            </span>
           </button>
         </div>
       ) : (

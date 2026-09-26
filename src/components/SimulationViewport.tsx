@@ -1576,8 +1576,6 @@ export function SimulationViewport({
       }
     }
 
-    if (!isConstructorMode) return;
-
     grid.tiles.forEach((type: any, key: any) => {
       const [gxStr, gyStr] = key.split('_');
       const gx = parseInt(gxStr, 10);
@@ -1585,7 +1583,7 @@ export function SimulationViewport({
       const tileX = (gx + 0.5) * grid.cellSizeM;
       const tileY = (gy + 0.5) * grid.cellSizeM;
 
-      const isSelected = stateRef.current.selectedTileKeys.has(key);
+      const isSelected = isConstructorMode && stateRef.current.selectedTileKeys.has(key);
       const details = grid.elementDetails?.get(key);
       const rotRad = THREE.MathUtils.degToRad(details?.rotationDeg || 0);
 

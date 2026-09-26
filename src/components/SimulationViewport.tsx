@@ -414,6 +414,7 @@ export function SimulationViewport({
 
   // Finish Construction & Start Simulation Handler
   const handleFinishConstructionAndSimulate = useCallback(() => {
+    // 1. Проверка CAD
     if (
       gridElementCounts.inboundDocks < 1 ||
       gridElementCounts.outboundDocks < 1 ||
@@ -423,6 +424,13 @@ export function SimulationViewport({
       return;
     }
 
+    // 2. Наличие и расчет флота
+    if (!fleetSize || fleetSize <= 0) {
+      showToast('⚠️ Ошибка Блока 6: Парк роботов не укомплектован! Нажмите «Рассчитать оптимальный флот» в сайдбаре');
+      return;
+    }
+
+    // 3. Проверка связности графа
     const testTopology = rebuildTopologyFromGrid(grid, facilityDims.widthM, facilityDims.lengthM);
     if (checkGraphIsolation(testTopology)) {
       showToast('⚠️ Внимание: изолированная зона. Роботы не могут построить маршрут к доку или зарядной станции.');
@@ -432,7 +440,7 @@ export function SimulationViewport({
     onTriggerSimulationRun(supplySchedule);
     onAppModeChange('SIMULATION');
     setIsPlaying(true);
-  }, [gridElementCounts, grid, facilityDims, supplySchedule, onTriggerSimulationRun, onAppModeChange, showToast]);
+  }, [gridElementCounts, fleetSize, grid, facilityDims, supplySchedule, onTriggerSimulationRun, onAppModeChange, showToast]);
 
   // Return to CAD Editor Handler
   const handleReturnToEditor = useCallback(() => {

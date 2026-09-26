@@ -248,7 +248,10 @@ useEffect(() => {
       setCalculationStep(2);
 
       setTimeout(() => {
-        const topology = generateFacilityTopology(facility);
+        // CAD
+        const topology = currentTopology && currentTopology.nodes.length > 0
+          ? currentTopology
+          : generateFacilityTopology(facility);
         const engine = new SimulationEngine(
           topology,
           activeComposition.length > 0
@@ -279,7 +282,7 @@ useEffect(() => {
         }, 150);
       }, 200);
     }, 200);
-  }, [facility, activeComposition, selectedRobot, activeFleetSize, simulationParams]);
+  }, [facility, currentTopology, activeComposition, selectedRobot, activeFleetSize, simulationParams]);
 
   // Export Handlers
   const handleExportPdf = () => {

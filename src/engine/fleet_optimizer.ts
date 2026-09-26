@@ -180,26 +180,35 @@ interface RobotEvaluation {
 /**
  * Проверяет физическую и отраслевую совместимость модели робота с требованиями объекта.
  */
-function isRobotEligible(facility: FacilityRequirements, robot: Robot): boolean {
-  // 1. Отраслевая совместимость (если объект не пользовательский 'custom')
+function isRobotEligible(
+  facility: FacilityRequirements,
+  robot: Robot,
+  topology?: FacilityTopology | null
+): boolean {
+  // 1. Отраслевая совместимость
   if (facility.industry !== 'custom' && !robot.supportedIndustries.includes(facility.industry)) {
     return false;
   }
 
-  // 2. :D
-  const isCustomOrSpacious = facility.industry === 'custom' || (topology && topology.nodes.filter(n => n.type === 'STORAGE_AISLE').length <= 2);
-  const aisleWidthMm = isCustomOrSpacious ? 10000 : (facility.aisleWidthM * 1000);
+  // 2. Ширина проезда (для custom или свободного склада ограничение не применяется)
+  const isCustomOrSpacious =
+    facility.industry === 'custom' ||
+    !topology ||
+    !topology.nodes ||
+    topology.nodes.filter((n) => n.type === 'STORAGE_AISLE').length <= 2;
+
+  const aisleWidthMm = isCustomOrSpacious ? 10000 : facility.aisleWidthM * 1000;
   if (robot.minAisleWidthMm > aisleWidthMm) {
     return false;
   }
 
-  // 3. Грузоподъемность: Q_m^payload >= P_req (грузоподъемность робота должна быть не меньше требуемой)
+  // 3. Грузоподъемность: Q_m^payload >= P_req
   const robotPayload = robot.payloadKg ?? (robot as { maxPayloadKg?: number }).maxPayloadKg ?? 0;
   if (robotPayload < facility.requiredPayloadKg) {
     return false;
   }
 
-  // 4. Температурный режим (диапазон объекта должен полностью входить в диапазон робота)
+  // 4. Температурный режим
   if (
     facility.operatingTempRange.min < robot.operatingTempRange.min ||
     facility.operatingTempRange.max > robot.operatingTempRange.max
@@ -289,7 +298,7 @@ export function optimizeFleetComposition(
   const eligibleEvals: RobotEvaluation[] = [];
 
   for (const robot of availableRobots) {
-    if (isRobotEligible(facility, robot)) {
+    if (isRobotEligible(facility, robot, topology)) {
       const kAvail = calculateAvailabilityCoefficient(
         robot.batteryRuntimeHours,
         robot.batteryChargeMinutes

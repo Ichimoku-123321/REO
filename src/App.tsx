@@ -241,6 +241,7 @@ useEffect(() => {
 
   // Run Simulation Handler
   const handleRunSimulation = useCallback((supplySchedule?: SupplySchedule) => {
+    setHasCalculatedAnalytics(true);
     setIsCalculating(true);
     setCalculationStep(1);
 

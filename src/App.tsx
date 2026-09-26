@@ -101,7 +101,6 @@ useEffect(() => {
   facility.operatingTempRange.max,
   facility.floorSurfaceQuality,
   facility.cleanlinessClass,
-  currentTopology,
   manualFleetCounts,
   fleetMode,
 ]);

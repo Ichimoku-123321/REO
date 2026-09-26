@@ -144,21 +144,43 @@ export function SimulationViewport({
   const [selectedSkuForBox, setSelectedSkuForBox] = useState<SkuItem | null>(DEFAULT_SKU_LIST[0]);
   const [supplySchedule, setSupplySchedule] = useState<SupplySchedule>(DEFAULT_SUPPLY_SCHEDULE);
   // REO: Синхронизация стартового потока с расписанием буфера
-useEffect(() => {
-  if (!onChangeFacility) return;
-  const inH = getHoursFromInterval(supplySchedule.inboundIntervalValue, supplySchedule.inboundIntervalUnit);
-  const outH = getHoursFromInterval(supplySchedule.outboundIntervalValue, supplySchedule.outboundIntervalUnit);
-  const qIn = inH > 0 ? supplySchedule.inboundBatchVolume / inH : 0;
-  const qOut = outH > 0 ? supplySchedule.outboundBatchVolume / outH : 0;
-  const initialQuota = Math.ceil(qIn + qOut);
+  useEffect(() => {
+    if (!onChangeFacility) return;
 
-  if (facility.targetThroughputPerHour !== initialQuota) {
-    onChangeFacility({
-      ...facility,
-      targetThroughputPerHour: initialQuota,
-    });
-  }
-}, []);
+    // Считаем часы привоза
+    const inVal = supplySchedule.inboundIntervalValue || 1;
+    const inH =
+      supplySchedule.inboundIntervalUnit === 'minutes'
+        ? inVal / 60
+        : supplySchedule.inboundIntervalUnit === 'days'
+        ? inVal * 24
+        : inVal;
+
+    // Считаем часы отгрузки
+    const outVal = supplySchedule.outboundIntervalValue || 1;
+    const outH =
+      supplySchedule.outboundIntervalUnit === 'minutes'
+        ? outVal / 60
+        : supplySchedule.outboundIntervalUnit === 'days'
+        ? outVal * 24
+        : outVal;
+
+    const qIn = inH > 0 && supplySchedule.inboundBatchVolume > 0 
+      ? supplySchedule.inboundBatchVolume / inH 
+      : 0;
+    const qOut = outH > 0 && supplySchedule.outboundBatchVolume > 0 
+      ? supplySchedule.outboundBatchVolume / outH 
+      : 0;
+
+    const initialQuota = Math.ceil(qIn + qOut);
+
+    if (facility.targetThroughputPerHour !== initialQuota) {
+      onChangeFacility({
+        ...facility,
+        targetThroughputPerHour: initialQuota,
+      });
+    }
+  }, [supplySchedule, facility.targetThroughputPerHour, onChangeFacility]);
 
   // Modals Visibility State
   const [isSkuModalOpen, setIsSkuModalOpen] = useState<boolean>(false);

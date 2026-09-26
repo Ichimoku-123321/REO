@@ -209,7 +209,7 @@ export const SideBySideView: React.FC<SideBySideViewProps> = ({
                   >
                     <div className="font-bold text-[#1A1A1A] truncate">{robot.model}</div>
                     <div className="text-[9px] text-[#8C8C85] uppercase tracking-wider font-normal">
-                      {robot.manufacturer}
+                      {robot.vendor}
                     </div>
                     {isSelected && (
                       <span className="inline-block mt-1 px-1.5 py-0.2 bg-[#D4AF37] text-[#1A1A1A] font-bold text-[8px] uppercase tracking-wider">
@@ -443,7 +443,7 @@ export const SideBySideView: React.FC<SideBySideViewProps> = ({
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="font-bold text-[#1A1A1A]">
                       {robot.model}{' '}
-                      <span className="text-[#8C8C85] font-normal">({robot.manufacturer})</span>
+                      <span className="text-[#8C8C85] font-normal">({robot.vendor})</span>
                     </span>
                     <span className="text-[9px] px-1.5 py-0.2 bg-red-100 border border-red-300 text-red-700 font-bold uppercase">
                       ОТКЛОНЁН

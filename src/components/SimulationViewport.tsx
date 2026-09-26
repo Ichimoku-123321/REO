@@ -954,6 +954,8 @@ export function SimulationViewport({
             const startRow = Math.floor(minZ / cellSize);
             const endRow = Math.floor(maxZ / cellSize);
 
+            const isErase = st.interactionMode === 'ERASE_FLOOR_RECT';
+            
             if (!isErase && st.grid.tiles.size > 0) {
               let touchesExistingFloor = false;
               for (let cx = startCol; cx <= endCol; cx++) {

@@ -68,6 +68,8 @@ export class SimulationEngine {
   private inboundNodes: GraphNode[] = [];
   private outboundNodes: GraphNode[] = [];
   private storageNodes: GraphNode[] = [];
+  // WMS
+  private rackOccupancy: Map<string, { current: number; capacity: number; skuId?: string }> = new Map();
   private chargingNodes: GraphNode[] = [];
   private waypointNodes: GraphNode[] = [];
   public obstacleBoxes: ObstacleBox[] = [];
@@ -296,6 +298,16 @@ export class SimulationEngine {
   }
 
   public initializeFleet(supplySchedule?: RunSimulationOptions['supplySchedule']): void {
+    // Инициализация емкости адресного хранения стеллажей
+    this.rackOccupancy.clear();
+    for (const node of this.storageNodes) {
+      this.rackOccupancy.set(node.id, {
+        current: 0,
+        capacity: node.capacity ?? 50,
+        skuId: node.skuId,
+      });
+    }
+
     this.agents = [];
     this.replayFrames = [];
     this.elapsedSimSeconds = 0;
@@ -607,10 +619,26 @@ export class SimulationEngine {
           if (agent.timerSeconds <= 0) {
             agent.cargoPayload = true;
 
-            const deliveryTargets = [...this.outboundNodes, ...this.storageNodes];
-            if (deliveryTargets.length > 0) {
-              const target = deliveryTargets[(i * 3 + Math.floor(this.completedDeliveries)) % deliveryTargets.length];
+            // WMS Адресное хранение: отбираем стеллажи, где есть свободные места
+            const freeStorageNodes = this.storageNodes.filter((node) => {
+              const rack = this.rackOccupancy.get(node.id);
+              return rack ? rack.current < rack.capacity : true;
+            });
+
+            // Находим ближайший свободный стеллаж (или резервный узел, если все забито)
+            const target = freeStorageNodes.length > 0
+              ? (this.findClosestNode(agent.currentNodeId, freeStorageNodes) || freeStorageNodes[0])
+              : (this.storageNodes[0] || this.outboundNodes[0]);
+
+            if (target) {
               agent.assignedDeliveryNodeId = target.id;
+              
+              // Бронируем ячейку на стеллаже под привозимую паллету
+              const rack = this.rackOccupancy.get(target.id);
+              if (rack) {
+                rack.current += 1;
+              }
+
               agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, target.id);
 
               if (agent.pathNodeIds.length > 1) {

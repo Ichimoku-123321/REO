@@ -143,6 +143,22 @@ export function SimulationViewport({
   }, [skuList, facility.requiredPayloadKg, onChangeFacility]);
   const [selectedSkuForBox, setSelectedSkuForBox] = useState<SkuItem | null>(DEFAULT_SKU_LIST[0]);
   const [supplySchedule, setSupplySchedule] = useState<SupplySchedule>(DEFAULT_SUPPLY_SCHEDULE);
+  // REO: Синхронизация стартового потока с расписанием буфера
+useEffect(() => {
+  if (!onChangeFacility) return;
+  const inH = getHoursFromInterval(supplySchedule.inboundIntervalValue, supplySchedule.inboundIntervalUnit);
+  const outH = getHoursFromInterval(supplySchedule.outboundIntervalValue, supplySchedule.outboundIntervalUnit);
+  const qIn = inH > 0 ? supplySchedule.inboundBatchVolume / inH : 0;
+  const qOut = outH > 0 ? supplySchedule.outboundBatchVolume / outH : 0;
+  const initialQuota = Math.ceil(qIn + qOut);
+
+  if (facility.targetThroughputPerHour !== initialQuota) {
+    onChangeFacility({
+      ...facility,
+      targetThroughputPerHour: initialQuota,
+    });
+  }
+}, []);
 
   // Modals Visibility State
   const [isSkuModalOpen, setIsSkuModalOpen] = useState<boolean>(false);

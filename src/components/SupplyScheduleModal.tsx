@@ -261,7 +261,7 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
           const qInPerHour = inH > 0 ? schedule.inboundBatchVolume / inH : 0;
           const qOutPerHour = outH > 0 ? schedule.outboundBatchVolume / outH : 0;
 
-          const totalRequiredPerHour = Math.max(1, Math.ceil(qInPerHour + qOutPerHour));
+          const totalRequiredPerHour = Math.ceil(qInPerHour + qOutPerHour);
 
           if (onApplySchedule) {
             onApplySchedule(totalRequiredPerHour);

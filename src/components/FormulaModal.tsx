@@ -1,5 +1,14 @@
 import React from 'react';
-import { X, Calculator, Zap, DollarSign, Scale, ShieldCheck } from 'lucide-react';
+import {
+  Calculator,
+  X,
+  Zap,
+  Users,
+  DollarSign,
+  TrendingUp,
+  Cpu,
+  ShieldCheck,
+} from 'lucide-react';
 
 interface FormulaModalProps {
   isOpen: boolean;
@@ -10,132 +19,186 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({ isOpen, onClose }) =
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl text-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs font-mono text-[#1A1A1A] select-none">
+      <div className="bg-[#FFFFFF] border-2 border-[#D4AF37] w-full max-w-4xl max-h-[90vh] flex flex-col rounded-none shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-800 sticky top-0 bg-slate-900/95 backdrop-blur z-10">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-600/20 text-blue-400 rounded-lg border border-blue-500/30">
-              <Calculator className="w-6 h-6" />
+        <div className="bg-[#F9F9F6] border-b border-[#D4AF37]/50 px-5 py-3 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-[#D4AF37]/20 border border-[#D4AF37] text-[#8A6826]">
+              <Calculator className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white">
-                Исходные предпосылки и методология расчетов СППР
+              <h2 className="font-bold text-xs uppercase tracking-wider text-[#1A1A1A]">
+                [ МЕТОДОЛОГИЯ И МАТЕМАТИЧЕСКИЙ БАЗИС СППР REO ]
               </h2>
-              <p className="text-xs text-slate-400">
-                Прозрачные формулы финансовой модели, коэффициенты и налоговые взносы
+              <p className="text-[10px] text-[#4F4F47]">
+                Сквозные формулы кинематической калибровки, DCF-моделирования и инвестиционного аудита
               </p>
             </div>
           </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-1.5 text-[#4F4F47] hover:text-[#1A1A1A] hover:bg-[#EAEAE6] border border-transparent hover:border-[#D4AF37]/40 transition rounded-none cursor-pointer"
+            title="Закрыть"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-6 space-y-6">
-          {/* Section 1: Fleet Sizing */}
-          <section className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-5">
-            <h3 className="text-base font-bold text-blue-400 flex items-center gap-2 mb-3">
-              <Zap className="w-5 h-5 text-blue-400" />
-              1. Расчет размера парка роботов (N_fleet) и микро-имитационная калибровка
-            </h3>
-            <div className="space-y-3 text-sm text-slate-300">
-              <p className="font-semibold text-slate-200">
-                1. Номинальная потребность парка (по нормативу ТЗ):
-              </p>
-              <div className="bg-slate-950 p-3 rounded-lg font-mono text-xs text-blue-300 border border-slate-800 space-y-1">
-                <div>k_avail = batteryRuntimeHours / (batteryRuntimeHours + (batteryChargeMinutes / 60))</div>
-                <div>N_nominal = ceil( targetThroughputPerHour / (robot.throughputPerHour * k_avail) )</div>
-              </div>
-              <p className="font-semibold text-slate-200 pt-1">
-                2. Верификация цифровым двойником (Headless Fast-Forward Pass):
-              </p>
-              <div className="bg-slate-950 p-3 rounded-lg font-mono text-xs text-blue-300 border border-slate-800 space-y-1">
-                <div>eta_traffic = Q_real / Q_theor  (коэффициент топологических потерь)</div>
-                <div>N_fleet = max( N_nominal, ceil( N_nominal / eta_traffic ) )</div>
-              </div>
+        {/* Modal Body / Scrollable Formulas */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+          {/* РАЗДЕЛ 1: КИНЕМАТИКА И ПАРК */}
+          <div className="border border-[#D4AF37]/40 bg-[#FFFFFF] p-3.5 space-y-2 rounded-none shadow-2xs">
+            <div className="flex items-center gap-2 text-[#8A6826] font-bold uppercase text-[11px] border-b border-[#D4AF37]/30 pb-1.5">
+              <Zap className="w-3.5 h-3.5" />
+              <span>1. Расчёт размера флота (N_fleet) и микро-имитационная калибровка</span>
             </div>
-          </section>
 
-          {/* Section 2: Labor Cost Baseline */}
-          <section className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-5">
-            <h3 className="text-base font-bold text-rose-400 flex items-center gap-2 mb-3">
-              <Scale className="w-5 h-5 text-rose-400" />
-              2. Базовые расходы на персонал (Сценарий «Как есть»)
-            </h3>
-            <div className="space-y-3 text-sm text-slate-300">
-              <p>
-                Эквивалентное число ручных операторов:
+            <div className="space-y-1.5 text-[11px] text-[#4F4F47]">
+              <p className="font-semibold text-[#1A1A1A]">
+                1.1. Номинальная потребность парка по коэффициенту готовности АКБ:
               </p>
-              <div className="bg-slate-950 p-3 rounded-lg font-mono text-xs text-rose-300 border border-slate-800">
-                Staff_manual = max(1, ceil( targetThroughputPerHour / 12 ) * shiftsPerDay)
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+                k_avail = batteryRuntimeHours / (batteryRuntimeHours + batteryChargeMinutes / 60)
+                <br />
+                N_nominal = ⌈ targetThroughputPerHour / (robot.throughputPerHour × k_avail) ⌉
               </div>
-              <p className="text-xs text-slate-400 italic">
-                * 12 шт/ч — нормативная выработка одного ручного оператора в смену (согласно ТЗ/отраслевым стандартам).
-              </p>
-              <p>
-                Ежегодный ФОТ с учетом страх. взносов и налогов (+30%):
-              </p>
-              <div className="bg-slate-950 p-3 rounded-lg font-mono text-xs text-rose-300 border border-slate-800">
-                OPEX_labor = Staff_manual * salary * 1.30 * 12
-              </div>
-            </div>
-          </section>
 
-          {/* Section 3: Scenario 2 - Purchase */}
-          <section className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-5">
-            <h3 className="text-base font-bold text-emerald-400 flex items-center gap-2 mb-3">
-              <DollarSign className="w-5 h-5 text-emerald-400" />
-              3. Модель покупки парка (CAPEX)
-            </h3>
-            <div className="space-y-3 text-sm text-slate-300">
-              <ul className="list-disc list-inside space-y-1 text-slate-300">
-                <li><strong className="text-slate-100">Инфраструктура и интеграция:</strong> +15% к стоимости роботов (зарядные станции, WMS интеграция, пусконаладка).</li>
-                <li><strong className="text-slate-100">Удерживаемый персонал:</strong> 1 супервайзер на смену для управления роботизированным комплексом.</li>
-              </ul>
-              <div className="bg-slate-950 p-3 rounded-lg font-mono text-xs text-emerald-300 border border-slate-800 space-y-2">
-                <div>Total_CAPEX = N_fleet * robot.capexCostRub * 1.15 * (1 - discount)</div>
-                <div>Annual_OPEX = (N_fleet * robot.annualOpex) + (supervisors * salary * 1.30 * 12)</div>
-                <div>Net_Annual_Savings = OPEX_labor - Annual_OPEX</div>
-                <div>Payback_Years = Total_CAPEX / Net_Annual_Savings</div>
-                <div>5_Year_ROI = ((Net_Annual_Savings * 5) - Total_CAPEX) / Total_CAPEX * 100%</div>
-                <div>5_Year_TCO = Total_CAPEX + (Annual_OPEX * 5)</div>
-              </div>
-            </div>
-          </section>
-
-          {/* Section 4: Scenario 3 - RaaS */}
-          <section className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-5">
-            <h3 className="text-base font-bold text-purple-400 flex items-center gap-2 mb-3">
-              <ShieldCheck className="w-5 h-5 text-purple-400" />
-              4. Модель подписки (RaaS / Robotics as a Service)
-            </h3>
-            <div className="space-y-3 text-sm text-slate-300">
-              <p>
-                CAPEX равен 0. Все затраты переведены в операционные ежемесячные платежи:
+              <p className="font-semibold text-[#1A1A1A] pt-1">
+                1.2. Верификация цифровым двойником (Headless Fast-Forward симуляция):
               </p>
-              <div className="bg-slate-950 p-3 rounded-lg font-mono text-xs text-purple-300 border border-slate-800 space-y-2">
-                <div>CAPEX = 0</div>
-                <div>Annual_RaaS_OPEX = (N_fleet * robot.monthlyRaasCost * 12) + (supervisors * salary * 1.30 * 12)</div>
-                <div>5_Year_TCO = Annual_RaaS_OPEX * 5</div>
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+                eta_traffic = Q_simulated / Q_theoretical (фактор заторов и ожидания разъездов)
+                <br />
+                N_fleet = max(N_nominal, ⌈ N_nominal / max(0.5, eta_traffic) ⌉)
+                <br />
+                N_chargers = max(1, ⌈ N_fleet × (1 - k_avail) × 1.15 ⌉)
               </div>
             </div>
-          </section>
+          </div>
+
+          {/* РАЗДЕЛ 2: БАЗОВЫЙ ФОТ (AS-IS) */}
+          <div className="border border-[#D4AF37]/40 bg-[#FFFFFF] p-3.5 space-y-2 rounded-none shadow-2xs">
+            <div className="flex items-center gap-2 text-[#8A6826] font-bold uppercase text-[11px] border-b border-[#D4AF37]/30 pb-1.5">
+              <Users className="w-3.5 h-3.5" />
+              <span>2. Базовые расходы на персонал (Сценарий As-Is)</span>
+            </div>
+
+            <div className="space-y-1.5 text-[11px] text-[#4F4F47]">
+              <p className="font-semibold text-[#1A1A1A]">
+                2.1. Эквивалентный штат ручных комплектовщиков (норматив 12 паллет/час на человека):
+              </p>
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+                Workers_shift = ⌈ targetThroughputPerHour / 12 ⌉
+                <br />
+                Staff_manual = ⌈ Workers_shift × shiftsPerDay × 1.15 ⌉ (коэф. замещения отпусков/больничных)
+              </div>
+
+              <p className="font-semibold text-[#1A1A1A] pt-1">
+                2.2. Годовой фонд оплаты труда с налогами и накладными расходами:
+              </p>
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+                LoadedSalary = salary × 12 × (1 + insuranceRate[30.2%]) × (1 + hrOverhead[10.0%])
+                <br />
+                OPEX_manual = Staff_manual × LoadedSalary + Staff_manual × 140 000 ₽ (ТО рохлей и техники)
+              </div>
+            </div>
+          </div>
+
+          {/* РАЗДЕЛ 3: СТРУКТУРА CAPEX */}
+          <div className="border border-[#D4AF37]/40 bg-[#FFFFFF] p-3.5 space-y-2 rounded-none shadow-2xs">
+            <div className="flex items-center gap-2 text-[#8A6826] font-bold uppercase text-[11px] border-b border-[#D4AF37]/30 pb-1.5">
+              <DollarSign className="w-3.5 h-3.5" />
+              <span>3. Капитальные затраты роботизации (CAPEX)</span>
+            </div>
+
+            <div className="space-y-1.5 text-[11px] text-[#4F4F47]">
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+                CAPEX_hardware = N_fleet × robot.capexCostRub + N_chargers × 280 000 ₽ + 1 200 000 ₽ (RMS/WMS)
+                <br />
+                CAPEX_integration = CAPEX_hardware × k_integration[15%]
+                <br />
+                CAPEX_gross = (CAPEX_hardware + CAPEX_integration) × (1 - WhatIf.capexDiscount)
+                <br />
+                CAPEX_net = CAPEX_gross × (1 - StateSubsidyGrant[%])
+              </div>
+            </div>
+          </div>
+
+          {/* РАЗДЕЛ 4: OPEX РОБОТИЗАЦИИ */}
+          <div className="border border-[#D4AF37]/40 bg-[#FFFFFF] p-3.5 space-y-2 rounded-none shadow-2xs">
+            <div className="flex items-center gap-2 text-[#8A6826] font-bold uppercase text-[11px] border-b border-[#D4AF37]/30 pb-1.5">
+              <Cpu className="w-3.5 h-3.5" />
+              <span>4. Операционные затраты роботизированного комплекса (OPEX)</span>
+            </div>
+
+            <div className="space-y-1.5 text-[11px] text-[#4F4F47]">
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+                OPEX_supervisors = 1 × shiftsPerDay × (salary × 1.25) × 12 × (1 + 30.2%) × (1 + 10%)
+                <br />
+                Energy_kwh = N_fleet × 0.85 кВт × (shiftsPerDay × 8 × 250 ч) × 0.8
+                <br />
+                OPEX_energy = Energy_kwh × energyTariff[7.5 ₽/кВт·ч]
+                <br />
+                OPEX_maintenance = N_fleet × robot.annualOpexRub + 350 000 ₽ (серверное сопровождение)
+                <br />
+                OPEX_robot = OPEX_supervisors + OPEX_energy + OPEX_maintenance
+              </div>
+            </div>
+          </div>
+
+          {/* РАЗДЕЛ 5: DCF, NPV, IRR, НАЛОГОВЫЙ ЩИТ */}
+          <div className="border-2 border-[#D4AF37] bg-[#FFFFFF] p-3.5 space-y-2 rounded-none shadow-2xs">
+            <div className="flex items-center gap-2 text-[#8A6826] font-bold uppercase text-[11px] border-b border-[#D4AF37]/30 pb-1.5">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>5. Динамическая финансовая модель (5-летний DCF и инвестиционные критерии)</span>
+            </div>
+
+            <div className="space-y-1.5 text-[11px] text-[#4F4F47]">
+              <p className="font-semibold text-[#1A1A1A]">
+                5.1. Динамический денежный поток года t с раздельной индексацией:
+              </p>
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+                ΔOPEX_t = OPEX_manual × (1 + fotInflation[8%])^(t-1) - OPEX_robot,t
+                <br />
+                TaxShield_t = (CAPEX_net / 5) × 20% (амортизационная защита по налогу на прибыль)
+                <br />
+                CF_t = ΔOPEX_t + TaxShield_t
+                <br />
+                DCF_t = CF_t / (1 + WACC[18%])^t
+              </div>
+
+              <p className="font-semibold text-[#1A1A1A] pt-1">
+                5.2. Интегральные показатели экономической эффективности:
+              </p>
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+                NPV = ∑ [t=1..5] DCF_t - CAPEX_net
+                <br />
+                DPP = t_prev + (CAPEX_net - CumulativeDCF_prev) / DCF_current (дробный дисконтированный срок)
+                <br />
+                IRR: численное решение уравнения ∑ [t=1..5] (CF_t / (1 + IRR)^t) - CAPEX_net = 0 (метод Ньютона)
+                <br />
+                PI = (NPV + CAPEX_net) / CAPEX_net (индекс рентабельности инвестиций)
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 border-t border-slate-800 bg-slate-900/95 sticky bottom-0 flex justify-end">
+        <div className="bg-[#F9F9F6] border-t border-[#D4AF37]/50 px-5 py-2.5 flex items-center justify-between shrink-0">
+          <div className="text-[10px] text-[#4F4F47] flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Методология соответствует регламентам инвестиционного аудита промышленных объектов</span>
+          </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-5 py-2 rounded-lg text-sm transition-colors"
+            className="px-5 py-1.5 bg-[#D4AF37] hover:bg-[#BFA02E] active:bg-[#8A6826] text-[#1A1A1A] font-bold text-xs uppercase tracking-wider border border-[#BFA02E] transition rounded-none cursor-pointer shadow-xs"
           >
-            Понятно
+            [ ПОНЯТНО: ЗАКРЫТЬ ]
           </button>
         </div>
       </div>

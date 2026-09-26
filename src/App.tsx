@@ -80,27 +80,31 @@ export default function App() {
   });
   const [currentTopology, setCurrentTopology] = useState<FacilityTopology | null>(null);
   const [hasCalculatedAiFleet, setHasCalculatedAiFleet] = useState<boolean>(false);
-  // REO: Реактивный сброс статуса расчета при изменении параметров среды, топологии или квоты
-  const isFirstMountRef = useRef(true);
-  useEffect(() => {
-    if (isFirstMountRef.current) {
-      isFirstMountRef.current = false;
-      return;
-    }
-    // Если изменился грузопоток, вес груза, профиль, смены или топология склада — сбрасываем расчет
-    setHasCalculatedAiFleet(false);
-  }, [
-    facility.targetThroughputPerHour,
-    facility.requiredPayloadKg,
-    facility.shiftsPerDay,
-    facility.industry,
-    facility.aisleWidthM,
-    facility.operatingTempRange.min,
-    facility.operatingTempRange.max,
-    facility.floorSurfaceQuality,
-    facility.cleanlinessClass,
-    currentTopology,
-  ]);
+  // Флаг актуальности аналитики Зоны 3
+const [hasCalculatedAnalytics, setHasCalculatedAnalytics] = useState<boolean>(false);
+  // REO: Реактивный сброс статуса расчета при любом изменении склада или требований
+const isFirstMountRef = useRef(true);
+useEffect(() => {
+  if (isFirstMountRef.current) {
+    isFirstMountRef.current = false;
+    return;
+  }
+  setHasCalculatedAiFleet(false);
+  setHasCalculatedAnalytics(false); // <-- СБРАСЫВАЕМ ЗОНУ 3
+}, [
+  facility.targetThroughputPerHour,
+  facility.requiredPayloadKg,
+  facility.shiftsPerDay,
+  facility.industry,
+  facility.aisleWidthM,
+  facility.operatingTempRange.min,
+  facility.operatingTempRange.max,
+  facility.floorSurfaceQuality,
+  facility.cleanlinessClass,
+  currentTopology,
+  manualFleetCounts,
+  fleetMode,
+]);
 
   const handleCalculateAiFleet = useCallback(() => {
     setHasCalculatedAiFleet(true);

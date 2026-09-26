@@ -17,6 +17,8 @@ export const graphNodeSchema = z.object({
   y: z.number(),
   zLevel: z.number().default(0),
   label: z.string().optional(),
+  skuId: z.string().optional(),
+  capacity: z.number().optional(),
 });
 
 export type GraphNode = z.infer<typeof graphNodeSchema>;

@@ -5,12 +5,7 @@ import {
   Play,
   Pause,
   Zap,
-  Activity,
-  Gauge,
   Bot,
-  AlertTriangle,
-  CheckCircle2,
-  Network,
   Volume2,
   VolumeX,
   Maximize,
@@ -49,11 +44,8 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   isMuted,
   onToggleMute,
   onToggleFullscreen,
-  telemetry,
-  targetThroughputPerHour,
   fleetSize,
   selectedRobotName,
-  spectralAnalysis,
 }) => {
   const isDisabled = fleetSize === 0 || !selectedRobotName;
   const speedOptions = [1, 2, 5, 10];
@@ -71,51 +63,18 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
     return `${mm}:${ss}`;
   };
 
-  const getConnectivityBadge = () => {
-    if (!spectralAnalysis) return null;
-    const { algebraicConnectivity } = spectralAnalysis;
-
-    const isBottleneck =
-      algebraicConnectivity < 0.05 && (telemetry.queuedCount >= 2 || telemetry.congestionDetected);
-
-    if (isBottleneck) {
-      return {
-        label: `Связность сети (λ₂ = ${algebraicConnectivity}) — Обнаружено узкое горлышко`,
-        statusText: 'Узкое горлышко',
-        colorClass: 'text-red-400',
-        bgClass: 'bg-red-500/10 border-red-500/20',
-      };
-    }
-
-    if (algebraicConnectivity >= 0.15) {
-      return {
-        label: `Связность сети (λ₂ = ${algebraicConnectivity}) — Свободная топология`,
-        statusText: 'Свободная топология',
-        colorClass: 'text-emerald-400',
-        bgClass: 'bg-emerald-500/10 border-emerald-500/20',
-      };
-    }
-
-    return {
-      label: `Связность сети (λ₂ = ${algebraicConnectivity}) — Высокая проходимость`,
-      statusText: 'Высокая проходимость',
-      colorClass: 'text-emerald-400',
-      bgClass: 'bg-emerald-500/10 border-emerald-500/20',
-    };
-  };
-
-  const connectivityBadge = getConnectivityBadge();
-
   return (
-    <div className="bg-slate-900/95 border-t border-slate-700/80 p-4">
-      {/* 1. Timeline Scrubber HUD Bar (STRICTLY BELOW CANVAS) */}
-      <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 mb-3">
-        <div className="flex items-center justify-between text-xs font-bold text-slate-300 mb-2">
-          <span className="text-blue-400 font-mono text-sm">
+    <div className="bg-[#FFFFFF] border-t border-[#D4AF37]/40 px-4 py-2.5 font-mono text-xs text-[#1A1A1A] select-none shadow-sm rounded-none">
+      {/* 1. Timeline Scrubber HUD Bar */}
+      <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 px-3 py-1.5 mb-2 rounded-none">
+        <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+          <span className="text-[#8A6826] font-mono text-xs tabular-nums">
             {formatTime(currentTimestampSec)}
           </span>
-          <span className="text-slate-400 text-[11px]">Воспроизведение реплея</span>
-          <span className="text-slate-400 font-mono text-xs">
+          <span className="text-[#4F4F47] text-[10px] uppercase tracking-wider">
+            [ ВОСПРОИЗВЕДЕНИЕ СИМУЛЯЦИОННОГО РЕПЛЕЯ ]
+          </span>
+          <span className="text-[#1A1A1A] font-mono text-xs tabular-nums">
             {formatTime(totalDurationSec)}
           </span>
         </div>
@@ -127,57 +86,57 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
           value={Math.round(currentTimestampSec)}
           onChange={(e) => onSeek(parseFloat(e.target.value))}
           disabled={isDisabled}
-          className="w-full accent-blue-500 bg-slate-700 h-2 rounded-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-full accent-[#8A6826] bg-[#E5E5DF] h-1.5 cursor-pointer rounded-none disabled:opacity-40 disabled:cursor-not-allowed"
         />
       </div>
 
-      {/* 2. Control Buttons Row */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+      {/* 2. Control Buttons & Fleet Status Row */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         {/* Play/Pause Button */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onTogglePlayPause}
             disabled={isDisabled}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all shadow-md ${
+            className={`flex items-center gap-2 px-4 py-1.5 font-bold uppercase text-[11px] tracking-wider border rounded-none transition cursor-pointer ${
               isDisabled
-                ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+                ? 'bg-[#E5E5DF] text-[#8C8C85] border-[#D1D1CB] cursor-not-allowed'
                 : isPlaying
-                ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20'
-                : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
+                ? 'bg-[#D4AF37] hover:bg-[#BFA02E] text-[#1A1A1A] border-[#BFA02E]'
+                : 'bg-[#10B981] hover:bg-[#059669] text-white border-[#059669]'
             }`}
           >
             {isPlaying ? (
               <>
-                <Pause className="w-4 h-4 fill-current" />
+                <Pause className="w-3.5 h-3.5 fill-current" />
                 <span>Пауза</span>
               </>
             ) : (
               <>
-                <Play className="w-4 h-4 fill-current" />
+                <Play className="w-3.5 h-3.5 fill-current" />
                 <span>Старт</span>
               </>
             )}
           </button>
         </div>
 
-        {/* Speed Multiplier Selectors */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-400 mr-1 flex items-center gap-1">
-            <Zap className="w-3.5 h-3.5 text-amber-400" />
-            Ускорение:
+        {/* Speed Multipliers */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] font-bold text-[#4F4F47] mr-1 flex items-center gap-1">
+            <Zap className="w-3 h-3 text-[#8A6826]" />
+            СКОРОСТЬ:
           </span>
-          <div className="flex items-center bg-slate-800 border border-slate-700 rounded-lg p-1">
+          <div className="flex items-center border border-[#D4AF37]/30 bg-[#F9F9F6]">
             {speedOptions.map((speed) => (
               <button
                 key={speed}
                 type="button"
                 onClick={() => onSpeedChange(speed)}
                 disabled={isDisabled}
-                className={`px-2.5 py-1 text-xs font-bold rounded transition-colors ${
+                className={`px-2.5 py-1 text-[11px] font-bold transition rounded-none ${
                   speedMultiplier === speed
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#D4AF37] text-[#1A1A1A]'
+                    : 'text-[#4F4F47] hover:text-[#1A1A1A] hover:bg-[#F4F4F0]'
                 }`}
               >
                 {speed}x
@@ -186,18 +145,18 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
           </div>
         </div>
 
-        {/* Volume & Audio Synth Control */}
-        <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg p-1.5 px-3">
+        {/* Volume & Audio Controls */}
+        <div className="flex items-center gap-2 bg-[#F9F9F6] border border-[#D4AF37]/30 px-2.5 py-1">
           <button
             type="button"
             onClick={onToggleMute}
-            className="text-slate-300 hover:text-white transition-colors"
+            className="text-[#4F4F47] hover:text-[#1A1A1A] transition"
             title={isMuted ? 'Включить звук' : 'Выключить звук'}
           >
             {isMuted || volume === 0 ? (
-              <VolumeX className="w-4 h-4 text-red-400" />
+              <VolumeX className="w-3.5 h-3.5 text-red-500" />
             ) : (
-              <Volume2 className="w-4 h-4 text-blue-400" />
+              <Volume2 className="w-3.5 h-3.5 text-[#8A6826]" />
             )}
           </button>
           <input
@@ -207,7 +166,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
             step="0.05"
             value={isMuted ? 0 : volume}
             onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-            className="w-16 accent-blue-500 bg-slate-700 h-1.5 rounded cursor-pointer"
+            className="w-16 accent-[#8A6826] bg-[#E5E5DF] h-1 cursor-pointer rounded-none"
           />
         </div>
 
@@ -215,134 +174,26 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
         <button
           type="button"
           onClick={onToggleFullscreen}
-          className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+          className="flex items-center gap-1 px-2.5 py-1 bg-[#F9F9F6] hover:bg-[#F4F4F0] border border-[#D4AF37]/30 text-[11px] font-semibold text-[#1A1A1A] transition rounded-none"
           title="Полноэкранный режим"
         >
-          <Maximize className="w-4 h-4 text-slate-400" />
-          <span>Fullscreen</span>
+          <Maximize className="w-3.5 h-3.5 text-[#8A6826]" />
+          <span>FULLSCREEN</span>
         </button>
 
-        {/* Selected Robot & Fleet Size Badge */}
-        <div className="flex items-center gap-2 text-xs text-slate-300 bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-lg">
-          <Bot className="w-4 h-4 text-blue-400" />
+        {/* Selected Robot Spec & Fleet Size Badge */}
+        <div className="flex items-center gap-2 bg-[#F4F4F0] border border-[#D4AF37]/40 px-3 py-1 font-semibold text-[11px]">
+          <Bot className="w-3.5 h-3.5 text-[#8A6826]" />
           <span>
             {selectedRobotName ? (
               <>
-                <strong>{selectedRobotName}</strong> ({fleetSize} ед.)
+                <span className="text-[#1A1A1A] font-bold">{selectedRobotName}</span>{' '}
+                <span className="text-[#8A6826] tabular-nums">({fleetSize} ед.)</span>
               </>
             ) : (
-              <span className="text-amber-400">Робот не выбран</span>
+              <span className="text-amber-700">Парк не укомплектован</span>
             )}
           </span>
-        </div>
-      </div>
-
-      {/* Live Telemetry KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        {/* 1. Throughput KPI Card */}
-        <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
-          <div className="p-2.5 bg-blue-500/10 text-blue-400 rounded-lg border border-blue-500/20 shrink-0">
-            <Gauge className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-[11px] font-medium text-slate-400">Фактическая выработка</p>
-            <p className="text-sm font-bold text-slate-100">
-              {telemetry.isCalibrating ? (
-                <span className="text-blue-400 text-xs italic">Калибровка...</span>
-              ) : (
-                <>
-                  <span className="text-blue-400 text-base">{telemetry.realizedThroughputPerHour}</span>
-                  <span className="text-slate-400 font-normal"> / {targetThroughputPerHour} шт/ч</span>
-                </>
-              )}
-            </p>
-          </div>
-        </div>
-
-        {/* 2. Fleet Utilization KPI Card */}
-        <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
-          <div className="p-2.5 bg-purple-500/10 text-purple-400 rounded-lg border border-purple-500/20 shrink-0">
-            <Activity className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-[11px] font-medium text-slate-400">Загрузка парка</p>
-            <div className="flex items-center gap-2">
-              <p className="text-base font-bold text-purple-400">
-                {telemetry.fleetUtilizationPercent}%
-              </p>
-              <div className="w-16 bg-slate-700 rounded-full h-1.5 overflow-hidden">
-                <div
-                  className="bg-purple-500 h-1.5 rounded-full transition-all duration-300"
-                  style={{ width: `${telemetry.fleetUtilizationPercent}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. Fleet Status Breakdown */}
-        <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20 shrink-0">
-            <Bot className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-[11px] font-medium text-slate-400">Статус парка</p>
-            <p className="text-xs font-semibold text-slate-200">
-              <span className="text-emerald-400">{telemetry.activeInTransitCount}</span> на линии /{' '}
-              <span className="text-amber-400">{telemetry.chargingCount}</span> на зарядке
-            </p>
-          </div>
-        </div>
-
-        {/* 4. Traffic & Congestion Badge Card */}
-        <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
-          {telemetry.congestionDetected ? (
-            <>
-              <div className="p-2.5 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20 animate-pulse shrink-0">
-                <AlertTriangle className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-[11px] font-medium text-slate-400">Трафик и заторы</p>
-                <p className="text-xs font-bold text-amber-400 leading-tight">
-                  Обнаружено ожидание: {telemetry.congestionNodeLabel || 'узловая точка'}
-                </p>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20 shrink-0">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-[11px] font-medium text-slate-400">Трафик и заторы</p>
-                <p className="text-xs font-bold text-emerald-400">Движение свободное</p>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* 5. Spectral Graph Connectivity Card */}
-        <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex items-center gap-3">
-          <div
-            className={`p-2.5 rounded-lg border shrink-0 ${
-              connectivityBadge?.bgClass || 'bg-slate-700/50 border-slate-600'
-            }`}
-          >
-            <Network className={`w-5 h-5 ${connectivityBadge?.colorClass || 'text-slate-400'}`} />
-          </div>
-          <div>
-            <p className="text-[11px] font-medium text-slate-400">Связность сети (λ₂)</p>
-            {spectralAnalysis ? (
-              <p className={`text-xs font-bold ${connectivityBadge?.colorClass}`}>
-                λ₂ = {spectralAnalysis.algebraicConnectivity}{' '}
-                <span className="text-[10px] opacity-80 block font-normal">
-                  ({connectivityBadge?.statusText})
-                </span>
-              </p>
-            ) : (
-              <p className="text-xs font-semibold text-slate-400">—</p>
-            )}
-          </div>
         </div>
       </div>
     </div>

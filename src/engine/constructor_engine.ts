@@ -397,8 +397,9 @@ export function rebuildTopologyFromGrid(
     const y = parseInt(yStr, 10);
     if (isNaN(x) || isNaN(y)) return;
 
-    const worldX = Math.round((x + 0.5) * cellSizeM * 10) / 10;
-    const worldY = Math.round((y + 0.5) * cellSizeM * 10) / 10;
+    // В Three.js сетка и пол отцентрированы в начале координат (0, 0)
+    const worldX = Math.round(((x + 0.5) * cellSizeM) * 10) / 10;
+    const worldY = Math.round(((y + 0.5) * cellSizeM) * 10) / 10;
 
     let graphNodeType: NodeType = 'WAYPOINT';
     let label: string | undefined = undefined;

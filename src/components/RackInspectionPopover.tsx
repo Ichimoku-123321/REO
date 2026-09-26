@@ -167,15 +167,16 @@ export const RackInspectionPopover: React.FC<RackInspectionPopoverPropsExtended>
             <input
               type="number"
               min="1"
-              max="200"
+              max="5000"
               value={slotsPerRack}
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10);
-                if (!isNaN(val) && val > 0) {
-                  onChangeCapacity(rackKey, val);
+                if (!isNaN(val)) {
+                  const clamped = Math.min(5000, Math.max(1, val));
+                  onChangeCapacity(rackKey, clamped);
                 }
               }}
-              className="w-14 bg-[#FFFFFF] border border-[#D4AF37]/50 px-1 py-0.5 text-right outline-none"
+              className="w-16 bg-[#FFFFFF] border border-[#D4AF37]/50 px-1 py-0.5 text-right font-bold outline-none"
             />
             <span>паллет</span>
           </div>

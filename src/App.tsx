@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { SEED_ROBOTS } from './data/robots.seed.js';
 import { FACILITY_PRESETS } from './data/presets.js';
 import { evaluateEligibility } from './engine/dss.js';
@@ -80,6 +80,27 @@ export default function App() {
   });
   const [currentTopology, setCurrentTopology] = useState<FacilityTopology | null>(null);
   const [hasCalculatedAiFleet, setHasCalculatedAiFleet] = useState<boolean>(false);
+  // REO: Реактивный сброс статуса расчета при изменении параметров среды, топологии или квоты
+  const isFirstMountRef = useRef(true);
+  useEffect(() => {
+    if (isFirstMountRef.current) {
+      isFirstMountRef.current = false;
+      return;
+    }
+    // Если изменился грузопоток, вес груза, профиль, смены или топология склада — сбрасываем расчет
+    setHasCalculatedAiFleet(false);
+  }, [
+    facility.targetThroughputPerHour,
+    facility.requiredPayloadKg,
+    facility.shiftsPerDay,
+    facility.industry,
+    facility.aisleWidthM,
+    facility.operatingTempRange.min,
+    facility.operatingTempRange.max,
+    facility.floorSurfaceQuality,
+    facility.cleanlinessClass,
+    currentTopology,
+  ]);
 
   const handleCalculateAiFleet = useCallback(() => {
     setHasCalculatedAiFleet(true);

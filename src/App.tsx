@@ -225,8 +225,11 @@ useEffect(() => {
     return activeComposition.reduce((sum, item) => sum + item.count, 0);
   }, [activeComposition]);
 
-  // Economic Evaluation (сквозной расчёт с учётом симулятора и штрафов)
   const activeEconomics: EconomicEvaluation | null = useMemo(() => {
+    if (!hasCalculatedAnalytics) {
+      return null;
+    }
+
     if (activeComposition.length > 0) {
       return calculateCompositionEconomics(facility, activeComposition, whatIf, currentTopology || undefined, lastSimResult);
     }
@@ -234,7 +237,7 @@ useEffect(() => {
       return calculateEconomics(facility, selectedRobot, whatIf, currentTopology || undefined, lastSimResult);
     }
     return null;
-  }, [facility, activeComposition, selectedRobot, whatIf, currentTopology, lastSimResult]);
+  }, [hasCalculatedAnalytics, facility, activeComposition, selectedRobot, whatIf, currentTopology, lastSimResult]);
 
   const spectralResult = useMemo(() => {
     const topology = generateFacilityTopology(facility);

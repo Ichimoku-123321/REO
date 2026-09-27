@@ -226,11 +226,11 @@ export function calculateEconomics(
   let trafficEfficiencyEta = 0.92;
   if (simResult && typeof (simResult as any).trafficCongestionFactor === 'number') {
     trafficEfficiencyEta = (simResult as any).trafficCongestionFactor;
-  } else if (simResult && simResult.realizedThroughputPerHour > 0) {
-    const theoretical = fleetSize * robot.throughputPerHour * availabilityCoeff;
-    trafficEfficiencyEta = theoretical > 0 
-      ? Math.min(1.0, Math.round((simResult.realizedThroughputPerHour / theoretical) * 100) / 100)
-      : 0.92;
+  } else if (simResult && simResult.realizedThroughputPerHour > 0 && effectiveThroughput > 0) {
+    trafficEfficiencyEta = Math.min(
+      1.0,
+      Math.max(0.1, Math.round((simResult.realizedThroughputPerHour / effectiveThroughput) * 100) / 100)
+    );
   }
 
   const nominalFleetSize = calculateFleetSize(

@@ -8,6 +8,7 @@ import {
   TrendingUp,
   Cpu,
   ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface FormulaModalProps {
@@ -58,21 +59,25 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({ isOpen, onClose }) =
 
             <div className="space-y-1.5 text-[11px] text-[#4F4F47]">
               <p className="font-semibold text-[#1A1A1A]">
-                1.1. Номинальная потребность парка по коэффициенту готовности АКБ:
+                1.1. Цикл рейса и эффективная производительность робота:
               </p>
-              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto leading-relaxed">
                 k_avail = batteryRuntimeHours / (batteryRuntimeHours + batteryChargeMinutes / 60)
                 <br />
-                N_nominal = ⌈ targetThroughputPerHour / (robot.throughputPerHour × k_avail) ⌉
+                t_trip = D_cycle / (v_max × η_traffic) + τ_манипуляций (70 с на подъем/опускание паллеты)
+                <br />
+                Q_effective = min(robot.throughputPerHour, 3600 / t_trip) × k_avail
+                <br />
+                N_nominal = ⌈ targetThroughputPerHour / Q_effective ⌉
               </div>
 
               <p className="font-semibold text-[#1A1A1A] pt-1">
-                1.2. Верификация цифровым двойником (Headless Fast-Forward симуляция):
+                1.2. Верификация цифровым двойником (Дискретно-событийная 3D FSM-симуляция):
               </p>
-              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
-                eta_traffic = Q_simulated / Q_theoretical (фактор заторов и ожидания разъездов)
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto leading-relaxed">
+                η_traffic = Q_simulated / Q_theoretical (фактор плотности трафика и ожидания разъездов)
                 <br />
-                N_fleet = max(N_nominal, ⌈ N_nominal / max(0.5, eta_traffic) ⌉)
+                N_fleet = max(N_nominal, ⌈ N_nominal / max(0.5, η_traffic) ⌉)
                 <br />
                 N_chargers = max(1, ⌈ N_fleet × (1 - k_avail) × 1.15 ⌉)
               </div>
@@ -90,16 +95,18 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({ isOpen, onClose }) =
               <p className="font-semibold text-[#1A1A1A]">
                 2.1. Эквивалентный штат ручных комплектовщиков (норматив 12 паллет/час на человека):
               </p>
-              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto leading-relaxed">
                 Workers_shift = ⌈ targetThroughputPerHour / 12 ⌉
                 <br />
-                Staff_manual = ⌈ Workers_shift × shiftsPerDay × 1.15 ⌉ (коэф. замещения отпусков/больничных)
+                Staff_base = Workers_shift × shiftsPerDay
+                <br />
+                Staff_manual = ⌈ Staff_base × 1.15 ⌉ (коэффициент замещения на отпуска/больничные по ТК РФ)
               </div>
 
               <p className="font-semibold text-[#1A1A1A] pt-1">
                 2.2. Годовой фонд оплаты труда с налогами и накладными расходами:
               </p>
-              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto leading-relaxed">
                 LoadedSalary = salary × 12 × (1 + insuranceRate[30.2%]) × (1 + hrOverhead[10.0%])
                 <br />
                 OPEX_manual = Staff_manual × LoadedSalary + Staff_manual × 140 000 ₽ (ТО рохлей и техники)
@@ -115,7 +122,7 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({ isOpen, onClose }) =
             </div>
 
             <div className="space-y-1.5 text-[11px] text-[#4F4F47]">
-              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto leading-relaxed">
                 CAPEX_hardware = N_fleet × robot.capexCostRub + N_chargers × 280 000 ₽ + 1 200 000 ₽ (RMS/WMS)
                 <br />
                 CAPEX_integration = CAPEX_hardware × k_integration[15%]
@@ -127,15 +134,15 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({ isOpen, onClose }) =
             </div>
           </div>
 
-          {/* РАЗДЕЛ 4: OPEX РОБОТИЗАЦИИ */}
+          {/* РАЗДЕЛ 4: OPEX РОБОТИЗАЦИИ И ШТРАФЫ SLA */}
           <div className="border border-[#D4AF37]/40 bg-[#FFFFFF] p-3.5 space-y-2 rounded-none shadow-2xs">
             <div className="flex items-center gap-2 text-[#8A6826] font-bold uppercase text-[11px] border-b border-[#D4AF37]/30 pb-1.5">
               <Cpu className="w-3.5 h-3.5" />
-              <span>4. Операционные затраты роботизированного комплекса (OPEX)</span>
+              <span>4. Операционные затраты (OPEX) и штрафная модель SLA</span>
             </div>
 
             <div className="space-y-1.5 text-[11px] text-[#4F4F47]">
-              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto leading-relaxed">
                 OPEX_supervisors = 1 × shiftsPerDay × (salary × 1.25) × 12 × (1 + 30.2%) × (1 + 10%)
                 <br />
                 Energy_kwh = N_fleet × 0.85 кВт × (shiftsPerDay × 8 × 250 ч) × 0.8
@@ -144,7 +151,15 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({ isOpen, onClose }) =
                 <br />
                 OPEX_maintenance = N_fleet × robot.annualOpexRub + 350 000 ₽ (серверное сопровождение)
                 <br />
-                OPEX_robot = OPEX_supervisors + OPEX_energy + OPEX_maintenance
+                <span className="text-red-700 font-bold">
+                  SLA_Penalty = max(0, targetThroughputPerHour - Q_simulated) × Hours_annual × 1 200 ₽/палл
+                </span>
+                <br />
+                <div className="pt-1 mt-1 border-t border-[#D4AF37]/20">
+                  <strong>[CAPEX OPEX]:</strong> OPEX_robot = OPEX_supervisors + OPEX_energy + OPEX_maintenance + SLA_Penalty
+                  <br />
+                  <strong>[RaaS OPEX]:</strong> OPEX_raas = (N_fleet × monthlyRaas × 12) + OPEX_supervisors + OPEX_energy + SLA_Penalty
+                </div>
               </div>
             </div>
           </div>
@@ -160,10 +175,10 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({ isOpen, onClose }) =
               <p className="font-semibold text-[#1A1A1A]">
                 5.1. Динамический денежный поток года t с раздельной индексацией:
               </p>
-              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto leading-relaxed">
                 ΔOPEX_t = OPEX_manual × (1 + fotInflation[8%])^(t-1) - OPEX_robot,t
                 <br />
-                TaxShield_t = (CAPEX_net / 5) × 20% (амортизационная защита по налогу на прибыль)
+                TaxShield_t = (CAPEX_net / 5) × 20% (амортизационная защита по налогу на прибыль, только CAPEX)
                 <br />
                 CF_t = ΔOPEX_t + TaxShield_t
                 <br />
@@ -173,12 +188,12 @@ export const FormulaModal: React.FC<FormulaModalProps> = ({ isOpen, onClose }) =
               <p className="font-semibold text-[#1A1A1A] pt-1">
                 5.2. Интегральные показатели экономической эффективности:
               </p>
-              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto">
+              <div className="bg-[#F9F9F6] border border-[#D4AF37]/30 p-2 font-mono text-[10.5px] text-[#1A1A1A] overflow-x-auto leading-relaxed">
                 NPV = ∑ [t=1..5] DCF_t - CAPEX_net
                 <br />
                 DPP = t_prev + (CAPEX_net - CumulativeDCF_prev) / DCF_current (дробный дисконтированный срок)
                 <br />
-                IRR: численное решение уравнения ∑ [t=1..5] (CF_t / (1 + IRR)^t) - CAPEX_net = 0 (метод Ньютона)
+                IRR: численное решение уравнения ∑ [t=1..5] (CF_t / (1 + IRR)^t) - CAPEX_net = 0 (метод Ньютона-Рафсона)
                 <br />
                 PI = (NPV + CAPEX_net) / CAPEX_net (индекс рентабельности инвестиций)
               </div>

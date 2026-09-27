@@ -32,20 +32,28 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
   const inHours = getHoursFromInterval(schedule.inboundIntervalValue, schedule.inboundIntervalUnit);
   const outHours = getHoursFromInterval(schedule.outboundIntervalValue, schedule.outboundIntervalUnit);
 
-  // Daily flow rates in pallets / day
-  const rInPerDay = inHours > 0 ? (schedule.inboundBatchVolume / inHours) * 24 : 0;
-  const rOutPerDay = outHours > 0 ? (schedule.outboundBatchVolume / outHours) * 24 : 0;
+  // Валидация нулевых объемов
+  const isInboundZero = !schedule.inboundBatchVolume || schedule.inboundBatchVolume <= 0;
+  const isOutboundZero = !schedule.outboundBatchVolume || schedule.outboundBatchVolume <= 0;
+  const isZeroFlow = isInboundZero || isOutboundZero;
 
-  // Single batch exceeding total rack capacity
-  const isSingleBatchOverflow = schedule.inboundBatchVolume > totalPalletCapacity;
+  // Расчет суточных скоростей
+  const rInPerDay = inHours > 0 && !isInboundZero ? (schedule.inboundBatchVolume / inHours) * 24 : 0;
+  const rOutPerDay = outHours > 0 && !isOutboundZero ? (schedule.outboundBatchVolume / outHours) * 24 : 0;
+
+  // Проверка переполнения вместимости стеллажей
+  const isSingleBatchOverflow = totalPalletCapacity > 0 && schedule.inboundBatchVolume > totalPalletCapacity;
+  const hasNoRacks = totalPalletCapacity === 0;
 
   const netAccumulationPerDay = Math.round(rInPerDay - rOutPerDay);
   const diffOutboundExcess = Math.round(rOutPerDay - rInPerDay);
 
-  const hoursToFull = netAccumulationPerDay > 0
+  const hoursToFull = netAccumulationPerDay > 0 && totalPalletCapacity > 0
     ? Math.round((totalPalletCapacity / (rInPerDay - rOutPerDay)) * 24)
     : null;
   const daysToFull = hoursToFull !== null ? (hoursToFull / 24).toFixed(1) : null;
+
+  const isFormValid = !isZeroFlow && !isSingleBatchOverflow;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 font-mono text-xs">
@@ -61,7 +69,7 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 hover:bg-[#EAEAE6] text-[#4F4F47] hover:text-[#1A1A1A] rounded-none transition"
+            className="p-1 hover:bg-[#EAEAE6] text-[#4F4F47] hover:text-[#1A1A1A] rounded-none transition cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -103,7 +111,7 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
                     onChange={(e) =>
                       onChangeSchedule({
                         ...schedule,
-                        inboundIntervalValue: parseFloat(e.target.value) || 1,
+                        inboundIntervalValue: Math.max(0.1, parseFloat(e.target.value) || 1),
                       })
                     }
                     className="w-full bg-[#F9F9F6] border border-[#D4AF37]/50 px-2 py-1 text-[#1A1A1A] outline-none rounded-none"
@@ -134,14 +142,17 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
                     type="number"
                     min="1"
                     step="1"
-                    value={schedule.inboundBatchVolume}
+                    value={schedule.inboundBatchVolume || ''}
+                    placeholder="мин. 1"
                     onChange={(e) =>
                       onChangeSchedule({
                         ...schedule,
-                        inboundBatchVolume: parseInt(e.target.value, 10) || 0,
+                        inboundBatchVolume: Math.max(0, parseInt(e.target.value, 10) || 0),
                       })
                     }
-                    className="w-full bg-[#F9F9F6] border border-[#D4AF37]/50 px-2 py-1 text-[#1A1A1A] outline-none rounded-none"
+                    className={`w-full bg-[#F9F9F6] border px-2 py-1 text-[#1A1A1A] outline-none rounded-none ${
+                      isInboundZero ? 'border-red-400 focus:border-red-500' : 'border-[#D4AF37]/50'
+                    }`}
                   />
                   <span className="absolute right-2 top-1 text-[#4F4F47] font-bold text-[10px]">
                     паллет
@@ -171,7 +182,7 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
                     onChange={(e) =>
                       onChangeSchedule({
                         ...schedule,
-                        outboundIntervalValue: parseFloat(e.target.value) || 1,
+                        outboundIntervalValue: Math.max(0.1, parseFloat(e.target.value) || 1),
                       })
                     }
                     className="w-full bg-[#F9F9F6] border border-[#D4AF37]/50 px-2 py-1 text-[#1A1A1A] outline-none rounded-none"
@@ -202,14 +213,17 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
                     type="number"
                     min="1"
                     step="1"
-                    value={schedule.outboundBatchVolume}
+                    value={schedule.outboundBatchVolume || ''}
+                    placeholder="мин. 1"
                     onChange={(e) =>
                       onChangeSchedule({
                         ...schedule,
-                        outboundBatchVolume: parseInt(e.target.value, 10) || 0,
+                        outboundBatchVolume: Math.max(0, parseInt(e.target.value, 10) || 0),
                       })
                     }
-                    className="w-full bg-[#F9F9F6] border border-[#D4AF37]/50 px-2 py-1 text-[#1A1A1A] outline-none rounded-none"
+                    className={`w-full bg-[#F9F9F6] border px-2 py-1 text-[#1A1A1A] outline-none rounded-none ${
+                      isOutboundZero ? 'border-red-400 focus:border-red-500' : 'border-[#D4AF37]/50'
+                    }`}
                   />
                   <span className="absolute right-2 top-1 text-[#4F4F47] font-bold text-[10px]">
                     паллет
@@ -221,28 +235,45 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
         </div>
 
         {/* Dynamic Status / Alert Banner */}
-        {isSingleBatchOverflow ? (
+        {isZeroFlow ? (
+          <div className="p-3 bg-red-50 border border-red-400 text-red-900 font-bold mb-4 flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="uppercase text-xs tracking-tight">⚠️ Требуется задать грузопоток</div>
+              <div className="text-[11px] font-normal mt-0.5">
+                Объемы входящей и исходящей партий должны быть строго более 0 паллет. Нулевой грузопоток заблокирован.
+              </div>
+            </div>
+          </div>
+        ) : isSingleBatchOverflow ? (
           <div className="p-3 bg-red-100 border border-red-400 text-red-900 font-bold mb-4 flex items-start gap-2">
             <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
             <div>
-              <div className="uppercase text-xs tracking-tight">⚠️ Внимание: Переполнение единовременной партией!</div>
+              <div className="uppercase text-xs tracking-tight">⚠️ Внимание: Переполнение буфера партии!</div>
               <div className="text-[11px] font-normal mt-0.5">
                 Объем входящей партии (Q_in = {schedule.inboundBatchVolume} паллет) превышает общую вместимость стеллажей (C_total = {totalPalletCapacity} паллет).
               </div>
+            </div>
+          </div>
+        ) : hasNoRacks ? (
+          <div className="p-3 bg-amber-50 border border-amber-400 text-amber-900 font-bold mb-4 flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              ⚠️ На складе пока нет стеллажей. Разместите секции в CAD для буферизации грузов.
             </div>
           </div>
         ) : netAccumulationPerDay > 0 ? (
           <div className="p-3 bg-amber-50 border border-amber-400 text-amber-900 font-bold mb-4 flex items-start gap-2">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div className="text-xs">
-              ⚠️ Внимание: привоз превышает отгрузку на {netAccumulationPerDay} паллет/сут. Буфер склада будет полностью исчерпан примерно через {hoursToFull} ч. ({daysToFull} дн.).
+              ⚠️ Привоз превышает отгрузку на {netAccumulationPerDay} паллет/сут. Стеллажи заполнятся примерно через {hoursToFull} ч. ({daysToFull} дн.).
             </div>
           </div>
         ) : diffOutboundExcess > 0 ? (
           <div className="p-3 bg-emerald-50 border border-emerald-400 text-emerald-800 font-bold mb-4 flex items-start gap-2">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
             <div className="text-xs">
-              ℹ️ Внимание: объем отгрузки превышает привоз на {diffOutboundExcess} паллет/сут. Склад не будет заполняться на 100%, {diffOutboundExcess} паллет суточной пропускной способности отгрузки будут работать вхолостую.
+              ℹ️ Объем отгрузки превышает привоз на {diffOutboundExcess} паллет/сут. Линия отгрузки работает с запасом пропускной способности.
             </div>
           </div>
         ) : (
@@ -254,24 +285,30 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
 
         <button
           type="button"
-           onClick={() => {
-          const inH = getHoursFromInterval(schedule.inboundIntervalValue, schedule.inboundIntervalUnit);
-          const outH = getHoursFromInterval(schedule.outboundIntervalValue, schedule.outboundIntervalUnit);
+          disabled={!isFormValid}
+          onClick={() => {
+            if (!isFormValid) return;
+            const inH = getHoursFromInterval(schedule.inboundIntervalValue, schedule.inboundIntervalUnit);
+            const outH = getHoursFromInterval(schedule.outboundIntervalValue, schedule.outboundIntervalUnit);
 
-          const qInPerHour = inH > 0 ? schedule.inboundBatchVolume / inH : 0;
-          const qOutPerHour = outH > 0 ? schedule.outboundBatchVolume / outH : 0;
+            const qInPerHour = inH > 0 ? schedule.inboundBatchVolume / inH : 0;
+            const qOutPerHour = outH > 0 ? schedule.outboundBatchVolume / outH : 0;
 
-          const totalRequiredPerHour = Math.ceil(qInPerHour + qOutPerHour);
+            const totalRequiredPerHour = Math.max(1, Math.ceil(qInPerHour + qOutPerHour));
 
-          if (onApplySchedule) {
-            onApplySchedule(totalRequiredPerHour);
-          }
-          onClose();
-        }}
-        className="w-full bg-[#D4AF37] hover:bg-[#BFA02E] text-[#1A1A1A] font-bold py-2 uppercase tracking-tight transition rounded-none cursor-pointer"
-      >
-        Применить расписание
-      </button>
+            if (onApplySchedule) {
+              onApplySchedule(totalRequiredPerHour);
+            }
+            onClose();
+          }}
+          className={`w-full py-2.5 font-bold uppercase tracking-tight transition rounded-none select-none ${
+            isFormValid
+              ? 'bg-[#D4AF37] hover:bg-[#BFA02E] active:bg-[#8A6826] text-[#1A1A1A] cursor-pointer shadow-sm'
+              : 'bg-[#E5E5DF] text-[#8C8C85] border border-[#D1D1CB] cursor-not-allowed opacity-80'
+          }`}
+        >
+          {isZeroFlow ? '[ УКАЖИТЕ ОБЪЕМ ПАРТИЙ > 0 ]' : 'Применить расписание'}
+        </button>
       </div>
     </div>
   );

@@ -628,6 +628,7 @@ useEffect(() => {
             </div>
           )}
         </aside>
+      </div>
 
       {/* Progress & Formula Modals */}
       <CalculationProgressModal isOpen={isCalculating} currentStep={calculationStep} />

@@ -223,19 +223,14 @@ export function calculateEconomics(
     robot.batteryChargeMinutes
   );
 
-  // Определение потерь на перекрёстках (traffic efficiency eta)
   let trafficEfficiencyEta = 0.92;
-  try {
-    const topology = customTopology && customTopology.nodes.length > 0
-      ? customTopology
-      : generateFacilityTopology(facility);
-    const simEngine = new SimulationEngine(topology, robot, 2);
-    const simResult = simEngine.runHeadlessFastForward(1200, 0.5);
-    if (simResult.trafficEfficiencyEta > 0) {
-      trafficEfficiencyEta = simResult.trafficEfficiencyEta;
-    }
-  } catch {
-    trafficEfficiencyEta = 0.92;
+  if (simResult && typeof (simResult as any).trafficCongestionFactor === 'number') {
+    trafficEfficiencyEta = (simResult as any).trafficCongestionFactor;
+  } else if (simResult && simResult.realizedThroughputPerHour > 0) {
+    const theoretical = fleetSize * robot.throughputPerHour * availabilityCoeff;
+    trafficEfficiencyEta = theoretical > 0 
+      ? Math.min(1.0, Math.round((simResult.realizedThroughputPerHour / theoretical) * 100) / 100)
+      : 0.92;
   }
 
   const nominalFleetSize = calculateFleetSize(

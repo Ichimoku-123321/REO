@@ -120,6 +120,8 @@ useEffect(() => {
   // 6. Simulation & Calculation Progress State
   const [replayFrames, setReplayFrames] = useState<SimulationReplayFrame[]>([]);
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
+  export type AppMode = 'DESIGN' | 'ANALYTICS';
+  const [appMode, setAppMode] = useState<AppMode>('DESIGN');
   const [calculationStep, setCalculationStep] = useState<number>(0);
   const [isFormulaModalOpen, setIsFormulaModalOpen] = useState<boolean>(false);
   const [isPdfPreviewOpen, setIsPdfPreviewOpen] = useState(false);
@@ -281,11 +283,18 @@ useEffect(() => {
           setCalculationStep(4);
           setIsCalculating(false);
           setCalculationStep(0);
+          setAppMode('ANALYTICS');
           showToast('REO: Моделирование завершено. Экспресс-ТЭО обновлено.');
         }, 150);
       }, 200);
     }, 200);
   }, [facility, currentTopology, activeComposition, selectedRobot, activeFleetSize, simulationParams]);
+
+  // Return to CAD Design Mode Handler
+  const handleReturnToCad = useCallback(() => {
+    setAppMode('DESIGN');
+    showToast('REO: Возврат в режим проектирования CAD.');
+  }, [showToast]);
 
   // Export Handlers
   const handleExportPdf = () => {

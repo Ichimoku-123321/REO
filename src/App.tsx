@@ -11,6 +11,7 @@ import {
   type WhatIfParams,
   type EconomicEvaluation,
 } from './engine/economics.js';
+import { validateWarehousePreflight } from './engine/validators/warehouse_preflight.js';
 import { generateFacilityTopology } from './engine/topology_generator.js';
 import { analyzeTopologyBottlenecks } from './engine/spectral_analyzer.js';
 import {
@@ -244,7 +245,40 @@ useEffect(() => {
   };
 
   // Run Simulation Handler
+  // Run Simulation Handler
   const handleRunSimulation = useCallback((supplySchedule?: SupplySchedule) => {
+    // 1. Подсчёт установленных в CAD элементов склада
+    let inboundDocksCount = 0;
+    let outboundDocksCount = 0;
+    let racksCount = 0;
+
+    if (grid?.tiles) {
+      grid.tiles.forEach((type: any) => {
+        if (type === 'DOCK_INBOUND') inboundDocksCount++;
+        if (type === 'DOCK_OUTBOUND') outboundDocksCount++;
+        if (type === 'RACK') racksCount++;
+      });
+    }
+
+    // 2. Pre-flight ZOD-проверка перед запуском симуляции
+    const validation = validateWarehousePreflight({
+      targetThroughputPerHour: simulationParams.targetHourlyQuota || facility.targetThroughputPerHour,
+      averageWorkerSalaryRub: facility.averageWorkerSalaryRub,
+      totalAreaSqm: facility.totalAreaSqm,
+      shiftsPerDay: facility.shiftsPerDay,
+      inboundDocksCount,
+      outboundDocksCount,
+      racksCount,
+      fleetSize: activeFleetSize || activeComposition.reduce((sum, item) => sum + item.count, 0),
+      hasSelectedRobot: Boolean(selectedRobot || activeComposition.length > 0),
+    });
+
+    if (!validation.success) {
+      showToast(`⚠️ ${validation.error}`);
+      return; // Стоп: симуляция не запустится, пока склад не готов
+    }
+
+    // 3. Запуск пошагового моделирования
     setHasCalculatedAnalytics(true);
     setIsCalculating(true);
     setCalculationStep(1);
@@ -288,7 +322,7 @@ useEffect(() => {
         }, 150);
       }, 200);
     }, 200);
-  }, [facility, currentTopology, activeComposition, selectedRobot, activeFleetSize, simulationParams]);
+  }, [facility, grid, currentTopology, activeComposition, selectedRobot, activeFleetSize, simulationParams, showToast]);
 
   // Return to CAD Design Mode Handler
   const handleReturnToCad = useCallback(() => {

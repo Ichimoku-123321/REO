@@ -569,6 +569,7 @@ useEffect(() => {
           <div className="flex-1 overflow-hidden relative rounded-none">
             <SimulationViewport
               appMode={appMode}
+              onReturnToCad={handleReturnToCad}
               onAppModeChange={setAppMode}
               facility={facility}
               onChangeFacility={setFacility}

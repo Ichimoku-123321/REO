@@ -53,8 +53,8 @@ export const SupplyScheduleModal: React.FC<SupplyScheduleModalProps> = ({
     : null;
   const daysToFull = hoursToFull !== null ? (hoursToFull / 24).toFixed(1) : null;
 
-  const isFormValid = !isZeroFlow && !isSingleBatchOverflow;
-
+  const isFormValid = !isZeroFlow && totalPalletCapacity > 0 && schedule.inboundBatchVolume <= totalPalletCapacity;
+  
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 font-mono text-xs">
       <div className="bg-[#F9F9F6] border-2 border-[#D4AF37] w-full max-w-lg p-5 shadow-2xl rounded-none text-[#1A1A1A]">

@@ -74,7 +74,7 @@ export const Zone3Container: React.FC<Zone3ContainerProps> = ({
 
       {/* 2. Scrollable Analytics Stage */}
       <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5">
-        {!hasCalculatedAnalytics || !activeEconomics || !selectedRobot ? (
+        {!activeEconomics || !selectedRobot ? (
           /* Check-list Gatekeeper / Placeholder */
           <div className="h-full min-h-[380px] py-8 px-4 text-center space-y-4 flex flex-col items-center justify-center font-mono">
             <div className="w-12 h-12 border-2 border-[#D4AF37] bg-[#FFFFFF] flex items-center justify-center text-[#8A6826] font-bold text-sm shadow-xs">

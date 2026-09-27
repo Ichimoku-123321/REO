@@ -121,6 +121,11 @@ useEffect(() => {
 
   // 6. Simulation & Calculation Progress State
   const [replayFrames, setReplayFrames] = useState<SimulationReplayFrame[]>([]);
+  const [lastSimResult, setLastSimResult] = useState<{
+    realizedThroughputPerHour: number;
+    totalDelivered: number;
+    quotaFulfillmentPercent: number;
+  } | null>(null);
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
   const [calculationStep, setCalculationStep] = useState<number>(0);
   const [isFormulaModalOpen, setIsFormulaModalOpen] = useState<boolean>(false);
@@ -220,16 +225,16 @@ useEffect(() => {
     return activeComposition.reduce((sum, item) => sum + item.count, 0);
   }, [activeComposition]);
 
-  // Economic Evaluation
+  // Economic Evaluation (сквозной расчёт с учётом симулятора и штрафов)
   const activeEconomics: EconomicEvaluation | null = useMemo(() => {
     if (activeComposition.length > 0) {
-      return calculateCompositionEconomics(facility, activeComposition, whatIf);
+      return calculateCompositionEconomics(facility, activeComposition, whatIf, currentTopology || undefined, lastSimResult);
     }
     if (selectedRobot) {
-      return calculateEconomics(facility, selectedRobot, whatIf);
+      return calculateEconomics(facility, selectedRobot, whatIf, currentTopology || undefined, lastSimResult);
     }
     return null;
-  }, [facility, activeComposition, selectedRobot, whatIf]);
+  }, [facility, activeComposition, selectedRobot, whatIf, currentTopology, lastSimResult]);
 
   const spectralResult = useMemo(() => {
     const topology = generateFacilityTopology(facility);
@@ -316,11 +321,28 @@ useEffect(() => {
 
         setTimeout(() => {
           setReplayFrames([...engine.replayFrames]);
+          
+          // Фиксируем фактическую выработку симулятора для ТЭО
+          const elapsedHours = engine.elapsedSimSeconds / 3600;
+          const realizedThroughputPerHour = elapsedHours > 0
+            ? Math.round((engine.completedDeliveries / elapsedHours) * 10) / 10
+            : 0;
+          const totalQuota = (simulationParams.targetHourlyQuota || facility.targetThroughputPerHour) * (simulationParams.durationHours || 1);
+          const quotaFulfillmentPercent = totalQuota > 0
+            ? Math.round((engine.completedDeliveries / totalQuota) * 100)
+            : 0;
+
+          setLastSimResult({
+            realizedThroughputPerHour,
+            totalDelivered: engine.completedDeliveries,
+            quotaFulfillmentPercent,
+          });
+
           setCalculationStep(4);
           setIsCalculating(false);
           setCalculationStep(0);
           setAppMode('SIMULATION');
-          showToast(`REO: Моделирование завершено. Рассчитано агентов: ${engine.agents.length}`);
+          showToast(`REO: Моделирование завершено. Доставлено паллет: ${engine.completedDeliveries} шт. (${realizedThroughputPerHour} палл/ч)`);
         }, 150);
       }, 200);
     }, 200);
@@ -329,15 +351,24 @@ useEffect(() => {
   // Return to CAD Design Mode Handler
   const handleReturnToCad = useCallback(() => {
     setAppMode('CONSTRUCTOR');
+    setLastSimResult(null);
     showToast('REO: Возврат в режим проектирования CAD.');
   }, [showToast]);
 
   // =========================================================================
   // НЕУБИВАЕМЫЙ ДЕТЕКТОР 3000: ОПТИМУМ vs ПЕСОЧНИЦА + ТОПОЛОГИЯ CAD. СМЕРТЬ ВСЕМ ЯЩЕРАМ!!!
   // =========================================================================
-
+ 
+  
+  
+  
   // нетю.
 
+
+
+
+
+  
   // Export Handlers
   const handleExportPdf = () => {
     if (!selectedRobot || !activeEconomics) {

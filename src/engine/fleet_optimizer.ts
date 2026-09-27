@@ -304,13 +304,15 @@ export function optimizeFleetComposition(
         robot.batteryChargeMinutes
       );
 
-      // Рассчитываем динамическую производительность throughputPerHour если есть топология
-      let unitThroughputPerHour = robot.throughputPerHour;
+      let unitThroughputPerHour = robot.throughputPerHour; // Базовые 12 шт/ч
       if (cycleDistanceM > 0) {
         const vMax = robot.maxSpeedMps > 0 ? robot.maxSpeedMps : 1.5;
-        const etaTraffic = 0.85; // Коэффициент замедления в трафике
-        const tTripSec = cycleDistanceM / (vMax * etaTraffic) + 10; // +10s (tau_load + tau_unload)
-        unitThroughputPerHour = Math.round((3600 / tTripSec) * 100) / 100;
+        const etaTraffic = 0.85; // Замедление на маневрах и разъездах
+        // Честное время: подъем паллеты (35с) + опускание (35с) + пробег по трассе
+        const tTripSec = (cycleDistanceM / (vMax * etaTraffic)) + 70;
+        const dynamicThroughput = Math.round((3600 / tTripSec) * 100) / 100;
+        // Производительность не может превышать паспортный норматив робота
+        unitThroughputPerHour = Math.min(robot.throughputPerHour, dynamicThroughput);
       }
 
       const effectiveThroughputPerUnit = unitThroughputPerHour * kAvail;
@@ -338,8 +340,8 @@ export function optimizeFleetComposition(
   let bestMonoItem: FleetCompositionItem | null = null;
 
   for (const item of eligibleEvals) {
-    const count = Math.ceil(targetQ / item.effectiveThroughputPerUnit);
-    const compositionItem = createFleetCompositionItem(
+    const effectiveCapacity = item.effectiveThroughputPerUnit * 0.92;
+    const count = Math.max(1, Math.ceil(targetQ / effectiveCapacity));    const compositionItem = createFleetCompositionItem(
       item.robot,
       count,
       item.kAvail,

@@ -330,6 +330,47 @@ useEffect(() => {
     showToast('REO: Возврат в режим проектирования CAD.');
   }, [showToast]);
 
+  // =========================================================================
+  // НЕУБИВАЕМЫЙ ДЕТЕКТОР 3000: ОПТИМУМ vs ПЕСОЧНИЦА + ТОПОЛОГИЯ CAD. СМЕРТЬ ВСЕМ ЯЩЕРАМ!!!
+  // =========================================================================
+  const { isFleetReady, isCadReady, isReadyToLaunch, readinessHint } = useMemo(() => {
+    const sandboxCount = activeComposition?.reduce((sum, item) => sum + (item.count || 0), 0) ?? 0;
+
+    const hasOptimalFleet = Boolean(selectedRobot) && (activeFleetSize ?? 0) > 0;
+
+    const fleetOk = sandboxCount > 0 || hasOptimalFleet;
+
+    let hasInbound = false;
+    let hasOutbound = false;
+    let hasRack = false;
+
+    if (grid?.tiles && grid.tiles.size > 0) {
+      grid.tiles.forEach((type: any) => {
+        if (type === 'DOCK_INBOUND') hasInbound = true;
+        if (type === 'DOCK_OUTBOUND') hasOutbound = true;
+        if (type === 'RACK') hasRack = true;
+      });
+    }
+
+    const cadOk = hasInbound && hasOutbound && hasRack;
+
+    let hint = '';
+    if (!cadOk) {
+      if (!hasInbound) hint = 'Установите ворота приёмки в CAD';
+      else if (!hasOutbound) hint = 'Установите ворота отгрузки в CAD';
+      else if (!hasRack) hint = 'Разместите хотя бы один стеллаж в CAD';
+    } else if (!fleetOk) {
+      hint = 'Укомплектуйте парк в Блоке 6 (Оптимум или Песочница)';
+    }
+
+    return {
+      isFleetReady: fleetOk,
+      isCadReady: cadOk,
+      isReadyToLaunch: fleetOk && cadOk,
+      readinessHint: hint,
+    };
+  }, [grid, activeComposition, selectedRobot, activeFleetSize]);
+
   // Export Handlers
   const handleExportPdf = () => {
     if (!selectedRobot || !activeEconomics) {

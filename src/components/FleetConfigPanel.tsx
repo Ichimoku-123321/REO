@@ -140,7 +140,9 @@ export const FleetConfigPanel: React.FC<FleetConfigPanelProps> = ({
                       <p className="text-xs font-bold text-[#1A1A1A] leading-tight">
                         {item.robot.vendor} {item.robot.model}
                       </p>
-                      <p className="text-[10px] text-[#4F4F47]">до {item.robot.payloadKg} кг</p>
+                      <p className="text-[10px] text-[#4F4F47]">
+                        до {item.robot.payloadKg} кг • {item.robot.throughputPerHour} палл/ч (ед.)
+                      </p>
                     </div>
                     <span className="bg-[#D4AF37] text-[#1A1A1A] text-xs font-bold font-mono px-2 py-0.5 rounded-none">
                       {item.count} ед.

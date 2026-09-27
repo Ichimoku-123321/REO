@@ -522,8 +522,17 @@ export function SimulationViewport({
   const handleReturnToEditor = useCallback(() => {
     setIsPlaying(false);
     setCurrentTimeSec(0);
+    if (agentsGroupRef.current) {
+      agentsGroupRef.current.visible = false;
+    }
     onAppModeChange('CONSTRUCTOR');
   }, [onAppModeChange]);
+
+  useEffect(() => {
+    if (agentsGroupRef.current) {
+      agentsGroupRef.current.visible = !isConstructorMode;
+    }
+  }, [isConstructorMode]);
 
   const handleResetGrid = useCallback(() => {
     const cellSize = facility.totalAreaSqm > 5000 ? 2.0 : 1.0;

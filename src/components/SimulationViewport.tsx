@@ -412,6 +412,35 @@ export function SimulationViewport({
     lastProcessedFrameIndexRef.current = -1;
   }, [replayFrames]);
 
+  let hasInbound = false;
+  let hasOutbound = false;
+  let hasRack = false;
+
+  if (grid?.tiles) {
+    const tileValues = typeof (grid.tiles as any).values === 'function'
+      ? Array.from((grid.tiles as any).values())
+      : typeof (grid.tiles as any).forEach === 'function'
+      ? Array.from(grid.tiles as any)
+      : Object.values(grid.tiles);
+
+    tileValues.forEach((item: any) => {
+      const tileType = typeof item === 'string' ? item : item?.type;
+      if (tileType === 'DOCK_INBOUND') hasInbound = true;
+      if (tileType === 'DOCK_OUTBOUND') hasOutbound = true;
+      if (tileType === 'RACK') hasRack = true;
+    });
+  }
+
+  const isCadReady = hasInbound && hasOutbound && hasRack;
+  const isFleetReady = Boolean(fleetSize && fleetSize > 0);
+  const isReadyToSimulate = isCadReady && isFleetReady;
+
+  let simulationButtonLabel = '[ СКЛАД ГОТОВ: ЗАПУСТИТЬ РАСЧЕТ И МОДЕЛИРОВАНИЕ ]';
+  if (!hasInbound) simulationButtonLabel = '[ ТРЕБУЮТСЯ ВОРОТА ПРИЁМКИ В CAD ]';
+  else if (!hasOutbound) simulationButtonLabel = '[ ТРЕБУЮТСЯ ВОРОТА ОТГРУЗКИ В CAD ]';
+  else if (!hasRack) simulationButtonLabel = '[ ТРЕБУЕТСЯ ХОТЯ БЫ 1 СТЕЛЛАЖ В CAD ]';
+  else if (!isFleetReady) simulationButtonLabel = '[ ТРЕБУЕТСЯ ВЫБОР ФЛОТА В БЛОКЕ 6 ]';
+  
   // Finish Construction & Start Simulation Handler
   const handleFinishConstructionAndSimulate = useCallback(() => {
     // 1. Проверка CAD
@@ -2025,20 +2054,16 @@ export function SimulationViewport({
 
           <button
             type="button"
-            disabled={!fleetSize || fleetSize <= 0}
+            disabled={!isReadyToSimulate}
             onClick={handleFinishConstructionAndSimulate}
-            className={`px-6 py-2.5 font-bold uppercase tracking-wider text-xs border shadow-xs rounded-none flex items-center gap-2 transition ${
-              !fleetSize || fleetSize <= 0
-                ? 'bg-[#E5E5DF] text-[#8C8C85] border-[#D1D1CB] cursor-not-allowed'
-                : 'bg-[#D4AF37] hover:bg-[#BFA02E] active:bg-[#8A6826] text-[#1A1A1A] border-[#BFA02E] cursor-pointer'
+            className={`px-6 py-2.5 font-bold uppercase tracking-wider text-xs border shadow-xs rounded-none flex items-center gap-2 transition select-none ${
+              isReadyToSimulate
+                ? 'bg-[#D4AF37] hover:bg-[#BFA02E] active:bg-[#8A6826] text-[#1A1A1A] border-[#BFA02E] cursor-pointer shadow-md'
+                : 'bg-[#E5E5DF] text-[#8C8C85] border-[#D1D1CB] cursor-not-allowed opacity-80'
             }`}
           >
-            <Play className="w-4 h-4 fill-current" />
-            <span>
-              {!fleetSize || fleetSize <= 0
-                ? '[ ТРЕБУЕТСЯ РАСЧЕТ ФЛОТА В БЛОКЕ 6 ]'
-                : '[ СКЛАД ГОТОВ: ЗАПУСТИТЬ РАСЧЕТ И МОДЕЛИРОВАНИЕ ]'}
-            </span>
+            <Play className={`w-4 h-4 fill-current ${isReadyToSimulate ? 'text-[#1A1A1A]' : 'text-[#8C8C85]'}`} />
+            <span>{simulationButtonLabel}</span>
           </button>
         </div>
       ) : (

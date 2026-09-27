@@ -150,21 +150,24 @@ export interface ConstructorGrid {
   floor?: FloorDefinition;
 }
 
-/**
- * Validates whether a grid cell (gx, gy) is strictly inside the floor definition bounds/polygon.
- * Falls back to floor bounds if present, or false if floor is defined and cell is outside.
- */
+
 export function isInsideFloor(
   gx: number,
   gy: number,
   floor?: FloorDefinition,
   gridTiles?: Map<string, ConstructorTileType>
 ): boolean {
-  if (gridTiles && gridTiles.size > 0) {
-    if (!gridTiles.has(getTileKey(gx, gy))) {
-      return false;
-    }
+  if (!gridTiles || gridTiles.size === 0) {
+    // На складе нет ни одной плитки пола — монтаж запрещён
+    return false;
   }
+
+  const key = getTileKey(gx, gy);
+  const tile = gridTiles.get(key);
+
+  // Ячейка считается полом, если там лежит EMPTY_FLOOR или уже смонтирован объект (который стоит на полу)
+  return tile !== undefined;
+}
 
   if (!floor) return true;
 
@@ -359,13 +362,13 @@ export function createInitialConstructorGrid(
   const rows = Math.max(2, Math.floor(lengthM / cellSizeM));
   const tiles = new Map<string, ConstructorTileType>();
 
+  // Чистый старт: реальный пол равен 0 м², границ нет, пока пользователь не уложил плитки
   const floor: FloorDefinition = {
     type: 'RECTANGLE',
-    bounds: { minX: 0, maxX: cols - 1, minZ: 0, maxZ: rows - 1 },
-    areaSqm: Math.round(cols * rows * cellSizeM * cellSizeM),
+    bounds: undefined,
+    areaSqm: 0,
   };
 
-  // Grid starts clean and empty. Tiles are added when user draws floor.
   return { cols, rows, cellSizeM, tiles, floor };
 }
 

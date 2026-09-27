@@ -120,9 +120,9 @@ export class SimulationEngine {
 
   public get fleetSize(): number {
     if (Array.isArray(this.fleetConfig)) {
-      return this.fleetConfig.reduce((sum, item) => sum + item.count, 0);
+      return Math.max(1, this.fleetConfig.reduce((sum, item) => sum + item.count, 0));
     }
-    return Math.max(0, this.legacyFleetSize);
+    return Math.max(1, this.legacyFleetSize || 1);
   }
 
   private classifyNodes(): void {
@@ -349,7 +349,8 @@ export class SimulationEngine {
       if (this.fleetConfig.id) {
         this.deliveriesByRobotType[this.fleetConfig.id] = 0;
       }
-      for (let k = 0; k < this.legacyFleetSize; k++) {
+      const count = Math.max(1, this.legacyFleetSize || 1);
+      for (let k = 0; k < count; k++) {
         fleetItems.push({ robot: this.fleetConfig });
       }
     }

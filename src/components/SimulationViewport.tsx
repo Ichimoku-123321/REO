@@ -408,10 +408,19 @@ export function SimulationViewport({
     setTelemetry(DEFAULT_TELEMETRY);
   }, [topology, fleetConfig, fleetSize]);
 
-  // Reset timeline when replayFrames change
+  // Reset timeline & force-clean 3D robot meshes when replayFrames change
   useEffect(() => {
     setCurrentTimeSec(0);
     lastProcessedFrameIndexRef.current = -1;
+
+    // Полная очистка группы агентов и кэша мешей для гарантированного пересоздания в Three.js
+    if (agentsGroupRef.current) {
+      while (agentsGroupRef.current.children.length > 0) {
+        const child = agentsGroupRef.current.children[0];
+        agentsGroupRef.current.remove(child);
+      }
+    }
+    agentMeshMapRef.current.clear();
   }, [replayFrames]);
 
   let hasInbound = false;

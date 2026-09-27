@@ -441,7 +441,7 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
                 <h2 className="text-xs font-bold uppercase tracking-wider text-[#8A6826]">
                   5. МОДЕЛЬ ДИСКОНТИРОВАННЫХ ДЕНЕЖНЫХ ПОТОКОВ (DCF 5 ЛЕТ)
                 </h2>
-                <span className="text-[8.5px] text-[#8C8C85] font-mono">Ставка WACC: 18% • Налог на прибыль: 20%</span>
+                <span className="text-[8.5px] text-[#8C8C85] font-mono">Ставка WACC: 18% • Налог на прибыль: 25%</span>
               </div>
 
               <table className="w-full table-fixed text-left border-collapse text-[8px] border border-[#D4AF37]/40">

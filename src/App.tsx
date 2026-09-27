@@ -584,7 +584,7 @@ useEffect(() => {
           onClose={() => setIsPdfPreviewOpen(false)}
           facility={facility}
           selectedRobot={selectedRobot}
-          fleetSize={activeFleetSize || activeEconomics.fleetSize}
+          fleetSize={activeEconomics?.fleetSize ?? activeFleetSize}
           evaluation={activeEconomics}
           whatIf={whatIf}
           spectralResult={spectralResult}

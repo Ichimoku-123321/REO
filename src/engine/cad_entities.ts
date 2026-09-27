@@ -81,9 +81,12 @@ export function buildElementsMap(grid: ConstructorGrid): Map<string, WarehouseEl
 
     switch (tileType) {
       case 'RACK': {
-        const slots = details?.slotsPerRack ?? 12;
+        const rawSlots = details?.slotsPerRack;
+        const slots = typeof rawSlots === 'number' 
+          ? rawSlots 
+          : parseInt(String(rawSlots || 12), 10) || 12;
         const skuId = details?.skuId ?? null;
-        element = new RackEntity(x, z, slots, skuId);
+        element = new RackEntity(x, z, Math.max(1, slots), skuId);
         break;
       }
       case 'OBSTACLE': {

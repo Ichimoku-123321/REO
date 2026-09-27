@@ -169,6 +169,7 @@ export function isInsideFloor(
   return tile !== undefined;
 }
 
+export interface DebugSnapshotPayload {
   if (!floor) return true;
 
   if (floor.type === 'RECTANGLE') {

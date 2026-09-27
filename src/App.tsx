@@ -121,8 +121,6 @@ useEffect(() => {
   // 6. Simulation & Calculation Progress State
   const [replayFrames, setReplayFrames] = useState<SimulationReplayFrame[]>([]);
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
-  export type AppMode = 'DESIGN' | 'ANALYTICS';
-  const [appMode, setAppMode] = useState<AppMode>('DESIGN');
   const [calculationStep, setCalculationStep] = useState<number>(0);
   const [isFormulaModalOpen, setIsFormulaModalOpen] = useState<boolean>(false);
   const [isPdfPreviewOpen, setIsPdfPreviewOpen] = useState(false);
@@ -245,20 +243,21 @@ useEffect(() => {
   };
 
   // Run Simulation Handler
-  // Run Simulation Handler
   const handleRunSimulation = useCallback((supplySchedule?: SupplySchedule) => {
-    // 1. Подсчёт установленных в CAD элементов склада
+    // 1. Проверка топологии через текущий граф
+    const topology = currentTopology && currentTopology.nodes.length > 0
+      ? currentTopology
+      : generateFacilityTopology(facility);
+
     let inboundDocksCount = 0;
     let outboundDocksCount = 0;
     let racksCount = 0;
 
-    if (grid?.tiles) {
-      grid.tiles.forEach((type: any) => {
-        if (type === 'DOCK_INBOUND') inboundDocksCount++;
-        if (type === 'DOCK_OUTBOUND') outboundDocksCount++;
-        if (type === 'RACK') racksCount++;
-      });
-    }
+    topology.nodes.forEach((node: any) => {
+      if (node.type === 'DOCK_INBOUND') inboundDocksCount++;
+      if (node.type === 'DOCK_OUTBOUND') outboundDocksCount++;
+      if (node.type === 'RACK') racksCount++;
+    });
 
     // 2. Pre-flight ZOD-проверка перед запуском симуляции
     const validation = validateWarehousePreflight({
@@ -275,7 +274,7 @@ useEffect(() => {
 
     if (!validation.success) {
       showToast(`⚠️ ${validation.error}`);
-      return; // Стоп: симуляция не запустится, пока склад не готов
+      return;
     }
 
     // 3. Запуск пошагового моделирования
@@ -287,10 +286,6 @@ useEffect(() => {
       setCalculationStep(2);
 
       setTimeout(() => {
-        // CAD
-        const topology = currentTopology && currentTopology.nodes.length > 0
-          ? currentTopology
-          : generateFacilityTopology(facility);
         const engine = new SimulationEngine(
           topology,
           activeComposition.length > 0
@@ -317,59 +312,24 @@ useEffect(() => {
           setCalculationStep(4);
           setIsCalculating(false);
           setCalculationStep(0);
-          setAppMode('ANALYTICS');
+          setAppMode('SIMULATION');
           showToast('REO: Моделирование завершено. Экспресс-ТЭО обновлено.');
         }, 150);
       }, 200);
     }, 200);
-  }, [facility, grid, currentTopology, activeComposition, selectedRobot, activeFleetSize, simulationParams, showToast]);
+  }, [facility, currentTopology, activeComposition, selectedRobot, activeFleetSize, simulationParams, showToast]);
 
   // Return to CAD Design Mode Handler
   const handleReturnToCad = useCallback(() => {
-    setAppMode('DESIGN');
+    setAppMode('CONSTRUCTOR');
     showToast('REO: Возврат в режим проектирования CAD.');
   }, [showToast]);
 
   // =========================================================================
   // НЕУБИВАЕМЫЙ ДЕТЕКТОР 3000: ОПТИМУМ vs ПЕСОЧНИЦА + ТОПОЛОГИЯ CAD. СМЕРТЬ ВСЕМ ЯЩЕРАМ!!!
   // =========================================================================
-  const { isFleetReady, isCadReady, isReadyToLaunch, readinessHint } = useMemo(() => {
-    const sandboxCount = activeComposition?.reduce((sum, item) => sum + (item.count || 0), 0) ?? 0;
 
-    const hasOptimalFleet = Boolean(selectedRobot) && (activeFleetSize ?? 0) > 0;
-
-    const fleetOk = sandboxCount > 0 || hasOptimalFleet;
-
-    let hasInbound = false;
-    let hasOutbound = false;
-    let hasRack = false;
-
-    if (grid?.tiles && grid.tiles.size > 0) {
-      grid.tiles.forEach((type: any) => {
-        if (type === 'DOCK_INBOUND') hasInbound = true;
-        if (type === 'DOCK_OUTBOUND') hasOutbound = true;
-        if (type === 'RACK') hasRack = true;
-      });
-    }
-
-    const cadOk = hasInbound && hasOutbound && hasRack;
-
-    let hint = '';
-    if (!cadOk) {
-      if (!hasInbound) hint = 'Установите ворота приёмки в CAD';
-      else if (!hasOutbound) hint = 'Установите ворота отгрузки в CAD';
-      else if (!hasRack) hint = 'Разместите хотя бы один стеллаж в CAD';
-    } else if (!fleetOk) {
-      hint = 'Укомплектуйте парк в Блоке 6 (Оптимум или Песочница)';
-    }
-
-    return {
-      isFleetReady: fleetOk,
-      isCadReady: cadOk,
-      isReadyToLaunch: fleetOk && cadOk,
-      readinessHint: hint,
-    };
-  }, [grid, activeComposition, selectedRobot, activeFleetSize]);
+  // нетю.
 
   // Export Handlers
   const handleExportPdf = () => {
@@ -502,7 +462,7 @@ useEffect(() => {
             />
 
             {/* Белая матовая пелена Зоны 1 в режиме ANALYTICS */}
-            {appMode === 'ANALYTICS' && (
+            {appMode === 'SIMULATION' && (
               <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] z-30 flex flex-col items-center justify-center p-6 text-center select-none cursor-default animate-in fade-in duration-200">
                 <div className="bg-[#FFFFFF] border border-[#D4AF37]/60 p-4 max-w-[280px] shadow-sm space-y-3 rounded-none">
                   <div className="text-[11px] font-bold uppercase tracking-wider text-[#8A6826]">
@@ -613,7 +573,7 @@ useEffect(() => {
               />
 
               {/* Белая матовая пелена Зоны 3 в режиме DESIGN */}
-              {appMode === 'DESIGN' && (
+              {appMode === 'CONSTRUCTOR' && (
                 <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] z-30 flex flex-col items-center justify-center p-6 text-center select-none cursor-default animate-in fade-in duration-200">
                   <div className="bg-[#FFFFFF] border border-[#D4AF37]/60 p-4 max-w-[280px] shadow-sm space-y-2 rounded-none">
                     <div className="text-[11px] font-bold uppercase tracking-wider text-[#8A6826]">

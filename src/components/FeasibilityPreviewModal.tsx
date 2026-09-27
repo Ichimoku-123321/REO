@@ -7,12 +7,8 @@ import {
   Printer,
   X,
   FileCheck2,
-  CheckCircle2,
-  AlertTriangle,
   Building2,
   Bot,
-  Layers,
-  Calculator,
   ShieldCheck,
 } from 'lucide-react';
 
@@ -49,10 +45,6 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
     return `${(val / 1000000).toFixed(2)} млн ₽`;
   };
 
-  const formatCurrency = (val: number): string => {
-    return `${Math.round(val).toLocaleString('ru-RU')} ₽`;
-  };
-
   const currentDate = new Date().toLocaleDateString('ru-RU', {
     day: '2-digit',
     month: 'long',
@@ -65,38 +57,66 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
     raas,
     recommendedScenario,
     chargersCount,
-    annualEnergyKwh,
-    annualEnergyCostRub,
     integrationCapexRub,
   } = evaluation;
 
+  // Честный расчетный флот из математического ядра DCF
+  const effectiveFleetSize = evaluation.fleetSize || fleetSize || 1;
+  const robotsHardwareCost = effectiveFleetSize * selectedRobot.capexCostRub;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-2xs font-mono text-[#1A1A1A] select-none">
-      {/* Print Specific CSS Styles injected dynamically */}
+      {/* Стили для сквозной чистой печати без срезания страниц */}
       <style>{`
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 12mm 15mm;
+          }
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+            background: #FFFFFF !important;
+          }
           body * {
             visibility: hidden;
+          }
+          .fixed, [class*="max-w-"], [class*="h-[95vh]"], [class*="overflow-"] {
+            position: static !important;
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
           }
           #feasibility-printable-report, #feasibility-printable-report * {
             visibility: visible;
           }
           #feasibility-printable-report {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            margin: 0;
-            padding: 15mm;
+            position: static !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
             background: #FFFFFF !important;
             color: #000000 !important;
-            font-size: 10pt;
+            font-size: 8.5pt !important;
           }
           .no-print {
             display: none !important;
           }
           .page-break {
-            page-break-before: always;
+            page-break-before: always !important;
+            break-before: page !important;
+            margin-top: 15mm !important;
+            padding-top: 5mm !important;
+          }
+          tr {
+            page-break-inside: avoid;
           }
         }
       `}</style>
@@ -132,18 +152,20 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
           </div>
         </div>
 
-        {/* Printable Document Canvas (Simulated A4 Paper Layout) */}
+        {/* Printable Document Canvas */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-[#EFEFED]">
           <div
             id="feasibility-printable-report"
             ref={reportRef}
-            className="max-w-[850px] mx-auto bg-[#FFFFFF] p-8 sm:p-12 border border-[#D4AF37]/40 shadow-md space-y-6 text-[#1A1A1A]"
+            className="max-w-[850px] mx-auto bg-[#FFFFFF] p-8 sm:p-12 border border-[#D4AF37]/40 shadow-md space-y-5 text-[#1A1A1A]"
           >
+            {/* ================= СТРАНИЦА 1: УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ И СМЕТА ================= */}
+            
             {/* 1. DOCUMENT HEADER */}
-            <div className="border-b-2 border-[#1A1A1A] pb-4 space-y-2">
+            <div className="border-b-2 border-[#1A1A1A] pb-3 space-y-1.5">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="text-[10px] uppercase tracking-widest text-[#8C8C85] font-bold">
+                  <div className="text-[9.5px] uppercase tracking-widest text-[#8C8C85] font-bold">
                     СИСТЕМА ПОДДЕРЖКИ ПРИНЯТИЯ РЕШЕНИЙ (СППР REO)
                   </div>
                   <h1 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-[#1A1A1A] mt-0.5">
@@ -165,7 +187,7 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
             </div>
 
             {/* 2. EXECUTIVE SUMMARY & VERDICT BANNER */}
-            <div className="border-2 border-[#D4AF37] p-4 bg-[#F9F9F6] space-y-2">
+            <div className="border-2 border-[#D4AF37] p-3.5 bg-[#F9F9F6] space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase text-[#8A6826] tracking-wider flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4" />
@@ -180,7 +202,7 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
                 </span>
               </div>
 
-              <p className="text-[11px] leading-relaxed text-[#4F4F47]">
+              <p className="text-[10.5px] leading-relaxed text-[#4F4F47]">
                 На основе математического моделирования топологии склада и DCF-анализа при ставке WACC 18%
                 {recommendedScenario === 'capexPurchase' && (
                   <>
@@ -193,7 +215,7 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
                 )}
                 {recommendedScenario === 'raas' && (
                   <>
-                    {' '}рекомендуется сервисная модель подписки (RaaS). Проект обеспечивает чистую экономию{' '}
+                    {' '}рекомендуется сервисная модель подписки (RaaS). Проект обеспечивает чистую годовую экономию{' '}
                     <strong className="text-emerald-800">{formatMillions(raas.netAnnualSavings)} / год</strong> без
                     первоначальных капитальных затрат.
                   </>
@@ -227,13 +249,13 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
             </div>
 
             {/* 3. SECTION 1: FACILITY TOPOLOGY & ROBOT SPEC */}
-            <div className="space-y-3">
+            <div className="space-y-2">
               <h2 className="text-xs font-bold uppercase tracking-wider text-[#8A6826] border-b border-[#D4AF37]/40 pb-1">
                 1. ИСХОДНЫЕ ПАРАМЕТРЫ ОБЪЕКТА И ОБОРУДОВАНИЯ
               </h2>
 
-              <div className="grid grid-cols-2 gap-4 text-[10.5px]">
-                <div className="border border-[#D4AF37]/30 p-3 space-y-1.5 bg-[#FFFFFF]">
+              <div className="grid grid-cols-2 gap-3 text-[10px]">
+                <div className="border border-[#D4AF37]/30 p-2.5 space-y-1 bg-[#FFFFFF]">
                   <div className="font-bold text-[#1A1A1A] uppercase border-b border-[#D4AF37]/20 pb-1 flex items-center gap-1.5">
                     <Building2 className="w-3.5 h-3.5 text-[#8A6826]" />
                     <span>Параметры складского комплекса</span>
@@ -260,7 +282,7 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
                   </div>
                 </div>
 
-                <div className="border border-[#D4AF37]/30 p-3 space-y-1.5 bg-[#FFFFFF]">
+                <div className="border border-[#D4AF37]/30 p-2.5 space-y-1 bg-[#FFFFFF]">
                   <div className="font-bold text-[#1A1A1A] uppercase border-b border-[#D4AF37]/20 pb-1 flex items-center gap-1.5">
                     <Bot className="w-3.5 h-3.5 text-[#8A6826]" />
                     <span>Спецификация роботизированной платформы</span>
@@ -290,38 +312,38 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
             </div>
 
             {/* 4. SECTION 2: FLEET KINEMATICS & SIZING */}
-            <div className="space-y-3">
+            <div className="space-y-2">
               <h2 className="text-xs font-bold uppercase tracking-wider text-[#8A6826] border-b border-[#D4AF37]/40 pb-1">
                 2. РАСЧЁТ РАЗМЕРА ПАРКА И КИНЕМАТИКА
               </h2>
 
-              <div className="grid grid-cols-4 gap-2 text-center text-[10.5px]">
+              <div className="grid grid-cols-4 gap-2 text-center text-[10px]">
                 <div className="p-2 border border-[#D4AF37]/30 bg-[#F9F9F6]">
-                  <span className="text-[#8C8C85] block text-[9px] uppercase">Расчётный флот</span>
-                  <span className="text-sm font-bold text-[#8A6826]">{fleetSize} ед.</span>
+                  <span className="text-[#8C8C85] block text-[8.5px] uppercase">Расчётный флот</span>
+                  <span className="text-sm font-bold text-[#8A6826]">{effectiveFleetSize} ед.</span>
                 </div>
                 <div className="p-2 border border-[#D4AF37]/30 bg-[#F9F9F6]">
-                  <span className="text-[#8C8C85] block text-[9px] uppercase">Зарядные посты</span>
+                  <span className="text-[#8C8C85] block text-[8.5px] uppercase">Зарядные посты</span>
                   <span className="text-sm font-bold">{chargersCount} шт.</span>
                 </div>
                 <div className="p-2 border border-[#D4AF37]/30 bg-[#F9F9F6]">
-                  <span className="text-[#8C8C85] block text-[9px] uppercase">Коэф. трафика (η)</span>
+                  <span className="text-[#8C8C85] block text-[8.5px] uppercase">Коэф. трафика (η)</span>
                   <span className="text-sm font-bold">{evaluation.trafficEfficiencyEta}</span>
                 </div>
                 <div className="p-2 border border-[#D4AF37]/30 bg-[#F9F9F6]">
-                  <span className="text-[#8C8C85] block text-[9px] uppercase">Закрытие квоты</span>
+                  <span className="text-[#8C8C85] block text-[8.5px] uppercase">Закрытие квоты</span>
                   <span className="text-sm font-bold text-emerald-800">{evaluation.quotaFulfilledPercent}%</span>
                 </div>
               </div>
             </div>
 
             {/* 5. SECTION 3: 3-SCENARIO FINANCIAL MATRIX */}
-            <div className="space-y-3">
+            <div className="space-y-2">
               <h2 className="text-xs font-bold uppercase tracking-wider text-[#8A6826] border-b border-[#D4AF37]/40 pb-1">
                 3. СРАВНИТЕЛЬНАЯ МАТРИЦА 3 СЦЕНАРИЕВ
               </h2>
 
-              <table className="w-full text-left border-collapse text-[10px] border border-[#D4AF37]/40">
+              <table className="w-full text-left border-collapse text-[9.5px] border border-[#D4AF37]/40">
                 <thead>
                   <tr className="bg-[#F4F4F0] border-b border-[#D4AF37]/40 text-[#4F4F47]">
                     <th className="p-2 font-bold uppercase">Финансово-экономический параметр</th>
@@ -334,59 +356,59 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
                 </thead>
                 <tbody className="divide-y divide-[#D4AF37]/20">
                   <tr>
-                    <td className="p-2 text-[#4F4F47]">Первоначальный CAPEX проекта</td>
-                    <td className="p-2 text-center tabular-nums">0 ₽</td>
-                    <td className="p-2 text-center font-bold text-[#8A6826] bg-[#D4AF37]/10 tabular-nums">
+                    <td className="p-1.5 text-[#4F4F47]">Первоначальный CAPEX проекта</td>
+                    <td className="p-1.5 text-center tabular-nums">0 ₽</td>
+                    <td className="p-1.5 text-center font-bold text-[#8A6826] bg-[#D4AF37]/10 tabular-nums">
                       {formatMillions(capexPurchase.capex)}
                     </td>
-                    <td className="p-2 text-center tabular-nums">0 ₽</td>
+                    <td className="p-1.5 text-center tabular-nums">0 ₽</td>
                   </tr>
                   <tr>
-                    <td className="p-2 text-[#4F4F47]">Годовые эксплуатационные затраты (OPEX)</td>
-                    <td className="p-2 text-center tabular-nums">{formatMillions(asIs.annualOpex)}</td>
-                    <td className="p-2 text-center bg-[#D4AF37]/10 tabular-nums">{formatMillions(capexPurchase.annualOpex)}</td>
-                    <td className="p-2 text-center tabular-nums">{formatMillions(raas.annualOpex)}</td>
+                    <td className="p-1.5 text-[#4F4F47]">Годовые эксплуатационные затраты (OPEX)</td>
+                    <td className="p-1.5 text-center tabular-nums">{formatMillions(asIs.annualOpex)}</td>
+                    <td className="p-1.5 text-center bg-[#D4AF37]/10 tabular-nums">{formatMillions(capexPurchase.annualOpex)}</td>
+                    <td className="p-1.5 text-center tabular-nums">{formatMillions(raas.annualOpex)}</td>
                   </tr>
                   <tr>
-                    <td className="p-2 text-[#4F4F47]">Чистая годовая экономия (ΔOPEX)</td>
-                    <td className="p-2 text-center tabular-nums">—</td>
-                    <td className="p-2 text-center font-bold text-emerald-800 bg-[#D4AF37]/10 tabular-nums">
+                    <td className="p-1.5 text-[#4F4F47]">Чистая годовая экономия (ΔOPEX)</td>
+                    <td className="p-1.5 text-center tabular-nums">—</td>
+                    <td className="p-1.5 text-center font-bold text-emerald-800 bg-[#D4AF37]/10 tabular-nums">
                       +{formatMillions(capexPurchase.netAnnualSavings)}
                     </td>
-                    <td className="p-2 text-center font-bold text-emerald-800 tabular-nums">
+                    <td className="p-1.5 text-center font-bold text-emerald-800 tabular-nums">
                       +{formatMillions(raas.netAnnualSavings)}
                     </td>
                   </tr>
                   <tr>
-                    <td className="p-2 text-[#4F4F47]">Дисконтированный срок окупаемости (DPP)</td>
-                    <td className="p-2 text-center tabular-nums">—</td>
-                    <td className="p-2 text-center font-bold text-[#8A6826] bg-[#D4AF37]/10 tabular-nums">
+                    <td className="p-1.5 text-[#4F4F47]">Дисконтированный срок окупаемости (DPP)</td>
+                    <td className="p-1.5 text-center tabular-nums">—</td>
+                    <td className="p-1.5 text-center font-bold text-[#8A6826] bg-[#D4AF37]/10 tabular-nums">
                       {capexPurchase.discountedPaybackYears ? `${capexPurchase.discountedPaybackYears} года` : 'Не окупаем'}
                     </td>
-                    <td className="p-2 text-center tabular-nums">С первого месяца</td>
+                    <td className="p-1.5 text-center tabular-nums">С первого месяца</td>
                   </tr>
                   <tr className="font-bold bg-[#F9F9F6]">
-                    <td className="p-2 text-[#1A1A1A]">Совокупная стоимость владения (TCO 5 лет)</td>
-                    <td className="p-2 text-center tabular-nums">{formatMillions(asIs.fiveYearTco)}</td>
-                    <td className="p-2 text-center text-[#1A1A1A] bg-[#D4AF37]/20 tabular-nums">
+                    <td className="p-1.5 text-[#1A1A1A]">Совокупная стоимость владения (TCO 5 лет)</td>
+                    <td className="p-1.5 text-center tabular-nums">{formatMillions(asIs.fiveYearTco)}</td>
+                    <td className="p-1.5 text-center text-[#1A1A1A] bg-[#D4AF37]/20 tabular-nums">
                       {formatMillions(capexPurchase.fiveYearTco)}
                     </td>
-                    <td className="p-2 text-center tabular-nums">{formatMillions(raas.fiveYearTco)}</td>
+                    <td className="p-1.5 text-center tabular-nums">{formatMillions(raas.fiveYearTco)}</td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
             {/* 6. SECTION 4: CAPEX COMPOSITION BREAKDOWN */}
-            <div className="space-y-3">
+            <div className="space-y-2">
               <h2 className="text-xs font-bold uppercase tracking-wider text-[#8A6826] border-b border-[#D4AF37]/40 pb-1">
                 4. ДЕТАЛИЗАЦИЯ ИНВЕСТИЦИОННОГО БЮДЖЕТА CAPEX
               </h2>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[9.5px]">
                 <div className="border border-[#D4AF37]/30 p-2 bg-[#FFFFFF]">
-                  <span className="text-[#8C8C85] block">Роботы ({fleetSize} ед.)</span>
-                  <strong className="text-xs">{formatMillions(fleetSize * selectedRobot.capexCostRub)}</strong>
+                  <span className="text-[#8C8C85] block">Роботы ({effectiveFleetSize} ед.)</span>
+                  <strong className="text-xs">{formatMillions(robotsHardwareCost)}</strong>
                 </div>
                 <div className="border border-[#D4AF37]/30 p-2 bg-[#FFFFFF]">
                   <span className="text-[#8C8C85] block">Зарядки + Сервер RMS</span>
@@ -405,13 +427,18 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
               </div>
             </div>
 
+            {/* ================= СТРАНИЦА 2: DCF-ТАБЛИЦА И ПОДПИСИ (ЗОЛОТОЙ СТАНДАРТ) ================= */}
+            
             {/* 7. SECTION 5: 5-YEAR DCF TABLE */}
-            <div className="space-y-3">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-[#8A6826] border-b border-[#D4AF37]/40 pb-1">
-                5. МОДЕЛЬ ДИСКОНТИРОВАННЫХ ДЕНЕЖНЫХ ПОТОКОВ (DCF)
-              </h2>
+            <div className="page-break space-y-3 pt-2">
+              <div className="border-b border-[#D4AF37]/40 pb-1 flex justify-between items-center">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-[#8A6826]">
+                  5. МОДЕЛЬ ДИСКОНТИРОВАННЫХ ДЕНЕЖНЫХ ПОТОКОВ (DCF 5 ЛЕТ)
+                </h2>
+                <span className="text-[9px] text-[#8C8C85]">Ставка WACC: 18% • Налог на прибыль: 20%</span>
+              </div>
 
-              <table className="w-full text-left border-collapse text-[9.5px] border border-[#D4AF37]/40">
+              <table className="w-full text-left border-collapse text-[9px] border border-[#D4AF37]/40">
                 <thead>
                   <tr className="bg-[#F4F4F0] border-b border-[#D4AF37]/40 text-[#4F4F47]">
                     <th className="p-1.5 font-bold">Год</th>
@@ -471,7 +498,7 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
                 </div>
               </div>
 
-              <div className="text-[9px] text-[#8C8C85] text-center">
+              <div className="text-[8.5px] text-[#8C8C85] text-center pt-2">
                 Документ сформирован автоматически аналитическим ядром СППР REO. Расчёт соответствует методическим
                 рекомендациям оценки эффективности инвестиционных проектов (утв. Минэкономики РФ, Минфином РФ № ВК 477).
               </div>

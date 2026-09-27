@@ -1187,6 +1187,9 @@ export function SimulationViewport({
 
         const key = getTileKey(gx, gy);
 
+          if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT') {
+          const key = getTileKey(gx, gy);
+
           if (!st.grid.tiles.has(key)) {
             showToast('⚠️ Монтаж невозможен: сначала уложите пол');
             return;
@@ -1196,8 +1199,6 @@ export function SimulationViewport({
             showToast('⚠️ Ячейка уже занята другим объектом');
             return;
           }
-
-          const key = getTileKey(gx, gy);
 
           if (st.selectedTileType === 'DOCK_INBOUND' || st.selectedTileType === 'DOCK_OUTBOUND') {
             let inboundCount = 0;
@@ -1618,12 +1619,12 @@ export function SimulationViewport({
 
       // Top face of tile slab at Y=0
       // Triangle 1
-      positions.push(x0, 0, z0,  x1, 0, z0,  x0, 0, z1);
-      normals.push(0, 1, 0,  0, 1, 0,  0, 1, 0);
+      positions.push(x0, 0, z0, x1, 0, z0, x0, 0, z1);
+      normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
 
       // Triangle 2
-      positions.push(x1, 0, z0,  x1, 0, z1,  x0, 0, z1);
-      normals.push(0, 1, 0,  0, 1, 0,  0, 1, 0);
+      positions.push(x1, 0, z0, x1, 0, z1, x0, 0, z1);
+      normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
     });
 
     if (positions.length > 0) {

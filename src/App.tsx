@@ -484,21 +484,44 @@ useEffect(() => {
 
         {/* ================= ZONE 1: LEFT COLUMN (EXHAUSTIVE INPUTS & CONDITIONS) ================= */}
         {isLeftOpen && (
-          <Zone1Sidebar
-            facility={facility}
-            onChangeFacility={setFacility}
-            simulationParams={simulationParams}
-            onChangeSimulationParams={handleSimulationParamsChange}
-            fleetMode={fleetMode}
-            onChangeFleetMode={setFleetMode}
-            aiOptimizationResult={aiOptimizationResult}
-            manualFleetCounts={manualFleetCounts}
-            onManualCountChange={handleManualCountChange}
-            activeFleetSize={activeFleetSize}
-            topology={currentTopology}
-            onCalculateAiFleet={handleCalculateAiFleet}
-            hasCalculatedAiFleet={hasCalculatedAiFleet}
-          />
+          <div className="relative shrink-0 flex flex-col h-full">
+            <Zone1Sidebar
+              facility={facility}
+              onChangeFacility={setFacility}
+              simulationParams={simulationParams}
+              onChangeSimulationParams={handleSimulationParamsChange}
+              fleetMode={fleetMode}
+              onChangeFleetMode={setFleetMode}
+              aiOptimizationResult={aiOptimizationResult}
+              manualFleetCounts={manualFleetCounts}
+              onManualCountChange={handleManualCountChange}
+              activeFleetSize={activeFleetSize}
+              topology={currentTopology}
+              onCalculateAiFleet={handleCalculateAiFleet}
+              hasCalculatedAiFleet={hasCalculatedAiFleet}
+            />
+
+            {/* Белая матовая пелена Зоны 1 в режиме ANALYTICS */}
+            {appMode === 'ANALYTICS' && (
+              <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] z-30 flex flex-col items-center justify-center p-6 text-center select-none cursor-default animate-in fade-in duration-200">
+                <div className="bg-[#FFFFFF] border border-[#D4AF37]/60 p-4 max-w-[280px] shadow-sm space-y-3 rounded-none">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#8A6826]">
+                    [ РАСЧЕТ ЗАФИКСИРОВАН ]
+                  </div>
+                  <p className="text-[10.5px] text-[#4F4F47] leading-relaxed">
+                    Параметры ТЗ заблокированы для защиты от рассинхронизации ТЭО.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleReturnToCad}
+                    className="w-full py-2 px-3 bg-[#D4AF37] hover:bg-[#BFA02E] active:bg-[#8A6826] text-[#1A1A1A] font-bold text-[10px] uppercase tracking-wider border border-[#BFA02E] transition rounded-none cursor-pointer shadow-xs"
+                  >
+                    [ ← ВЕРНУТЬСЯ В РЕДАКТОР CAD ]
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {/* ================= ZONE 2: CENTER COLUMN (DIGITAL TWIN VIEWPORT) ================= */}

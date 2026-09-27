@@ -245,7 +245,7 @@ useEffect(() => {
 
   // Run Simulation Handler
   const handleRunSimulation = useCallback((supplySchedule?: SupplySchedule) => {
-    // 1. Проверка топологии через текущий граф
+    // 1. Честная топология из конструктора
     const topology = currentTopology && currentTopology.nodes.length > 0
       ? currentTopology
       : generateFacilityTopology(facility);
@@ -254,13 +254,16 @@ useEffect(() => {
     let outboundDocksCount = 0;
     let racksCount = 0;
 
+    // Считаем узлы с поддержкой обоих вариантов названий (CAD и Graph)
     topology.nodes.forEach((node: any) => {
-      if (node.type === 'DOCK_INBOUND') inboundDocksCount++;
-      if (node.type === 'DOCK_OUTBOUND') outboundDocksCount++;
-      if (node.type === 'RACK') racksCount++;
+      if (node.type === 'INBOUND_DOCK' || node.type === 'DOCK_INBOUND') inboundDocksCount++;
+      if (node.type === 'OUTBOUND_DOCK' || node.type === 'DOCK_OUTBOUND') outboundDocksCount++;
+      if (node.type === 'STORAGE_AISLE' || node.type === 'RACK') racksCount++;
     });
 
-    // 2. Pre-flight ZOD-проверка перед запуском симуляции
+    // 2. Pre-flight проверка
+    const effectiveFleetSize = activeFleetSize || activeComposition.reduce((sum, item) => sum + item.count, 0) || 1;
+
     const validation = validateWarehousePreflight({
       targetThroughputPerHour: simulationParams.targetHourlyQuota || facility.targetThroughputPerHour,
       averageWorkerSalaryRub: facility.averageWorkerSalaryRub,
@@ -269,7 +272,7 @@ useEffect(() => {
       inboundDocksCount,
       outboundDocksCount,
       racksCount,
-      fleetSize: activeFleetSize || activeComposition.reduce((sum, item) => sum + item.count, 0),
+      fleetSize: effectiveFleetSize,
       hasSelectedRobot: Boolean(selectedRobot || activeComposition.length > 0),
     });
 
@@ -287,14 +290,17 @@ useEffect(() => {
       setCalculationStep(2);
 
       setTimeout(() => {
+        // Формируем честный состав флота для симуляции
+        const fleetToRun = activeComposition.length > 0
+          ? activeComposition
+          : selectedRobot
+          ? [{ robot: selectedRobot, count: effectiveFleetSize, totalThroughputPerHour: 10 * effectiveFleetSize, totalCapexRub: 1000, totalAnnualOpexRub: 100, fiveYearTcoRub: 1500 }]
+          : [{ robot: SEED_ROBOTS[0], count: effectiveFleetSize, totalThroughputPerHour: 10 * effectiveFleetSize, totalCapexRub: 1000, totalAnnualOpexRub: 100, fiveYearTcoRub: 1500 }];
+
         const engine = new SimulationEngine(
           topology,
-          activeComposition.length > 0
-            ? activeComposition
-            : selectedRobot
-            ? [{ robot: selectedRobot, count: 1, totalThroughputPerHour: 10, totalCapexRub: 1000, totalAnnualOpexRub: 100, fiveYearTcoRub: 1500 }]
-            : SEED_ROBOTS[0],
-          activeFleetSize || 1,
+          fleetToRun,
+          effectiveFleetSize,
           facility
         );
 
@@ -302,7 +308,7 @@ useEffect(() => {
           targetHourlyQuota: simulationParams.targetHourlyQuota,
           durationHours: simulationParams.durationHours,
           recordReplay: true,
-          targetReplayFramesCount: simulationParams.targetReplayFramesCount,
+          targetReplayFramesCount: simulationParams.targetReplayFramesCount || 7200,
           supplySchedule,
         });
 
@@ -314,7 +320,7 @@ useEffect(() => {
           setIsCalculating(false);
           setCalculationStep(0);
           setAppMode('SIMULATION');
-          showToast('REO: Моделирование завершено. Экспресс-ТЭО обновлено.');
+          showToast(`REO: Моделирование завершено. Рассчитано агентов: ${engine.agents.length}`);
         }, 150);
       }, 200);
     }, 200);

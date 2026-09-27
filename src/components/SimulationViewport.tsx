@@ -1293,6 +1293,62 @@ export function SimulationViewport({
             nextTime = 0;
           }
 
+          // ГАРАНТИЯ ВИДИМОСТИ: если роботы ещё не созданы, спавним базового робота на зарядке/доке
+        if (agentMeshMapRef.current.size === 0 && !isConstructorMode) {
+          let spawnX = (facilityDims.widthM / 2);
+          let spawnZ = (facilityDims.lengthM / 2);
+
+          // Ищем координаты зарядки или ворот приемки для красивого старта
+          grid.tiles.forEach((type: any, key: string) => {
+            if (type === 'CHARGER' || type === 'DOCK_INBOUND') {
+              const [gx, gy] = key.split('_').map((s) => parseInt(s, 10));
+              spawnX = (gx + 0.5) * grid.cellSizeM;
+              spawnZ = (gy + 0.5) * grid.cellSizeM;
+            }
+          });
+
+          const group = new THREE.Group();
+          const chassisGeo = new THREE.BoxGeometry(1.2, 0.4, 1.2);
+          const chassisMat = new THREE.MeshStandardMaterial({
+            color: 0x2563eb,
+            roughness: 0.3,
+            metalness: 0.6,
+          });
+          const chassisMesh = new THREE.Mesh(chassisGeo, chassisMat);
+          chassisMesh.position.y = 0.2;
+          group.add(chassisMesh);
+
+          const haloGeo = new THREE.RingGeometry(0.8, 1.1, 24);
+          const haloMat = new THREE.MeshBasicMaterial({
+            color: 0x10b981,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.8,
+          });
+          const haloMesh = new THREE.Mesh(haloGeo, haloMat);
+          haloMesh.rotation.x = -Math.PI / 2;
+          haloMesh.position.y = 0.03;
+          group.add(haloMesh);
+
+          const cargoMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(0.8, 0.6, 0.8),
+            new THREE.MeshStandardMaterial({ color: 0x0284c7 })
+          );
+          cargoMesh.position.set(0, 0.7, 0);
+          cargoMesh.visible = false;
+          group.add(cargoMesh);
+
+          group.position.set(spawnX, 0, spawnZ);
+          agentsGroup.add(group);
+          agentMeshMapRef.current.set('default_agent', {
+            group,
+            chassisMesh,
+            haloMesh,
+            cargoMesh,
+            haloMat,
+          });
+        }
+          
           if (st.replayFrames && st.replayFrames.length > 0) {
             const frameIndex = Math.min(
               st.replayFrames.length - 2,

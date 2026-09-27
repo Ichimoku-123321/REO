@@ -165,7 +165,7 @@ export function isInsideFloor(
   const key = getTileKey(gx, gy);
   const tile = gridTiles.get(key);
 
-  // Ячейка считается полом, если там лежит EMPTY_FLOOR или уже смонтирован объект (который стоит на полу)
+  // Ячейка считается полом, если там лежит EMPTY_FLOOR или уже смонтирован объект
   return tile !== undefined;
 }
 

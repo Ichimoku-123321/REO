@@ -300,14 +300,8 @@ export function emitDebugSnapshot(
   grid: ConstructorGrid,
   cursor?: { x: number; y: number }
 ): void {
-  const payload = createDebugSnapshotPayload(action, grid, cursor);
-  fetch('/__debug_snapshot', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).catch(() => {
-    // Ignore error silently to prevent UI lag
-  });
+  // Отключено: серверного эндпоинта нет, отключаем сетевой спам в консоль
+  return;
 }
 
 /**

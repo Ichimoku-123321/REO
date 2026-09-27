@@ -43,10 +43,10 @@ export interface SupplySchedule {
 export const DEFAULT_SUPPLY_SCHEDULE: SupplySchedule = {
   inboundIntervalValue: 24,
   inboundIntervalUnit: 'hours',
-  inboundBatchVolume: 0,
+  inboundBatchVolume: 100,
   outboundIntervalValue: 24,
   outboundIntervalUnit: 'hours',
-  outboundBatchVolume: 0,
+  outboundBatchVolume: 100,
 };
 
 export const DEFAULT_SKU_LIST: SkuItem[] = [

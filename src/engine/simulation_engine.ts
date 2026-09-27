@@ -301,9 +301,12 @@ export class SimulationEngine {
     // Инициализация емкости адресного хранения стеллажей
     this.rackOccupancy.clear();
     for (const node of this.storageNodes) {
+      const realCap = (typeof node.capacity === 'number' && node.capacity > 0) ? node.capacity : 12;
+      // Начальный буфер: стеллаж стартует заполненным на 30-40%, чтобы линия отгрузки могла сразу работать
+      const initialStock = Math.min(realCap, Math.max(1, Math.floor(realCap * 0.35)));
       this.rackOccupancy.set(node.id, {
-        current: 0,
-        capacity: node.capacity ?? 50,
+        current: initialStock,
+        capacity: realCap,
         skuId: node.skuId,
       });
     }
@@ -459,8 +462,8 @@ export class SimulationEngine {
           const currNode = this.nodeMap.get(agent.currentNodeId);
           const isOnChargerNode = currNode?.type === 'CHARGING_HUB';
 
-          // If robot is IDLE on a charger pad, it MUST vacate the charger pad immediately to unblock others!
-          if (isOnChargerNode) {
+          // Освобождаем зарядку, если зарядились
+          if (isOnChargerNode && agent.batterySoc >= 95) {
             agent.assignedChargerNodeId = null;
             const nonChargerCandidates = [...this.waypointNodes, ...this.inboundNodes, ...this.storageNodes];
             const vacateTarget = this.findClosestNode(agent.currentNodeId, nonChargerCandidates);
@@ -469,7 +472,7 @@ export class SimulationEngine {
               if (agent.pathNodeIds.length > 1) {
                 agent.pathNodeIds.shift();
                 agent.targetNodeId = agent.pathNodeIds[0];
-                agent.state = 'MOVING_TO_PICKUP'; // Repositioning
+                agent.state = 'MOVING_TO_PICKUP';
                 agent.isQueued = false;
                 break;
               }
@@ -478,7 +481,7 @@ export class SimulationEngine {
 
           const freeCharger = this.findUnoccupiedChargerNode(agent.currentNodeId);
 
-          // 1. Mandatory Charge Check (battery < 20%)
+          // 1. Критическая зарядка (< 20%)
           if (agent.batterySoc < 20 && this.chargingNodes.length > 0) {
             if (freeCharger) {
               agent.assignedChargerNodeId = freeCharger.id;
@@ -493,19 +496,29 @@ export class SimulationEngine {
                 agent.isQueued = false;
               }
             } else {
-              // Queue for charger: do NOT accept transport tasks, zero out traction discharge, wait safely!
               agent.isQueued = true;
               agent.corridorWaitTimeSec += dtSim;
             }
             break;
           }
 
-          // 2. Normal Task Assignment
-          if (this.inboundNodes.length > 0 && this.inboundPalletsAvailable > 0 && agent.batterySoc >= 20) {
-            this.inboundPalletsAvailable -= 1;
-            const pickupNode = this.inboundNodes[i % this.inboundNodes.length];
-            agent.assignedInboundNodeId = pickupNode.id;
-            agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, pickupNode.id);
+          // 2. ЗАДАЧА ОТГРУЗКИ (Rack -> DOCK_OUTBOUND)
+          // Проверяем: есть ли стеллажи с товаром (> 0) и свободные ворота отгрузки
+          const racksWithStock = this.storageNodes.filter((node) => {
+            const rack = this.rackOccupancy.get(node.id);
+            return rack ? rack.current > 0 : false;
+          });
+
+          // Балансировка: если на стеллажах есть товар и ворота отгрузки существуют, отправляем на отгрузку
+          const shouldPrioritizeOutbound = racksWithStock.length > 0 && this.outboundNodes.length > 0 && (i % 2 === 1 || this.inboundPalletsAvailable <= 0);
+
+          if (shouldPrioritizeOutbound && agent.batterySoc >= 20) {
+            const sourceRack = this.findClosestNode(agent.currentNodeId, racksWithStock) || racksWithStock[0];
+            const targetOutbound = this.outboundNodes[i % this.outboundNodes.length];
+
+            agent.assignedInboundNodeId = sourceRack.id;       // Забираем со стеллажа
+            agent.assignedDeliveryNodeId = targetOutbound.id;  // Везем в ворота отгрузки!
+            agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, sourceRack.id);
 
             if (agent.pathNodeIds.length > 1) {
               agent.pathNodeIds.shift();
@@ -520,8 +533,44 @@ export class SimulationEngine {
             break;
           }
 
-          // 3. Opportunity Charging (when IDLE, no work available, SoC < 95%)
-          if (this.inboundPalletsAvailable === 0 && agent.batterySoc < 95 && freeCharger) {
+          // 3. ЗАДАЧА ПРИЕМКИ (DOCK_INBOUND -> Rack)
+          // СТРОГИЙ ЗАПРЕТ СИНГУЛЯРНОСТИ: ищем стеллажи, где реально current < capacity
+          const freeStorageNodes = this.storageNodes.filter((node) => {
+            const rack = this.rackOccupancy.get(node.id);
+            return rack ? rack.current < rack.capacity : false;
+          });
+
+          if (this.inboundNodes.length > 0 && this.inboundPalletsAvailable > 0 && freeStorageNodes.length > 0 && agent.batterySoc >= 20) {
+            const pickupDock = this.inboundNodes[i % this.inboundNodes.length];
+            const targetRack = this.findClosestNode(pickupDock.id, freeStorageNodes) || freeStorageNodes[0];
+
+            this.inboundPalletsAvailable -= 1;
+            agent.assignedInboundNodeId = pickupDock.id;    // Забираем с ворот приемки
+            agent.assignedDeliveryNodeId = targetRack.id;   // Везем на свободный стеллаж
+            agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, pickupDock.id);
+
+            if (agent.pathNodeIds.length > 1) {
+              agent.pathNodeIds.shift();
+              agent.targetNodeId = agent.pathNodeIds[0];
+              agent.state = 'MOVING_TO_PICKUP';
+              agent.isQueued = false;
+            } else {
+              agent.state = 'LOADING';
+              agent.timerSeconds = 2.5;
+              agent.isQueued = false;
+            }
+            break;
+          }
+
+          // 4. Если на складе затор (все стеллажи забиты на 100% или нет груза)
+          if (freeStorageNodes.length === 0 && this.inboundPalletsAvailable > 0) {
+            // Склад переполнен! Робот не может принять новую паллету и встает в ожидание
+            agent.isQueued = true;
+            agent.corridorWaitTimeSec += dtSim;
+          }
+
+          // 5. Дежурная подзарядка при простое
+          if (agent.batterySoc < 95 && freeCharger) {
             agent.assignedChargerNodeId = freeCharger.id;
             agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, freeCharger.id);
             if (agent.pathNodeIds.length > 1) {
@@ -533,6 +582,70 @@ export class SimulationEngine {
               agent.state = 'CHARGING';
               agent.isQueued = false;
             }
+          }
+          break;
+        }
+
+        case 'LOADING': {
+          agent.batterySoc = Math.max(0, agent.batterySoc - agent.dischargeRatePerSec * 0.2 * dtSim);
+          agent.timerSeconds -= dtSim;
+
+          if (agent.timerSeconds <= 0) {
+            agent.cargoPayload = true; // Загрузили паллету
+
+            // Если забирали со стеллажа (отгрузка), уменьшаем занятость стеллажа
+            const pickupRack = this.rackOccupancy.get(agent.currentNodeId);
+            if (pickupRack && pickupRack.current > 0) {
+              pickupRack.current -= 1; // Освободили место на стеллаже!
+            }
+
+            // Направляем к назначенному пункту доставки (Стеллаж или Ворота отгрузки)
+            const targetId = agent.assignedDeliveryNodeId;
+            if (targetId) {
+              // Если везем на стеллаж (приемка), резервируем место
+              const destRack = this.rackOccupancy.get(targetId);
+              if (destRack) {
+                destRack.current = Math.min(destRack.capacity, destRack.current + 1);
+              }
+
+              agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, targetId);
+              if (agent.pathNodeIds.length > 1) {
+                agent.pathNodeIds.shift();
+                agent.targetNodeId = agent.pathNodeIds[0];
+                agent.state = 'TRANSPORTING';
+              } else {
+                agent.state = 'UNLOADING';
+                agent.timerSeconds = 2.5;
+              }
+            } else {
+              agent.state = 'IDLE';
+            }
+          }
+          break;
+        }
+
+        case 'UNLOADING': {
+          agent.batterySoc = Math.max(0, agent.batterySoc - agent.dischargeRatePerSec * 0.2 * dtSim);
+          agent.timerSeconds -= dtSim;
+
+          if (agent.timerSeconds <= 0) {
+            agent.cargoPayload = false; // Сгрузили паллету
+
+            const currNode = this.nodeMap.get(agent.currentNodeId);
+            const isOutboundDock = currNode?.type === 'OUTBOUND_DOCK';
+
+            // ДОСТАВКА ЗАСЧИТЫВАЕТСЯ ТОЛЬКО ПО ФАКТУ СДАЧИ В ВОРОТА ОТГРУЗКИ!
+            if (isOutboundDock) {
+              this.completedDeliveries += 1;
+              if (agent.robotSpec && agent.robotSpec.id) {
+                this.deliveriesByRobotType[agent.robotSpec.id] =
+                  (this.deliveriesByRobotType[agent.robotSpec.id] || 0) + 1;
+              }
+            }
+
+            agent.assignedInboundNodeId = null;
+            agent.assignedDeliveryNodeId = null;
+            agent.state = 'IDLE';
           }
           break;
         }
@@ -613,87 +726,7 @@ export class SimulationEngine {
           break;
         }
 
-        case 'LOADING': {
-          agent.batterySoc = Math.max(0, agent.batterySoc - agent.dischargeRatePerSec * 0.2 * dtSim);
-          agent.timerSeconds -= dtSim;
-
-          if (agent.timerSeconds <= 0) {
-            agent.cargoPayload = true;
-
-            // WMS Адресное хранение: отбираем стеллажи, где есть свободные места
-            const freeStorageNodes = this.storageNodes.filter((node) => {
-              const rack = this.rackOccupancy.get(node.id);
-              return rack ? rack.current < rack.capacity : true;
-            });
-
-            // Находим ближайший свободный стеллаж (или резервный узел, если все забито)
-            const target = freeStorageNodes.length > 0
-              ? (this.findClosestNode(agent.currentNodeId, freeStorageNodes) || freeStorageNodes[0])
-              : (this.storageNodes[0] || this.outboundNodes[0]);
-
-            if (target) {
-              agent.assignedDeliveryNodeId = target.id;
-              
-              // Бронируем ячейку на стеллаже под привозимую паллету
-              const rack = this.rackOccupancy.get(target.id);
-              if (rack) {
-                rack.current += 1;
-              }
-
-              agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, target.id);
-
-              if (agent.pathNodeIds.length > 1) {
-                agent.pathNodeIds.shift();
-                agent.targetNodeId = agent.pathNodeIds[0];
-                agent.state = 'TRANSPORTING';
-              } else {
-                agent.state = 'UNLOADING';
-                agent.timerSeconds = 2.5;
-              }
-            } else {
-              agent.state = 'IDLE';
-            }
-          }
-          break;
-        }
-
-        case 'UNLOADING': {
-          agent.batterySoc = Math.max(0, agent.batterySoc - agent.dischargeRatePerSec * 0.2 * dtSim);
-          agent.timerSeconds -= dtSim;
-
-          if (agent.timerSeconds <= 0) {
-            agent.cargoPayload = false;
-            this.completedDeliveries += 1;
-            if (agent.robotSpec && agent.robotSpec.id) {
-              this.deliveriesByRobotType[agent.robotSpec.id] =
-                (this.deliveriesByRobotType[agent.robotSpec.id] || 0) + 1;
-            }
-
-            if (agent.batterySoc < 20 && this.chargingNodes.length > 0) {
-              const charger = this.findUnoccupiedChargerNode(agent.currentNodeId);
-              if (charger) {
-                agent.assignedChargerNodeId = charger.id;
-                agent.pathNodeIds = this.getShortestPath(agent.currentNodeId, charger.id);
-
-                if (agent.pathNodeIds.length > 1) {
-                  agent.pathNodeIds.shift();
-                  agent.targetNodeId = agent.pathNodeIds[0];
-                  agent.state = 'MOVING_TO_CHARGE';
-                  agent.isQueued = false;
-                } else {
-                  agent.state = 'CHARGING';
-                  agent.isQueued = false;
-                }
-              } else {
-                agent.state = 'IDLE';
-                agent.isQueued = true;
-              }
-            } else {
-              agent.state = 'IDLE';
-            }
-          }
-          break;
-        }
+        
 
         case 'CHARGING': {
           agent.batterySoc = Math.min(100, agent.batterySoc + agent.chargeRatePerSec * dtSim);

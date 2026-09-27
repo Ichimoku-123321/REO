@@ -144,7 +144,18 @@ export const SideBySideView: React.FC<SideBySideViewProps> = ({
       const netAnnualSavingsRub = Math.round(baseManualAnnualOpex - annualOpexRub);
       const paybackYears =
         netAnnualSavingsRub > 0 ? Math.round((netCapexRub / netAnnualSavingsRub) * 10) / 10 : null;
-      const fiveYearTco = evaluation ? evaluation.capexPurchase.fiveYearTco : (capex + 5 * opex);
+
+      // Полный расчет 5-летнего TCO с учетом ежегодной индексации ФОТ и тарифов (синхронно с DCF)
+      const wageInflationRate = ((facility as any).fotIndexationPct ?? 8.0) / 100;
+      let fiveYearRobotOpex = 0;
+      for (let t = 0; t < 5; t++) {
+        fiveYearRobotOpex += Math.round(
+          supervisorOpex * Math.pow(1 + wageInflationRate, t) +
+          energyOpex * Math.pow(1 + 0.06, t) +
+          maintenanceOpex * Math.pow(1 + 0.05, t)
+        );
+      }
+      const fiveYearTcoRub = netCapexRub + fiveYearRobotOpex;
 
       return {
         robot,
@@ -159,9 +170,7 @@ export const SideBySideView: React.FC<SideBySideViewProps> = ({
         netAnnualSavingsRub,
         paybackYears,
         fiveYearTcoRub,
-      };
-    });
-  }, [robots, facility, whatIf]);
+      }; [robots, facility, whatIf]);
 
   const eligibleRobots = benchmarkResults.filter((r) => r.isEligible);
   const excludedRobots = benchmarkResults.filter((r) => !r.isEligible);

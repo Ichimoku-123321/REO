@@ -442,6 +442,42 @@ export function SimulationViewport({
   else if (!hasOutbound) simulationButtonLabel = '[ ТРЕБУЮТСЯ ВОРОТА ОТГРУЗКИ В CAD ]';
   else if (!hasRack) simulationButtonLabel = '[ ТРЕБУЕТСЯ ХОТЯ БЫ 1 СТЕЛЛАЖ В CAD ]';
   else if (!isFleetReady) simulationButtonLabel = '[ ТРЕБУЕТСЯ ВЫБОР ФЛОТА В БЛОКЕ 6 ]';
+
+// --- ЧЕСТНЫЙ РАСЧЕТ РЕАЛЬНЫХ ГАБАРИТОВ И ПЛОЩАДИ СКЛАДА ---
+  const { realAreaSqm, realWidthM, realLengthM } = useMemo(() => {
+    if (!grid?.tiles || grid.tiles.size === 0) {
+      return { realAreaSqm: 0, realWidthM: 0, realLengthM: 0 };
+    }
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let tileCount = 0;
+
+    grid.tiles.forEach((_type: any, key: string) => {
+      const [xStr, yStr] = key.split('_');
+      const gx = parseInt(xStr, 10);
+      const gy = parseInt(yStr, 10);
+      if (!isNaN(gx) && !isNaN(gy)) {
+        tileCount++;
+        if (gx < minX) minX = gx;
+        if (gx > maxX) maxX = gx;
+        if (gy < minY) minY = gy;
+        if (gy > maxY) maxY = gy;
+      }
+    });
+
+    if (tileCount === 0 || minX === Infinity) {
+      return { realAreaSqm: 0, realWidthM: 0, realLengthM: 0 };
+    }
+
+    const width = Math.round((maxX - minX + 1) * grid.cellSizeM * 10) / 10;
+    const length = Math.round((maxY - minY + 1) * grid.cellSizeM * 10) / 10;
+    const area = Math.round(tileCount * grid.cellSizeM * grid.cellSizeM);
+
+    return { realAreaSqm: area, realWidthM: width, realLengthM: length };
+  }, [grid]);
   
   // Finish Construction & Start Simulation Handler
   const handleFinishConstructionAndSimulate = useCallback(() => {
@@ -863,7 +899,9 @@ export function SimulationViewport({
           const snappedZ = (gy + 0.5) * stateRef.current.grid.cellSizeM;
 
           ghostGroup.position.set(snappedX, 1.0, snappedZ);
-          ghostGroup.visible = true;
+          const hoverKey = getTileKey(gx, gy);
+          const hasFloorUnderHover = st.grid.tiles.has(hoverKey) && st.grid.tiles.get(hoverKey) === 'EMPTY_FLOOR';
+          ghostGroup.visible = hasFloorUnderHover;
 
           // 1. Рисование стен с зажатой ЛКМ ТОЛЬКО по существующему полу
           if ((event.buttons === 1 || isMouseDownRef.current) && st.selectedTileType === 'OBSTACLE') {
@@ -1147,10 +1185,15 @@ export function SimulationViewport({
           return;
         }
 
-        if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT') {
-          const isValidFloor = isInsideFloor(gx, gy, st.grid.floor);
-          if (!isValidFloor) {
-            showToast('⚠️ Нельзя размещать объекты за пределами границы пола');
+        const key = getTileKey(gx, gy);
+
+          if (!st.grid.tiles.has(key)) {
+            showToast('⚠️ Монтаж невозможен: сначала уложите пол');
+            return;
+          }
+
+          if (st.grid.tiles.get(key) !== 'EMPTY_FLOOR') {
+            showToast('⚠️ Ячейка уже занята другим объектом');
             return;
           }
 
@@ -1847,7 +1890,7 @@ export function SimulationViewport({
             <span>
               Габариты:{' '}
               <strong className="text-[#1A1A1A] tabular-nums">
-                {topology.widthM} × {topology.lengthM} м
+                {isConstructorMode ? `${realWidthM} × ${realLengthM} м` : `${topology.widthM} × ${topology.lengthM} м`}
               </strong>
             </span>
           </div>
@@ -1915,7 +1958,7 @@ export function SimulationViewport({
             totalPalletCapacity={warehouseCapacity.totalPalletCapacity}
             inboundDocksCount={gridElementCounts.inboundDocks}
             outboundDocksCount={gridElementCounts.outboundDocks}
-            calculatedAreaSqm={facility.totalAreaSqm}
+            calculatedAreaSqm={realAreaSqm}
             ceilingHeightM={facility.ceilingHeightM ?? 8.0}
             onChangeCeilingHeight={(heightM) => {
               if (onChangeFacility) {
@@ -2047,7 +2090,7 @@ export function SimulationViewport({
         <div className="h-14 bg-[#FFFFFF] border-t border-[#D4AF37]/40 px-4 flex items-center justify-between shrink-0 font-mono text-xs shadow-md z-20 rounded-none">
           <div className="flex items-center gap-3 text-[#1A1A1A]">
             <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
-              Площадь: <strong className="text-[#8A6826] font-bold tabular-nums">{facility.totalAreaSqm} м²</strong>
+              Площадь: <strong className="text-[#8A6826] font-bold tabular-nums">{realAreaSqm} м²</strong>
             </span>
             <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
               Стеллажей: <strong className="text-[#8A6826] font-bold tabular-nums">{warehouseCapacity.totalRacks} шт.</strong>

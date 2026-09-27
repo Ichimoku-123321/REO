@@ -42,6 +42,7 @@ import { audioEngine } from '../engine/audio_synth.js';
 import { Layers, MapPin, Navigation, AlertTriangle, Edit3, Play, X } from 'lucide-react';
 
 interface SimulationViewportProps {
+  onReturnToCad?: () => void;
   appMode: 'CONSTRUCTOR' | 'SIMULATION';
   onAppModeChange: (mode: 'CONSTRUCTOR' | 'SIMULATION') => void;
   facility: FacilityRequirements;
@@ -88,6 +89,7 @@ interface AgentMeshGroup {
 }
 
 export function SimulationViewport({
+  onReturnToCad,
   appMode,
   onAppModeChange,
   facility,
@@ -1828,7 +1830,10 @@ export function SimulationViewport({
           {appMode === 'SIMULATION' && (
             <button
               type="button"
-              onClick={handleReturnToEditor}
+              onClick={() => {
+                handleReturnToEditor();
+                onReturnToCad?.();
+              }}
               className="flex items-center gap-1.5 px-3 py-1 bg-[#D4AF37] hover:bg-[#BFA02E] text-[#1A1A1A] font-bold text-xs uppercase tracking-tight border border-[#BFA02E] rounded-none cursor-pointer transition shadow-xs"
             >
               <Edit3 className="w-3.5 h-3.5 text-[#1A1A1A]" />

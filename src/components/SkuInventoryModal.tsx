@@ -37,6 +37,8 @@ export const SkuInventoryModal: React.FC<SkuInventoryModalProps> = ({
     setWeightKg('500');
   };
 
+  const isOnlyOneSku = skuList.length <= 1;
+
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-[#F9F9F6] border-2 border-[#D4AF37] w-full max-w-md p-5 shadow-2xl rounded-none text-[#1A1A1A] font-sans">
@@ -51,7 +53,7 @@ export const SkuInventoryModal: React.FC<SkuInventoryModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 hover:bg-[#EAEAE6] text-[#4F4F47] hover:text-[#1A1A1A] rounded-none transition"
+            className="p-1 hover:bg-[#EAEAE6] text-[#4F4F47] hover:text-[#1A1A1A] rounded-none transition cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -104,9 +106,16 @@ export const SkuInventoryModal: React.FC<SkuInventoryModalProps> = ({
 
         {/* Active SKU List */}
         <div className="border-t border-[#D4AF37]/40 pt-3">
-          <h4 className="text-xs font-bold uppercase tracking-tight text-[#4F4F47] mb-2 font-mono">
-            Активный список товаров ({skuList.length}):
-          </h4>
+          <div className="flex items-center justify-between mb-2 font-mono">
+            <h4 className="text-xs font-bold uppercase tracking-tight text-[#4F4F47]">
+              Активный список товаров ({skuList.length}):
+            </h4>
+            {isOnlyOneSku && (
+              <span className="text-[10px] text-amber-700 italic">
+                (минимум 1 товар в базе)
+              </span>
+            )}
+          </div>
 
           <div className="max-h-48 overflow-y-auto space-y-1.5 font-mono text-xs pr-1">
             {skuList.map((sku) => (
@@ -127,20 +136,27 @@ export const SkuInventoryModal: React.FC<SkuInventoryModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => onDeleteSku(sku.id)}
-                  className="p-1 hover:bg-red-100 text-red-700 transition rounded-none"
-                  title="Удалить товар"
+                  disabled={isOnlyOneSku}
+                  onClick={() => {
+                    if (!isOnlyOneSku) {
+                      onDeleteSku(sku.id);
+                    }
+                  }}
+                  className={`p-1.5 rounded-none transition ${
+                    isOnlyOneSku
+                      ? 'text-[#B0B0A8] cursor-not-allowed opacity-40'
+                      : 'hover:bg-red-100 text-red-700 cursor-pointer'
+                  }`}
+                  title={
+                    isOnlyOneSku
+                      ? 'В номенклатуре склада должен быть хотя бы один товар'
+                      : 'Удалить товар'
+                  }
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             ))}
-
-            {skuList.length === 0 && (
-              <div className="text-center py-4 text-[#4F4F47] italic">
-                Список товаров пуст. Добавьте наименование выше.
-              </div>
-            )}
           </div>
         </div>
       </div>

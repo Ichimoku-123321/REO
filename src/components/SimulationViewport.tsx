@@ -1913,7 +1913,7 @@ export function SimulationViewport({
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-[#8A6826]" />
               <h3 className="font-bold uppercase tracking-tight text-[#1A1A1A]">
-                [ REO CAD CONSTRUCTOR ] • [ {(facility as any).name || 'Проект склада #1'} ] • [ Режим: Чертеж ]
+                [ REO CAD CONSTRUCTOR ]
               </h3>
             </div>
           ) : (
@@ -2126,15 +2126,14 @@ export function SimulationViewport({
       {isConstructorMode ? (
         /* Bottom CAD Action Bar */
         <div className="h-14 bg-[#FFFFFF] border-t border-[#D4AF37]/40 px-4 flex items-center justify-between shrink-0 font-mono text-xs shadow-md z-20 rounded-none">
-          <div className="flex items-center gap-3 text-[#1A1A1A]">
-            <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
-              Площадь: <strong className="text-[#8A6826] font-bold tabular-nums">{realAreaSqm} м²</strong>
+          <div className="flex items-center gap-3 text-[#4F4F47]">
+            <span className="w-2 h-2 bg-[#D4AF37]"></span>
+            <span className="font-bold text-[11px] uppercase tracking-wider text-[#1A1A1A]">
+              ЭТАП 1: КОНСТРУКТОР ТОПОЛОГИИ
             </span>
-            <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
-              Стеллажей: <strong className="text-[#8A6826] font-bold tabular-nums">{warehouseCapacity.totalRacks} шт.</strong>
-            </span>
-            <span className="bg-[#F4F4F0] border border-[#D4AF37]/30 px-2.5 py-1 rounded-none font-semibold">
-              Вместимость: <strong className="text-[#8A6826] font-bold tabular-nums">{warehouseCapacity.totalPalletCapacity} паллет</strong>
+            <span className="text-[#DFDFD8] hidden lg:inline">|</span>
+            <span className="text-[11px] text-[#4F4F47] hidden lg:inline">
+              Горячие клавиши: [G] Сетка • [S] Привязка • [R] Поворот • [Del] Удалить
             </span>
           </div>
 

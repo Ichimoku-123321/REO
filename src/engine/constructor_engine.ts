@@ -150,7 +150,6 @@ export interface ConstructorGrid {
   floor?: FloorDefinition;
 }
 
-
 export function isInsideFloor(
   gx: number,
   gy: number,
@@ -167,39 +166,6 @@ export function isInsideFloor(
 
   // Ячейка считается полом, если там лежит EMPTY_FLOOR или уже смонтирован объект
   return tile !== undefined;
-}
-
-export interface DebugSnapshotPayload {
-  if (!floor) return true;
-
-  if (floor.type === 'RECTANGLE') {
-    if (!floor.bounds) return true;
-    return (
-      gx >= floor.bounds.minX &&
-      gx <= floor.bounds.maxX &&
-      gy >= floor.bounds.minZ &&
-      gy <= floor.bounds.maxZ
-    );
-  }
-
-  if (floor.type === 'POLYGON') {
-    if (!floor.vertices || floor.vertices.length < 3) return true;
-    let inside = false;
-    const n = floor.vertices.length;
-    for (let i = 0, j = n - 1; i < n; j = i++) {
-      const xi = floor.vertices[i].x;
-      const zi = floor.vertices[i].z;
-      const xj = floor.vertices[j].x;
-      const zj = floor.vertices[j].z;
-
-      const intersect =
-        zi > gy !== zj > gy && gx < ((xj - xi) * (gy - zi)) / (zj - zi) + xi;
-      if (intersect) inside = !inside;
-    }
-    return inside;
-  }
-
-  return true;
 }
 
 export interface DebugSnapshotPayload {

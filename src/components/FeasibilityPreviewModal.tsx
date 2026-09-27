@@ -444,16 +444,16 @@ export const FeasibilityPreviewModal: React.FC<FeasibilityPreviewModalProps> = (
                 <span className="text-[8.5px] text-[#8C8C85] font-mono">Ставка WACC: 18% • Налог на прибыль: 20%</span>
               </div>
 
-              <table className="w-full text-left border-collapse text-[8.5px] border border-[#D4AF37]/40">
+              <table className="w-full table-fixed text-left border-collapse text-[8px] border border-[#D4AF37]/40">
                 <thead>
                   <tr className="bg-[#F4F4F0] border-b border-[#D4AF37]/40 text-[#4F4F47]">
-                    <th className="p-1 font-bold">Год</th>
-                    <th className="p-1 font-bold">ФОТ As-Is (+8%)</th>
-                    <th className="p-1 font-bold">OPEX роботов</th>
-                    <th className="p-1 font-bold text-emerald-800">ΔOPEX</th>
-                    <th className="p-1 font-bold">Аморт. щит (20%)</th>
-                    <th className="p-1 font-bold">Чистый CF</th>
-                    <th className="p-1 font-bold">Дисконт (18%)</th>
+                    <th className="p-1 font-bold w-[50px]">Год</th>
+                    <th className="p-1 font-bold w-[75px]">ФОТ As-Is</th>
+                    <th className="p-1 font-bold w-[75px]">OPEX роб.</th>
+                    <th className="p-1 font-bold w-[65px] text-emerald-800">ΔOPEX</th>
+                    <th className="p-1 font-bold w-[70px]">Аморт. щит</th>
+                    <th className="p-1 font-bold w-[70px]">Чистый CF</th>
+                    <th className="p-1 font-bold w-[55px]">Дисконт</th>
                     <th className="p-1 font-bold text-right">Накопл. DCF</th>
                   </tr>
                 </thead>

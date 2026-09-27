@@ -331,7 +331,7 @@ export function calculateEconomics(
 
       // Амортизационный налоговый щит (линейная амортизация 5 лет, ставка налога на прибыль 20%)
       const annualDepreciation = capexVal / 5;
-      const taxShield = Math.round(annualDepreciation * 0.20);
+      const taxShield = Math.round(annualDepreciation * 0.25);
       const netCashFlow = grossSavings + taxShield;
       netCashFlowsArray.push(netCashFlow);
 

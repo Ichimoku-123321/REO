@@ -100,7 +100,7 @@ export function generateFeasibilityPdf(data: ProjectExportData): void {
       ['Target Load & Throughput', `${facility.requiredPayloadKg} kg / ${facility.targetThroughputPerHour} units/hr`],
       ['Selected Robot Model', `${selectedRobot.vendor} ${selectedRobot.model}`],
       ['Robot Payload & Speed', `${selectedRobot.payloadKg} kg / ${selectedRobot.maxSpeedMps} m/s`],
-      ['Calculated Fleet Size (N_fleet)', `${fleetSize} units`],
+      ['Calculated Fleet Size (N_fleet)', `${economicEvaluation.fleetSize} units`],
       ['Battery Runtime / Charge Time', `${selectedRobot.batteryRuntimeHours}h / ${selectedRobot.batteryChargeMinutes}m (k_avail = ${(economicEvaluation.availabilityCoeff * 100).toFixed(1)}%)`],
     ],
     theme: 'striped',

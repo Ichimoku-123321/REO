@@ -144,7 +144,7 @@ export const SideBySideView: React.FC<SideBySideViewProps> = ({
       const netAnnualSavingsRub = Math.round(baseManualAnnualOpex - annualOpexRub);
       const paybackYears =
         netAnnualSavingsRub > 0 ? Math.round((netCapexRub / netAnnualSavingsRub) * 10) / 10 : null;
-      const fiveYearTcoRub = Math.round(netCapexRub + annualOpexRub * 5);
+      const fiveYearTco = evaluation ? evaluation.capexPurchase.fiveYearTco : (capex + 5 * opex);
 
       return {
         robot,

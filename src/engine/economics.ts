@@ -60,6 +60,9 @@ export interface EconomicEvaluation {
   availabilityCoeff: number;
   effectiveThroughput: number;
   effectiveSalary: number;
+  realizedThroughput?: number;
+  annualSlaPenaltyRub?: number;
+  isSlaBreached?: boolean;
   manualStaffCount: number;
   retainedSupervisorsCount: number;
   trafficEfficiencyEta: number;
@@ -188,7 +191,8 @@ export function calculateEconomics(
   facility: FacilityRequirements,
   robot: Robot,
   whatIf: WhatIfParams = DEFAULT_WHAT_IF_PARAMS,
-  customTopology?: FacilityTopology
+  customTopology?: FacilityTopology,
+  simResult?: { realizedThroughputPerHour: number; totalDelivered: number; quotaFulfillmentPercent: number } | null
 ): EconomicEvaluation {
   // 1. Извлечение параметров с дефолтами из Блока 1, 4 и 5
   const insuranceTaxRate = ((facility as any).insuranceRatePct ?? 30.2) / 100;
@@ -268,6 +272,19 @@ export function calculateEconomics(
   const manualEquipmentOpexRub = manualStaffCount * 140000;
   const baseManualAnnualOpex = Math.round(manualStaffCount * loadedWorkerAnnualSalaryRub + manualEquipmentOpexRub);
 
+  // 5.1. Сквозная проверка выполнения квоты из симулятора (SLA Penalty Engine)
+  const nominalCapacity = fleetSize * robot.throughputPerHour * availabilityCoeff * trafficEfficiencyEta;
+  const realizedThroughput = simResult && simResult.realizedThroughputPerHour > 0
+    ? simResult.realizedThroughputPerHour
+    : nominalCapacity;
+
+  const fulfillmentRatio = effectiveThroughput > 0 ? realizedThroughput / effectiveThroughput : 1.0;
+  const isSlaBreached = fulfillmentRatio < 0.90; // Если выполнено менее 90% нормы
+
+  // Штраф: 1 200 ₽ за каждую недовезенную паллету
+  const hourlyDeficit = Math.max(0, effectiveThroughput - realizedThroughput);
+  const annualSlaPenaltyRub = Math.round(hourlyDeficit * operatingHoursPerYear * 1200);
+  
   // 6. Расчёт параметров роботизированного сценария (CAPEX-покупка)
   // 1 оператор RMS / супервайзер на смену
   const retainedSupervisorsCount = 1 * shiftsPerDay;
@@ -285,7 +302,7 @@ export function calculateEconomics(
   const serverSupportAnnualRub = 350000;
 
   const baseRobotAnnualOpex = Math.round(
-    supervisorAnnualOpex + annualEnergyCostRub + robotMaintenanceAnnualRub + serverSupportAnnualRub
+    supervisorAnnualOpex + annualEnergyCostRub + robotMaintenanceAnnualRub + serverSupportAnnualRub + annualSlaPenaltyRub
   );
 
   // 7. Построение многолетней таблицы денежных потоков (5 лет DCF)
@@ -393,9 +410,12 @@ export function calculateEconomics(
   let capexVerdict: FeasibilityVerdict = 'red';
   let capexVerdictText = 'Низкая инвестиционная отдача при текущей стоимости капитала';
 
-  if (capexDcf.npv > 0 && capexDcf.dpp !== null && capexDcf.dpp <= 3.5) {
+  if (isSlaBreached) {
+    capexVerdict = 'red';
+    capexVerdictText = `КРИТИЧЕСКИЙ СРЫВ КВОТЫ: Фактическая производительность ${realizedThroughput.toFixed(1)} из ${effectiveThroughput} палл/ч (${(fulfillmentRatio * 100).toFixed(0)}%). Штрафы за срыв SLA: ${(annualSlaPenaltyRub / 1e6).toFixed(2)} млн ₽/год. Проект нецелесообразен.`;
+  } else if (capexDcf.npv > 0 && capexDcf.dpp !== null && capexDcf.dpp <= 3.5) {
     capexVerdict = 'green';
-    capexVerdictText = 'Высокоэффективный инвестиционный проект (NPV > 0, DPP < 3.5 лет)';
+    capexVerdictText = 'Высокоэффективный инвестиционный проект (NPV > 0, DPP < 3.5 лет, квота закрыта)';
   } else if (capexDcf.npv > 0 || (capexSimplePayback !== null && capexSimplePayback <= 4.5)) {
     capexVerdict = 'yellow';
     capexVerdictText = 'Умеренная эффективность. Чувствителен к WACC и индексации ФОТ';
@@ -420,18 +440,22 @@ export function calculateEconomics(
     verdictText: capexVerdictText,
   };
 
-  // 10. Формирование сценария RaaS (сервисная подписка)
   const raasRobotAnnualCost = fleetSize * robot.monthlyRaasCostRub * 12;
-  const baseRaasAnnualOpex = Math.round(raasRobotAnnualCost + supervisorAnnualOpex + annualEnergyCostRub);
+  const baseRaasAnnualOpex = Math.round(
+    raasRobotAnnualCost + supervisorAnnualOpex + annualEnergyCostRub + annualSlaPenaltyRub
+  );
   const raasNetAnnualSavings = baseManualAnnualOpex - baseRaasAnnualOpex;
 
   const raasDcf = buildCashFlows(0, baseManualAnnualOpex, baseRaasAnnualOpex, wacc);
   const raasFiveYearTco = raasDcf.flows.reduce((acc, f) => acc + f.robotOpexRub, 0);
 
   let raasVerdict: FeasibilityVerdict = 'red';
-  let raasVerdictText = 'Подписка превышает расходы на ручной труд';
+  let raasVerdictText = 'Подписка превышает расходы на ручной труд или сорван SLA';
 
-  if (raasNetAnnualSavings > 0) {
+  if (isSlaBreached) {
+    raasVerdict = 'red';
+    raasVerdictText = `СЕРВИСНЫЙ СБОЙ: RaaS-флот не вывозит квоту (${realizedThroughput.toFixed(1)} палл/ч). Штраф за дефицит: ${(annualSlaPenaltyRub / 1e6).toFixed(2)} млн ₽/год.`;
+  } else if (raasNetAnnualSavings > 0) {
     raasVerdict = 'green';
     raasVerdictText = 'Положительный чистый денежный поток с первого месяца без первоначального CAPEX';
   }
@@ -525,6 +549,9 @@ export function calculateEconomics(
     chargersCount,
     availabilityCoeff,
     effectiveThroughput,
+    realizedThroughput,
+    annualSlaPenaltyRub,
+    isSlaBreached,
     effectiveSalary,
     manualStaffCount,
     retainedSupervisorsCount,
@@ -558,13 +585,14 @@ export function calculateCompositionEconomics(
     totalAnnualOpexRub: number;
     fiveYearTcoRub: number;
   }>,
-  whatIf: WhatIfParams = DEFAULT_WHAT_IF_PARAMS
+  whatIf: WhatIfParams = DEFAULT_WHAT_IF_PARAMS,
+  customTopology?: FacilityTopology,
+  simResult?: { realizedThroughputPerHour: number; totalDelivered: number; quotaFulfillmentPercent: number } | null
 ): EconomicEvaluation {
   if (!composition || composition.length === 0) {
     throw new Error('Composition cannot be empty');
   }
-  // Используем ведущего робота в качестве бенчмарка для сквозного DCF
   const primaryItem = composition[0];
-  const evalResult = calculateEconomics(facility, primaryItem.robot, whatIf);
+  const evalResult = calculateEconomics(facility, primaryItem.robot, whatIf, customTopology, simResult);
   return evalResult;
 }

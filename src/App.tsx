@@ -568,7 +568,7 @@ useEffect(() => {
 
         {/* ================= ZONE 3: RIGHT COLUMN (ANALYTICS & FEASIBILITY) ================= */}
         <aside
-          className={`transition-all duration-300 shrink-0 z-20 flex flex-col bg-[#F9F9F6] border-l border-[#D4AF37]/40 overflow-hidden rounded-none ${
+          className={`transition-all duration-300 relative shrink-0 z-20 flex flex-col bg-[#F9F9F6] border-l border-[#D4AF37]/40 overflow-hidden rounded-none ${
             isRightOpen ? 'w-96 sm:w-[480px] lg:w-[540px]' : 'w-0 border-l-0'
           }`}
         >
@@ -586,6 +586,19 @@ useEffect(() => {
               spectralResult={spectralResult}
               onOpenFormulaModal={() => setIsFormulaModalOpen(true)}
             />
+            {/* Белая матовая пелена Зоны 3 в режиме DESIGN */}
+            {appMode === 'DESIGN' && (
+              <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] z-30 flex flex-col items-center justify-center p-6 text-center select-none cursor-default animate-in fade-in duration-200">
+                <div className="bg-[#FFFFFF] border border-[#D4AF37]/60 p-4 max-w-[280px] shadow-sm space-y-2 rounded-none">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#8A6826]">
+                    [ РЕЖИМ ПРОЕКТИРОВАНИЯ ]
+                  </div>
+                  <p className="text-[10.5px] text-[#4F4F47] leading-relaxed">
+                    Раздел ТЭО и What-If станет доступен после расстановки объектов и нажатия кнопки «Склад готов».
+                  </p>
+                </div>
+              </div>
+            )}
           )}
         </aside>
       </div>

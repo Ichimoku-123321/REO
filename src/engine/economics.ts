@@ -305,6 +305,14 @@ export function calculateEconomics(
     for (let t = 1; t <= 5; t++) {
       // Раздельная индексация затрат
       const manualOpex = Math.round(manualBase * Math.pow(1 + wageInflationRate, t - 1));
+      
+      const robotOpex = capexVal === 0
+        ? Math.round(robotBase * Math.pow(1 + wageInflationRate, t - 1))
+        : Math.round(
+            supervisorAnnualOpex * Math.pow(1 + wageInflationRate, t - 1) +
+            annualEnergyCostRub * Math.pow(1 + energyInflationRate, t - 1) +
+            (robotMaintenanceAnnualRub + serverSupportAnnualRub) * Math.pow(1 + 0.05, t - 1)
+          );
       const robotLabor = supervisorAnnualOpex * Math.pow(1 + wageInflationRate, t - 1);
       const robotEnergy = annualEnergyCostRub * Math.pow(1 + energyInflationRate, t - 1);
       const robotMaint = (robotMaintenanceAnnualRub + serverSupportAnnualRub) * Math.pow(1 + 0.05, t - 1);

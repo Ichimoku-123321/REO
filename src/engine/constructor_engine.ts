@@ -388,6 +388,12 @@ export function rebuildTopologyFromGrid(
       label = `Стеллаж (${x},${y})`;
     }
 
+    const details = grid.elementDetails?.get(key);
+    const rawSlots = details?.slotsPerRack;
+    const rackSlots = typeof rawSlots === 'number'
+      ? rawSlots
+      : parseInt(String(rawSlots || 12), 10) || 12;
+
     const nodeId = `c_node_${x}_${y}`;
     const node: GraphNode = {
       id: nodeId,
@@ -396,6 +402,8 @@ export function rebuildTopologyFromGrid(
       y: worldY,
       zLevel: 0,
       label,
+      capacity: tileType === 'RACK' ? Math.max(1, rackSlots) : undefined,
+      skuId: details?.skuId,
     };
 
     nodes.push(node);

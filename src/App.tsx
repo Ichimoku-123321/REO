@@ -597,35 +597,37 @@ useEffect(() => {
           }`}
         >
           {isRightOpen && (
-            <Zone3Container
-              hasCalculatedAnalytics={hasCalculatedAnalytics}
-              activeEconomics={activeEconomics}
-              selectedRobot={selectedRobot}
-              robots={SEED_ROBOTS}
-              facility={facility}
-              whatIf={whatIf}
-              onChangeWhatIf={setWhatIf}
-              selectedRobotId={selectedRobotId}
-              onSelectRobotId={setSelectedRobotId}
-              spectralResult={spectralResult}
-              onOpenFormulaModal={() => setIsFormulaModalOpen(true)}
-            />
-            {/* Белая матовая пелена Зоны 3 в режиме DESIGN */}
-            {appMode === 'DESIGN' && (
-              <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] z-30 flex flex-col items-center justify-center p-6 text-center select-none cursor-default animate-in fade-in duration-200">
-                <div className="bg-[#FFFFFF] border border-[#D4AF37]/60 p-4 max-w-[280px] shadow-sm space-y-2 rounded-none">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#8A6826]">
-                    [ РЕЖИМ ПРОЕКТИРОВАНИЯ ]
+            <div className="relative h-full flex flex-col">
+              <Zone3Container
+                hasCalculatedAnalytics={hasCalculatedAnalytics}
+                activeEconomics={activeEconomics}
+                selectedRobot={selectedRobot}
+                robots={SEED_ROBOTS}
+                facility={facility}
+                whatIf={whatIf}
+                onChangeWhatIf={setWhatIf}
+                selectedRobotId={selectedRobotId}
+                onSelectRobotId={setSelectedRobotId}
+                spectralResult={spectralResult}
+                onOpenFormulaModal={() => setIsFormulaModalOpen(true)}
+              />
+
+              {/* Белая матовая пелена Зоны 3 в режиме DESIGN */}
+              {appMode === 'DESIGN' && (
+                <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] z-30 flex flex-col items-center justify-center p-6 text-center select-none cursor-default animate-in fade-in duration-200">
+                  <div className="bg-[#FFFFFF] border border-[#D4AF37]/60 p-4 max-w-[280px] shadow-sm space-y-2 rounded-none">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-[#8A6826]">
+                      [ РЕЖИМ ПРОЕКТИРОВАНИЯ ]
+                    </div>
+                    <p className="text-[10.5px] text-[#4F4F47] leading-relaxed">
+                      Раздел ТЭО и What-If станет доступен после расстановки объектов и нажатия кнопки «Склад готов».
+                    </p>
                   </div>
-                  <p className="text-[10.5px] text-[#4F4F47] leading-relaxed">
-                    Раздел ТЭО и What-If станет доступен после расстановки объектов и нажатия кнопки «Склад готов».
-                  </p>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           )}
         </aside>
-      </div>
 
       {/* Progress & Formula Modals */}
       <CalculationProgressModal isOpen={isCalculating} currentStep={calculationStep} />

@@ -550,7 +550,11 @@ useEffect(() => {
               facility={facility}
               onChangeFacility={setFacility}
               fleetConfig={activeComposition.length > 0 ? activeComposition : selectedRobot}
-              fleetSize={activeFleetSize || (activeEconomics?.fleetSize ?? 0)}
+              fleetSize={
+                activeComposition && activeComposition.length > 0
+                  ? activeComposition.reduce((sum, item) => sum + (item.count || 0), 0)
+                  : activeFleetSize || 0
+              }
               targetThroughputPerHour={
                 activeEconomics?.effectiveThroughput ?? facility.targetThroughputPerHour
               }

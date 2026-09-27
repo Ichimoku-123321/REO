@@ -1185,9 +1185,7 @@ export function SimulationViewport({
           return;
         }
 
-        const key = getTileKey(gx, gy);
-
-          if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT') {
+        if (event.button === 0 && st.interactionMode === 'PLACE_ELEMENT') {
           const key = getTileKey(gx, gy);
 
           if (!st.grid.tiles.has(key)) {

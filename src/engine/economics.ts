@@ -313,10 +313,6 @@ export function calculateEconomics(
             annualEnergyCostRub * Math.pow(1 + energyInflationRate, t - 1) +
             (robotMaintenanceAnnualRub + serverSupportAnnualRub) * Math.pow(1 + 0.05, t - 1)
           );
-      const robotLabor = supervisorAnnualOpex * Math.pow(1 + wageInflationRate, t - 1);
-      const robotEnergy = annualEnergyCostRub * Math.pow(1 + energyInflationRate, t - 1);
-      const robotMaint = (robotMaintenanceAnnualRub + serverSupportAnnualRub) * Math.pow(1 + 0.05, t - 1);
-      const robotOpex = Math.round(robotLabor + robotEnergy + robotMaint);
 
       const grossSavings = manualOpex - robotOpex;
       totalGrossSavings += grossSavings;

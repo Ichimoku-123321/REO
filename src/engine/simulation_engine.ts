@@ -527,7 +527,7 @@ export class SimulationEngine {
               agent.isQueued = false;
             } else {
               agent.state = 'LOADING';
-              agent.timerSeconds = 2.5;
+              agent.timerSeconds = 35.0;
               agent.isQueued = false;
             }
             break;
@@ -556,7 +556,7 @@ export class SimulationEngine {
               agent.isQueued = false;
             } else {
               agent.state = 'LOADING';
-              agent.timerSeconds = 2.5;
+              agent.timerSeconds = 35.0;
               agent.isQueued = false;
             }
             break;
@@ -615,7 +615,7 @@ export class SimulationEngine {
                 agent.state = 'TRANSPORTING';
               } else {
                 agent.state = 'UNLOADING';
-                agent.timerSeconds = 2.5;
+                agent.timerSeconds = 35.0;
               }
             } else {
               agent.state = 'IDLE';
@@ -756,10 +756,10 @@ export class SimulationEngine {
   private handleArrival(agent: AgentState): void {
     if (agent.state === 'MOVING_TO_PICKUP') {
       agent.state = 'LOADING';
-      agent.timerSeconds = 2.5;
+      agent.timerSeconds = 35.0;
     } else if (agent.state === 'TRANSPORTING') {
       agent.state = 'UNLOADING';
-      agent.timerSeconds = 2.5;
+      agent.timerSeconds = 35.0;
     } else if (agent.state === 'MOVING_TO_CHARGE') {
       agent.state = 'CHARGING';
     } else {

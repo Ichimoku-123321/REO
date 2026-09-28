@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Zone3Container } from './components/zone3/Zone3Container.js';
+import { exportFinancialModelToCsv } from './utils/exportCsv.js';
 import { FeasibilityPreviewModal } from './components/FeasibilityPreviewModal.js';
 import { SEED_ROBOTS } from './data/robots.seed.js';
 import { FACILITY_PRESETS } from './data/presets.js';
@@ -381,15 +382,13 @@ useEffect(() => {
     setIsPdfPreviewOpen(true);
   };
 
-  const handleExportExcel = () => {
+  const handleExportCsv = () => {
     if (!activeEconomics) return;
-    exportFeasibilityToExcel(
-      facility,
-      activeComposition.length > 0 ? activeComposition : selectedRobot,
-      activeEconomics,
-      whatIf
-    );
-    showToast('REO: Финансовая модель выгружена в Excel (.xlsx)');
+    const robot = selectedRobot || (activeComposition.length > 0 ? activeComposition[0].robot : null);
+    if (!robot) return;
+
+    exportFinancialModelToCsv(facility, robot, activeEconomics);
+    showToast('REO: Финансовая модель успешно выгружена в CSV (Excel)');
   };
 
   return (
@@ -461,13 +460,15 @@ useEffect(() => {
           </div>
 
           <button
-            type="button"
-            onClick={handleExportExcel}
-            className="px-3 py-1.5 bg-[#FFFFFF] hover:bg-[#F4F4F0] text-[#8A6826] border border-[#D4AF37]/50 text-xs font-semibold uppercase tracking-tight rounded-none transition flex items-center gap-1.5 cursor-pointer font-mono"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-[#8A6826]" />
-            <span>Excel (.xlsx)</span>
-          </button>
+  type="button"
+  disabled={!activeEconomics}
+  onClick={handleExportCsv}
+  className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold uppercase tracking-wider border border-[#D4AF37] bg-white hover:bg-[#D4AF37]/20 text-[#1A1A1A] transition rounded-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+  title="Выгрузить расчетные таблицы и потоки DCF в CSV (Excel)"
+>
+  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+  <span>ТАБЛИЦА (CSV)</span>
+</button>
 
           <button
             type="button"

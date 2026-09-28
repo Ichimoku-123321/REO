@@ -6,7 +6,6 @@ import type { Robot } from '../types/robot.js';
 import type { EconomicEvaluation, WhatIfParams } from '../engine/economics.js';
 import type { SpectralAnalysisResult } from '../engine/spectral_analyzer.js';
 import { generateFeasibilityPdf } from '../engine/export_pdf.js';
-import { generateFinancialExcel } from '../engine/export_excel.js';
 import { parseFacilityImport, downloadCsvTemplate } from '../engine/import_facility.js';
 
 interface ExportToolbarProps {
@@ -55,19 +54,9 @@ export const ExportToolbar: React.FC<ExportToolbarProps> = ({
     });
   };
 
-  const handleExportExcel = () => {
+  const handleExportCsv = () => {
     if (isExportDisabled || !selectedRobot || !economicEvaluation) return;
-    generateFinancialExcel({
-      projectTitle: `Финансовая модель - ${facility.industry.toUpperCase()}`,
-      facility,
-      selectedRobot,
-      fleetSize,
-      economicEvaluation,
-      spectralResult,
-      whatIf,
-      generatedAt: new Date(),
-      version: 'СППР v1.0',
-    });
+    exportFinancialModelToCsv(facility, selectedRobot, economicEvaluation);
   };
 
   const handleFileProcess = (file: File) => {
@@ -113,38 +102,41 @@ export const ExportToolbar: React.FC<ExportToolbarProps> = ({
       <div className="flex items-center gap-2">
         {/* CSV Import Button */}
         <button
+          type="button"
           onClick={() => setIsImportModalOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition shadow-sm"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition shadow-sm cursor-pointer"
           title="Загрузить параметры объекта из файла CSV/JSON"
         >
           <Upload className="w-3.5 h-3.5 text-blue-400" />
           <span>📂 Загрузить (CSV)</span>
         </button>
 
-        {/* Excel Export Button */}
+        {/* CSV Table Export Button */}
         <button
-          onClick={handleExportExcel}
+          type="button"
+          onClick={handleExportCsv}
           disabled={isExportDisabled}
           title={disabledTooltip}
           className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition shadow-sm ${
             isExportDisabled
               ? 'bg-slate-800/50 text-slate-500 border-slate-800 cursor-not-allowed opacity-60'
-              : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-700/60'
+              : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-700/60 cursor-pointer'
           }`}
         >
           <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-          <span>📊 Excel</span>
+          <span>📊 Таблица (CSV)</span>
         </button>
 
         {/* PDF Export Button */}
         <button
+          type="button"
           onClick={handleExportPdf}
           disabled={isExportDisabled}
           title={disabledTooltip}
           className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg border transition shadow-sm ${
             isExportDisabled
               ? 'bg-slate-800/50 text-slate-500 border-slate-800 cursor-not-allowed opacity-60'
-              : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-blue-500/20'
+              : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-blue-500/20 cursor-pointer'
           }`}
         >
           <FileText className="w-3.5 h-3.5" />
@@ -157,8 +149,9 @@ export const ExportToolbar: React.FC<ExportToolbarProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
             <button
+              type="button"
               onClick={() => setIsImportModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white transition"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white transition cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -196,7 +189,7 @@ export const ExportToolbar: React.FC<ExportToolbarProps> = ({
               <Upload className="w-8 h-8 text-blue-400/80" />
               <div>
                 <p className="text-sm font-medium text-slate-200">
-                  Нажмите или перетащите файл сющ
+                  Нажмите или перетащите файл сюда
                 </p>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Поддерживаются форматы .csv и .json
@@ -230,15 +223,17 @@ export const ExportToolbar: React.FC<ExportToolbarProps> = ({
             {/* Footer / Template download */}
             <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between">
               <button
+                type="button"
                 onClick={downloadCsvTemplate}
-                className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-medium transition"
+                className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-medium transition cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>📥 Скачать шаблон CSV</span>
               </button>
               <button
+                type="button"
                 onClick={() => setIsImportModalOpen(false)}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition"
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition cursor-pointer"
               >
                 Отмена
               </button>

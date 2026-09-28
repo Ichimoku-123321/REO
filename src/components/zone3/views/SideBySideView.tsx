@@ -170,7 +170,9 @@ export const SideBySideView: React.FC<SideBySideViewProps> = ({
         netAnnualSavingsRub,
         paybackYears,
         fiveYearTcoRub,
-      }; [robots, facility, whatIf]);
+      };
+    });
+  }, [robots, facility, whatIf]);
 
   const eligibleRobots = benchmarkResults.filter((r) => r.isEligible);
   const excludedRobots = benchmarkResults.filter((r) => !r.isEligible);

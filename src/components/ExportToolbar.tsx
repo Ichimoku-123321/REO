@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { exportFinancialModelToCsv } from '../utils/exportCsv.js';
 import { FileText, FileSpreadsheet, Upload, Download, AlertCircle, X, Check } from 'lucide-react';
 import type { FacilityRequirements } from '../types/facility.js';
 import type { Robot } from '../types/robot.js';
